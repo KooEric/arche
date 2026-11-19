@@ -1,0 +1,94 @@
+import pytest
+
+import score
+from arche_lib import jsonio
+
+FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic"}
+INFERRED_ONLY = {
+    ("py-dynamic", "tools/run.py", "vendor_local/helper.py"),
+    ("ts-alias", "src/main.ts", "packages/legacy/src/index.ts"),
+}
+
+
+@pytest.fixture(scope="module")
+def results():
+    return score.score_all()
+
+
+def _graph(fixture):
+    return score.run_pipeline(score.FIXTURES_DIR / fixture / "repo")
+
+
+def test_every_expected_fixture_is_scored(results):
+    assert {r["fixture"] for r in results} == FIXTURES
+
+
+def test_every_fixture_matches_its_expected_sets(results):
+    assert {r["fixture"]: r["mismatches"] for r in results if r["mismatches"]} == {}
+
+
+def test_import_edges_meet_the_release_gates(results):
+    overall = score.totals(results)
+
+    assert overall["precision"] >= score.DEFAULT_MIN_PRECISION
+    assert overall["recall"] >= score.DEFAULT_MIN_RECALL
+
+
+def test_every_language_is_scored(results):
+    assert set(score.by_language(results)) == {"python", "typescript", "dart"}
+
+
+def test_edges_not_verified_are_exactly_the_ones_declared_as_inferred(results):
+    missed = {(r["fixture"],) + edge for r in results for edge in r["false_negative"]}
+    inferred = {(r["fixture"],) + edge for r in results for edge in r["inferred_correct"]}
+
+    assert missed == INFERRED_ONLY
+    assert inferred == INFERRED_ONLY
+    assert all(r["inferred_wrong"] == [] for r in results)
+
+
+@pytest.mark.parametrize("fixture, count", [("py-dynamic", 2), ("ts-dynamic", 2)])
+def test_non_literal_dynamic_imports_are_never_verified(fixture, count):
+    dynamic = [edge for edge in _graph(fixture)["edges"] if edge.get("reason") == "dynamic"]
+
+    assert len(dynamic) == count
+    assert all(edge["status"] == "unresolved" and edge["to"] is None for edge in dynamic)
+
+
+def test_text_inside_comments_strings_and_regex_creates_no_edges():
+    specs = [edge.get("spec") or edge["to"] for edge in _graph("ts-dynamic")["edges"]]
+
+    assert not any("commented" in spec or "in-string" in spec or "in-regex" in spec for spec in specs)
+
+
+def test_dart_edges_carry_conditional_part_and_reexport_flags():
+    edges = _graph("dart-basic")["edges"]
+
+    assert sum(1 for e in edges if e.get("conditional")) == 2
+    assert sum(1 for e in edges if e.get("part")) == 4
+    assert sum(1 for e in edges if e.get("reexport")) == 2
+
+
+def test_no_fixture_file_is_degraded():
+    for fixture in sorted(FIXTURES):
+        degraded = [n["id"] for n in _graph(fixture)["nodes"] if n.get("degraded")]
+        assert degraded == [], fixture
+
+
+def test_secret_files_never_reach_the_graph_with_content():
+    assert "not-a-real-key" not in jsonio.dumps(_graph("secrets"))
+
+
+@pytest.mark.parametrize("fixture", ["py-basic", "ts-alias", "dart-basic"])
+def test_graph_is_byte_identical_across_runs_in_different_directories(fixture):
+    assert jsonio.dumps(_graph(fixture)) == jsonio.dumps(_graph(fixture))
+
+
+def test_score_cli_passes_with_the_default_gates(capsys):
+    assert score.main([]) == 0
+    assert "overall precision" in capsys.readouterr().out
+
+
+def test_score_cli_fails_when_a_gate_is_out_of_reach(capsys):
+    assert score.main(["--min-recall", "1.0"]) == 1
+    capsys.readouterr()

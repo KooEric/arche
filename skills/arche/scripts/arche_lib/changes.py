@@ -1,0 +1,75 @@
+"""Compare commits and identify reverse import dependencies in a matching graph."""
+from __future__ import annotations
+
+from collections import defaultdict, deque
+from pathlib import Path
+
+from . import SCHEMA_VERSION, gitinfo
+from .errors import IntegrityError, UsageError
+
+
+def _commit(root: Path, ref: str) -> str:
+    value = gitinfo._git(root, "rev-parse", "--verify", "--end-of-options", ref + "^{commit}")
+    if not value:
+        raise UsageError(f"cannot resolve commit: {ref}")
+    return value.decode("ascii").strip()
+
+
+def _diff(root: Path, base: str, head: str) -> list:
+    raw = gitinfo._git(root, "diff", "--no-ext-diff", "--no-textconv", "--relative",
+                       "--name-status", "-z", "--find-renames", "--diff-filter=ADMRT",
+                       base, head, "--", ".")
+    if raw is None:
+        raise UsageError("cannot compare the requested commits")
+    fields = raw.split(b"\0")
+    result = []
+    i = 0
+    while i < len(fields) and fields[i]:
+        status = fields[i].decode("ascii")[0]
+        i += 1
+        first = fields[i].decode("utf-8", errors="replace")
+        i += 1
+        if status == "R":
+            path = fields[i].decode("utf-8", errors="replace")
+            i += 1
+            result.append({"status": "renamed", "path": path, "old_path": first})
+        else:
+            result.append({"status": {"A": "added", "D": "deleted", "M": "modified", "T": "modified"}[status], "path": first})
+    return sorted(result, key=lambda entry: (entry["path"], entry.get("old_path", "")))
+
+
+def _reverse_imports(graph: dict) -> dict:
+    reverse = defaultdict(set)
+    for edge in graph["edges"]:
+        source, target = edge.get("from"), edge.get("to")
+        if (edge.get("kind") == "IMPORTS" and edge.get("status") in ("verified", "inferred")
+                and isinstance(source, str) and source.startswith("file:")
+                and isinstance(target, str) and target.startswith("file:")):
+            reverse[target[5:]].add(source[5:])
+    return reverse
+
+
+def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str) -> dict:
+    base, head = _commit(root, base_ref), _commit(root, head_ref)
+    files = _diff(root, base, head)
+    try:
+        repo = graph["repo"]
+        revision = repo["commit"]
+        valid = repo["dirty"] is False and revision in (base, head)
+        reverse = _reverse_imports(graph) if valid else {}
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise IntegrityError(f"graph.json is malformed: {exc!r}") from None
+    for item in files:
+        seed = item.get("old_path", item["path"]) if revision == base else item["path"]
+        # A file absent at the graph revision has no dependency evidence.
+        absent = (revision == base and item["status"] == "added") or (revision == head and item["status"] == "deleted")
+        seen = {seed}
+        queue = deque([seed] if valid and not absent else [])
+        while queue:
+            for dependent in sorted(reverse.get(queue.popleft(), ())):
+                if dependent not in seen:
+                    seen.add(dependent)
+                    queue.append(dependent)
+        item["impact"] = sorted(seen - {seed})
+    return {"schema_version": SCHEMA_VERSION, "base": base, "head": head,
+            "graph_commit": revision, "impact_available": valid, "files": files}

@@ -1,0 +1,7 @@
+name: shop_app
+description: Fixture for the Dart adapter.
+environment:
+  sdk: ^3.0.0
+dependencies:
+  flutter:
+    sdk: flutter

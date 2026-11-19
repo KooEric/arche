@@ -1,0 +1,25 @@
+{
+  "required_steps": [
+    "main",
+    "run",
+    "dispatch",
+    "uppercase"
+  ],
+  "expected_edges": [
+    {
+      "from": "main",
+      "to": "run",
+      "kind": "calls"
+    },
+    {
+      "from": "run",
+      "to": "dispatch",
+      "kind": "calls"
+    },
+    {
+      "from": "dispatch",
+      "to": "uppercase",
+      "kind": "calls"
+    }
+  ]
+}

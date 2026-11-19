@@ -1,0 +1,84 @@
+{
+  "cases": [
+    {
+      "id": "dispatch",
+      "required_steps": [
+        "main.py:main",
+        "handler.py:process",
+        "output.py:format_result"
+      ],
+      "expected_edges": [
+        {
+          "from": "main.py:main",
+          "to": "handler.py:process",
+          "kind": "calls"
+        },
+        {
+          "from": "handler.py:process",
+          "to": "output.py:format_result",
+          "kind": "calls"
+        }
+      ],
+      "citation_lines": {
+        "main.py:main": {
+          "main.py": [
+            4,
+            5
+          ]
+        },
+        "handler.py:process": {
+          "handler.py": [
+            4,
+            5
+          ]
+        },
+        "output.py:format_result": {
+          "output.py": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "receipt",
+      "required_steps": [
+        "cli.py:run",
+        "receipt.py:make_receipt",
+        "tax.py:total"
+      ],
+      "expected_edges": [
+        {
+          "from": "cli.py:run",
+          "to": "receipt.py:make_receipt",
+          "kind": "calls"
+        },
+        {
+          "from": "receipt.py:make_receipt",
+          "to": "tax.py:total",
+          "kind": "calls"
+        }
+      ],
+      "citation_lines": {
+        "cli.py:run": {
+          "cli.py": [
+            4,
+            5
+          ]
+        },
+        "receipt.py:make_receipt": {
+          "receipt.py": [
+            4,
+            5
+          ]
+        },
+        "tax.py:total": {
+          "tax.py": [
+            1,
+            2
+          ]
+        }
+      }
+    }
+  ]
+}

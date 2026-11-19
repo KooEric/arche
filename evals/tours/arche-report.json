@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "id": "scan_artifacts",
+      "path": "skills/arche/scripts/scan.py",
+      "start_line": 46,
+      "end_line": 67,
+      "sha256": "4fc120ac34bd2ca755f2f2405581ad547867966677227cd54bb729313b196bff"
+    },
+    {
+      "id": "imports_graph",
+      "path": "skills/arche/scripts/imports.py",
+      "start_line": 42,
+      "end_line": 53,
+      "sha256": "e95ef74ddf218c4c8e27cd6b813bbf6ed1366a1c19f9f22d7096c1ec6aaee1ea"
+    },
+    {
+      "id": "render_html",
+      "path": "skills/arche/scripts/render.py",
+      "start_line": 38,
+      "end_line": 81,
+      "sha256": "8bb7b4e11a3ce203b46eaae39067b4d79625d9e6ee1ef40254f585ba7a05276e"
+    }
+  ],
+  "edges": [
+    {
+      "from": "scan_artifacts",
+      "to": "imports_graph",
+      "kind": "artifact_transfer"
+    },
+    {
+      "from": "scan_artifacts",
+      "to": "render_html",
+      "kind": "artifact_transfer"
+    },
+    {
+      "from": "imports_graph",
+      "to": "render_html",
+      "kind": "artifact_transfer"
+    }
+  ]
+}

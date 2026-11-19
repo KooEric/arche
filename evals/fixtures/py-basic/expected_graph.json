@@ -1,0 +1,135 @@
+{
+  "analyzed": [
+    "scripts/helpers.py",
+    "scripts/seed.py",
+    "src/shop/__init__.py",
+    "src/shop/cli.py",
+    "src/shop/config.py",
+    "src/shop/models.py",
+    "src/shop/service.py",
+    "src/shop/storage/__init__.py",
+    "src/shop/storage/cache.py",
+    "src/shop/storage/db.py",
+    "tests/test_service.py"
+  ],
+  "skipped": [
+    {
+      "path": "pyproject.toml",
+      "reason": "unsupported_lang"
+    }
+  ],
+  "imports": [
+    {
+      "from": "src/shop/__init__.py",
+      "to": "src/shop/models.py"
+    },
+    {
+      "from": "src/shop/__init__.py",
+      "to": "src/shop/config.py"
+    },
+    {
+      "from": "src/shop/service.py",
+      "to": "src/shop/models.py"
+    },
+    {
+      "from": "src/shop/service.py",
+      "to": "src/shop/config.py"
+    },
+    {
+      "from": "src/shop/service.py",
+      "to": "src/shop/storage/db.py"
+    },
+    {
+      "from": "src/shop/service.py",
+      "to": "src/shop/storage/cache.py"
+    },
+    {
+      "from": "src/shop/storage/__init__.py",
+      "to": "src/shop/storage/db.py"
+    },
+    {
+      "from": "src/shop/storage/db.py",
+      "to": "src/shop/config.py"
+    },
+    {
+      "from": "src/shop/storage/cache.py",
+      "to": "src/shop/storage/db.py"
+    },
+    {
+      "from": "src/shop/storage/cache.py",
+      "to": "src/shop/models.py"
+    },
+    {
+      "from": "src/shop/storage/cache.py",
+      "to": "src/shop/config.py"
+    },
+    {
+      "from": "src/shop/cli.py",
+      "to": "src/shop/service.py"
+    },
+    {
+      "from": "src/shop/cli.py",
+      "to": "src/shop/storage/db.py"
+    },
+    {
+      "from": "src/shop/cli.py",
+      "to": "src/shop/storage/cache.py"
+    },
+    {
+      "from": "scripts/seed.py",
+      "to": "scripts/helpers.py"
+    },
+    {
+      "from": "scripts/seed.py",
+      "to": "src/shop/service.py"
+    },
+    {
+      "from": "scripts/helpers.py",
+      "to": "src/shop/models.py"
+    },
+    {
+      "from": "tests/test_service.py",
+      "to": "src/shop/service.py"
+    }
+  ],
+  "inferred": [],
+  "unresolved": [],
+  "externals": [
+    {
+      "from": "src/shop/config.py",
+      "package": "os"
+    },
+    {
+      "from": "src/shop/models.py",
+      "package": "dataclasses"
+    },
+    {
+      "from": "src/shop/storage/db.py",
+      "package": "sqlite3"
+    },
+    {
+      "from": "src/shop/cli.py",
+      "package": "argparse"
+    },
+    {
+      "from": "src/shop/cli.py",
+      "package": "requests"
+    },
+    {
+      "from": "tests/test_service.py",
+      "package": "pytest"
+    }
+  ],
+  "symbols": [
+    "sym:src/shop/config.py#SETTINGS",
+    "sym:src/shop/models.py#Order",
+    "sym:src/shop/service.py#place_order",
+    "sym:src/shop/storage/db.py#connect",
+    "sym:src/shop/storage/cache.py#_orders",
+    "sym:src/shop/storage/cache.py#remember",
+    "sym:src/shop/cli.py#main",
+    "sym:scripts/seed.py#run",
+    "sym:scripts/helpers.py#make_order",
+    "sym:tests/test_service.py#test_place_order"
+  ]
+}

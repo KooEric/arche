@@ -1,0 +1,139 @@
+{
+  "analyzed": [
+    "src/app.ts",
+    "src/components/Button.tsx",
+    "src/config.ts",
+    "src/index.ts",
+    "src/lib/logger.ts",
+    "src/models/index.ts",
+    "src/models/order.ts",
+    "src/models/user.ts",
+    "src/services/users.ts",
+    "src/setup.ts"
+  ],
+  "skipped": [
+    {
+      "path": "package.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "tsconfig.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "src/components/button.css",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "src/data.json",
+      "reason": "unsupported_lang"
+    }
+  ],
+  "imports": [
+    {
+      "from": "src/index.ts",
+      "to": "src/app.ts"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/setup.ts"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/models/index.ts"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/lib/logger.ts"
+    },
+    {
+      "from": "src/app.ts",
+      "to": "src/models/user.ts"
+    },
+    {
+      "from": "src/app.ts",
+      "to": "src/services/users.ts"
+    },
+    {
+      "from": "src/app.ts",
+      "to": "src/config.ts"
+    },
+    {
+      "from": "src/app.ts",
+      "to": "src/lib/logger.ts"
+    },
+    {
+      "from": "src/models/index.ts",
+      "to": "src/models/user.ts"
+    },
+    {
+      "from": "src/models/index.ts",
+      "to": "src/models/order.ts"
+    },
+    {
+      "from": "src/models/order.ts",
+      "to": "src/models/user.ts"
+    },
+    {
+      "from": "src/services/users.ts",
+      "to": "src/models/index.ts"
+    },
+    {
+      "from": "src/services/users.ts",
+      "to": "src/config.ts"
+    },
+    {
+      "from": "src/components/Button.tsx",
+      "to": "src/lib/logger.ts"
+    }
+  ],
+  "inferred": [],
+  "unresolved": [
+    {
+      "from": "src/setup.ts",
+      "spec": "./data.json"
+    },
+    {
+      "from": "src/components/Button.tsx",
+      "spec": "./button.css"
+    }
+  ],
+  "externals": [
+    {
+      "from": "src/app.ts",
+      "package": "express"
+    },
+    {
+      "from": "src/setup.ts",
+      "package": "dotenv"
+    },
+    {
+      "from": "src/setup.ts",
+      "package": "node:fs"
+    },
+    {
+      "from": "src/components/Button.tsx",
+      "package": "react"
+    }
+  ],
+  "symbols": [
+    "sym:src/app.ts#createApp",
+    "sym:src/setup.ts#data",
+    "sym:src/setup.ts#banner",
+    "sym:src/config.ts#PORT",
+    "sym:src/config.ts#default",
+    "sym:src/models/user.ts#User",
+    "sym:src/models/user.ts#UserId",
+    "sym:src/models/user.ts#Role",
+    "sym:src/models/order.ts#Order",
+    "sym:src/services/users.ts#Query",
+    "sym:src/services/users.ts#cache",
+    "sym:src/services/users.ts#findUser",
+    "sym:src/lib/logger.ts#Logger",
+    "sym:src/lib/logger.ts#default",
+    "sym:src/lib/logger.ts#level",
+    "sym:src/lib/logger.ts#log",
+    "sym:src/components/Button.tsx#Button",
+    "sym:src/components/Button.tsx#default"
+  ]
+}

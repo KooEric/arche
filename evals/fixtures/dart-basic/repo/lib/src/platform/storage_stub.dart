@@ -1,0 +1,1 @@
+String storageKind() => 'stub';

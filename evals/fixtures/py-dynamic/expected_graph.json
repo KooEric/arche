@@ -1,0 +1,74 @@
+{
+  "analyzed": [
+    "app/__init__.py",
+    "app/main.py",
+    "app/plugins/__init__.py",
+    "app/plugins/alpha.py",
+    "app/types.py",
+    "tools/run.py",
+    "vendor_local/helper.py"
+  ],
+  "skipped": [],
+  "imports": [
+    {
+      "from": "app/main.py",
+      "to": "app/types.py"
+    },
+    {
+      "from": "app/main.py",
+      "to": "app/plugins/alpha.py"
+    },
+    {
+      "from": "app/main.py",
+      "to": "app/plugins/__init__.py"
+    }
+  ],
+  "inferred": [
+    {
+      "from": "tools/run.py",
+      "to": "vendor_local/helper.py"
+    }
+  ],
+  "unresolved": [
+    {
+      "from": "app/main.py",
+      "spec": "<dynamic>"
+    }
+  ],
+  "externals": [
+    {
+      "from": "app/main.py",
+      "package": "importlib"
+    },
+    {
+      "from": "app/main.py",
+      "package": "sys"
+    },
+    {
+      "from": "app/main.py",
+      "package": "typing"
+    },
+    {
+      "from": "app/main.py",
+      "package": "ujson"
+    },
+    {
+      "from": "app/main.py",
+      "package": "json"
+    },
+    {
+      "from": "tools/run.py",
+      "package": "sys"
+    }
+  ],
+  "symbols": [
+    "sym:app/main.py#PLUGIN_NAME",
+    "sym:app/main.py#load_static",
+    "sym:app/main.py#load_named",
+    "sym:app/main.py#load_builtin",
+    "sym:app/main.py#lazy",
+    "sym:app/types.py#Config",
+    "sym:app/plugins/alpha.py#activate",
+    "sym:vendor_local/helper.py#help_me"
+  ]
+}

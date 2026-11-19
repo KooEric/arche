@@ -1,0 +1,19 @@
+{
+  "required_steps": [
+    "main",
+    "run",
+    "fallback"
+  ],
+  "expected_edges": [
+    {
+      "from": "main",
+      "to": "run",
+      "kind": "calls"
+    },
+    {
+      "from": "run",
+      "to": "fallback",
+      "kind": "calls"
+    }
+  ]
+}

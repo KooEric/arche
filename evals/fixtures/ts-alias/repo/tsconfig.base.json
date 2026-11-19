@@ -1,0 +1,10 @@
+{
+  // Options shared by every project in this repository.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@lib/*": ["src/lib/*"],
+      "@config": ["src/config/index.ts"],
+    },
+  },
+}

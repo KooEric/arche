@@ -1,0 +1,139 @@
+{
+  "analyzed": [
+    "lib/main.dart",
+    "lib/src/app.dart",
+    "lib/src/legacy/old.dart",
+    "lib/src/models/models.dart",
+    "lib/src/models/order.dart",
+    "lib/src/models/user.dart",
+    "lib/src/platform/storage_io.dart",
+    "lib/src/platform/storage_stub.dart",
+    "lib/src/platform/storage_web.dart",
+    "lib/src/services/order_cache.dart",
+    "lib/src/services/order_service.dart",
+    "test/order_test.dart"
+  ],
+  "skipped": [
+    {
+      "path": "pubspec.yaml",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "lib/src/models/order.g.dart",
+      "reason": "generated"
+    }
+  ],
+  "imports": [
+    {
+      "from": "lib/main.dart",
+      "to": "lib/src/app.dart"
+    },
+    {
+      "from": "lib/main.dart",
+      "to": "lib/src/models/models.dart"
+    },
+    {
+      "from": "lib/main.dart",
+      "to": "lib/src/platform/storage_stub.dart"
+    },
+    {
+      "from": "lib/main.dart",
+      "to": "lib/src/platform/storage_io.dart"
+    },
+    {
+      "from": "lib/main.dart",
+      "to": "lib/src/platform/storage_web.dart"
+    },
+    {
+      "from": "lib/src/app.dart",
+      "to": "lib/src/models/order.dart"
+    },
+    {
+      "from": "lib/src/app.dart",
+      "to": "lib/src/services/order_service.dart"
+    },
+    {
+      "from": "lib/src/models/models.dart",
+      "to": "lib/src/models/order.dart"
+    },
+    {
+      "from": "lib/src/models/models.dart",
+      "to": "lib/src/models/user.dart"
+    },
+    {
+      "from": "lib/src/models/order.dart",
+      "to": "lib/src/models/user.dart"
+    },
+    {
+      "from": "lib/src/services/order_service.dart",
+      "to": "lib/src/models/models.dart"
+    },
+    {
+      "from": "lib/src/services/order_service.dart",
+      "to": "lib/src/services/order_cache.dart"
+    },
+    {
+      "from": "lib/src/services/order_cache.dart",
+      "to": "lib/src/services/order_service.dart"
+    },
+    {
+      "from": "test/order_test.dart",
+      "to": "lib/src/models/order.dart"
+    },
+    {
+      "from": "test/order_test.dart",
+      "to": "lib/src/models/user.dart"
+    }
+  ],
+  "inferred": [],
+  "unresolved": [
+    {
+      "from": "lib/src/models/order.dart",
+      "spec": "order.g.dart"
+    },
+    {
+      "from": "lib/src/legacy/old.dart",
+      "spec": "shop_app.legacy"
+    }
+  ],
+  "externals": [
+    {
+      "from": "lib/main.dart",
+      "package": "dart:async"
+    },
+    {
+      "from": "lib/main.dart",
+      "package": "package:flutter"
+    },
+    {
+      "from": "lib/src/app.dart",
+      "package": "package:flutter"
+    },
+    {
+      "from": "test/order_test.dart",
+      "package": "package:flutter_test"
+    }
+  ],
+  "symbols": [
+    "sym:lib/main.dart#main",
+    "sym:lib/src/app.dart#ShopApp",
+    "sym:lib/src/models/order.dart#Order",
+    "sym:lib/src/models/order.dart#OrderStatus",
+    "sym:lib/src/models/order.dart#OrderId",
+    "sym:lib/src/models/user.dart#User",
+    "sym:lib/src/models/user.dart#Named",
+    "sym:lib/src/models/user.dart#UserX",
+    "sym:lib/src/services/order_service.dart#orderServiceProvider",
+    "sym:lib/src/services/order_service.dart#_limit",
+    "sym:lib/src/services/order_service.dart#OrderService",
+    "sym:lib/src/services/order_service.dart#internalHelper",
+    "sym:lib/src/services/order_service.dart#fetchOrder",
+    "sym:lib/src/services/order_service.dart#orderCount",
+    "sym:lib/src/services/order_cache.dart#_OrderCache",
+    "sym:lib/src/platform/storage_stub.dart#storageKind",
+    "sym:lib/src/platform/storage_io.dart#storageKind",
+    "sym:lib/src/platform/storage_web.dart#storageKind",
+    "sym:lib/src/legacy/old.dart#legacyFlag",
+    "sym:test/order_test.dart#main"
+  ]
+}

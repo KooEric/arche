@@ -1,0 +1,102 @@
+{
+  "analyzed": [
+    "apps/web/src/fmt.ts",
+    "apps/web/src/page.tsx",
+    "packages/legacy/src/index.ts",
+    "packages/shared/src/deep.ts",
+    "packages/shared/src/index.ts",
+    "src/config/index.ts",
+    "src/lib/math.ts",
+    "src/main.ts",
+    "src/util/helper.ts"
+  ],
+  "skipped": [
+    {
+      "path": "package.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "tsconfig.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "packages/shared/package.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "packages/legacy/package.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "apps/web/package.json",
+      "reason": "unsupported_lang"
+    },
+    {
+      "path": "apps/web/tsconfig.json",
+      "reason": "unsupported_lang"
+    }
+  ],
+  "imports": [
+    {
+      "from": "src/main.ts",
+      "to": "src/lib/math.ts"
+    },
+    {
+      "from": "src/main.ts",
+      "to": "src/config/index.ts"
+    },
+    {
+      "from": "src/main.ts",
+      "to": "src/util/helper.ts"
+    },
+    {
+      "from": "src/main.ts",
+      "to": "packages/shared/src/index.ts"
+    },
+    {
+      "from": "src/main.ts",
+      "to": "packages/shared/src/deep.ts"
+    },
+    {
+      "from": "apps/web/src/page.tsx",
+      "to": "apps/web/src/fmt.ts"
+    },
+    {
+      "from": "apps/web/src/page.tsx",
+      "to": "packages/shared/src/index.ts"
+    }
+  ],
+  "inferred": [
+    {
+      "from": "src/main.ts",
+      "to": "packages/legacy/src/index.ts"
+    }
+  ],
+  "unresolved": [
+    {
+      "from": "src/main.ts",
+      "spec": "@lib/nope"
+    }
+  ],
+  "externals": [
+    {
+      "from": "src/main.ts",
+      "package": "lodash"
+    }
+  ],
+  "symbols": [
+    "sym:src/main.ts#total",
+    "sym:src/lib/math.ts#add",
+    "sym:src/config/index.ts#default",
+    "sym:src/util/helper.ts#helper",
+    "sym:packages/shared/src/index.ts#shared",
+    "sym:packages/shared/src/deep.ts#deep",
+    "sym:packages/legacy/src/index.ts#legacy",
+    "sym:apps/web/src/page.tsx#Page",
+    "sym:apps/web/src/fmt.ts#fmt"
+  ]
+}

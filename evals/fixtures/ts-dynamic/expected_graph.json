@@ -1,0 +1,42 @@
+{
+  "analyzed": [
+    "src/loader.ts",
+    "src/plugins/alpha.ts",
+    "src/plugins/beta.ts"
+  ],
+  "skipped": [
+    {
+      "path": "package.json",
+      "reason": "unsupported_lang"
+    }
+  ],
+  "imports": [
+    {
+      "from": "src/loader.ts",
+      "to": "src/plugins/alpha.ts"
+    },
+    {
+      "from": "src/loader.ts",
+      "to": "src/plugins/beta.ts"
+    }
+  ],
+  "inferred": [],
+  "unresolved": [
+    {
+      "from": "src/loader.ts",
+      "spec": "<dynamic>"
+    }
+  ],
+  "externals": [],
+  "symbols": [
+    "sym:src/loader.ts#loadPlugin",
+    "sym:src/loader.ts#loadFixed",
+    "sym:src/loader.ts#loadLegacy",
+    "sym:src/loader.ts#lazy",
+    "sym:src/loader.ts#text",
+    "sym:src/loader.ts#pattern",
+    "sym:src/loader.ts#tools",
+    "sym:src/plugins/alpha.ts#name",
+    "sym:src/plugins/beta.ts#name"
+  ]
+}

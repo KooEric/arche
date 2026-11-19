@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "id": "main",
+      "path": "cmd/prtr/main.go",
+      "start_line": 11,
+      "end_line": 17,
+      "sha256": "399e9aa80ad66e0494dcacd31a9095b193722e6526e2d6f3cc86050077f99497"
+    },
+    {
+      "id": "run",
+      "path": "internal/app/app.go",
+      "start_line": 7,
+      "end_line": 9,
+      "sha256": "ceeea2396d3b35027f55bc89004f669bfbad85b0e71156fffea38bc28ac038df"
+    },
+    {
+      "id": "fallback",
+      "path": "internal/app/app.go",
+      "start_line": 11,
+      "end_line": 14,
+      "sha256": "ceeea2396d3b35027f55bc89004f669bfbad85b0e71156fffea38bc28ac038df"
+    }
+  ],
+  "edges": [
+    {
+      "from": "main",
+      "to": "run",
+      "kind": "calls"
+    },
+    {
+      "from": "run",
+      "to": "fallback",
+      "kind": "calls"
+    }
+  ]
+}
