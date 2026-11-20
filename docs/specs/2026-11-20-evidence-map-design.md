@@ -87,6 +87,8 @@ scan.py → imports.py → brief.py ──(에이전트가 map.json 작성)─�
 | 정적 경로인데 후보 없음 | `unresolved` | `no_literal_handler` |
 | 변수 경로인데 후보 없음 | `unresolved` | `dynamic_request_path` |
 | 리터럴 외부 호스트로 가는 요청 | `unresolved` | `external_host` |
+| 마운트 접두사를 확인하지 못한 라우터의 라우트만 맞음 | `unresolved` | `route_prefix_unknown` |
+| 변수 조각만으로 된 라우트 하나만 맞음 | `unresolved` | `variable_only_route` |
 
 요청의 변수 조각은 라우트의 변수 조각에만 맞춘다. `/auth/$provider`를 `/auth/kakao`에 연결하지 않는다. 기존 reason 이름은 호환을 위해 그대로 쓴다. 외부 호스트 요청에는 `host` 필드가 붙고, 2번 작업에서 외부 서비스 부품과 연결한다.
 
