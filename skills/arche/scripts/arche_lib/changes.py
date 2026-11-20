@@ -49,7 +49,27 @@ def _reverse_imports(graph: dict) -> dict:
     return reverse
 
 
-def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str) -> dict:
+def _dependents(reverse, seed):
+    seen = {seed}
+    queue = deque([seed])
+    while queue:
+        for dependent in reverse.get(queue.popleft(), ()):
+            if dependent not in seen:
+                seen.add(dependent)
+                queue.append(dependent)
+    return sorted(seen - {seed})
+
+
+def _side_impact(item, side, reverse, files):
+    path = item.get("old_path", item["path"]) if side == "base" else item["path"]
+    if item["status"] == ("added" if side == "base" else "deleted"):
+        return {"state": "absent", "paths": []}
+    if path not in files:
+        return {"state": "unknown", "paths": []}
+    return {"state": "analyzed", "paths": _dependents(reverse, path)}
+
+
+def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str, base_graph=None) -> dict:
     base, head = _commit(root, base_ref), _commit(root, head_ref)
     files = _diff(root, base, head)
     try:
@@ -59,17 +79,22 @@ def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str) -> dict
         reverse = _reverse_imports(graph) if valid else {}
     except (KeyError, TypeError, AttributeError) as exc:
         raise IntegrityError(f"graph.json is malformed: {exc!r}") from None
+    if base_graph is not None:
+        if not valid or revision != head or base_graph["repo"]["commit"] != base or base_graph["repo"]["dirty"] is not False:
+            raise UsageError("two-snapshot impact requires clean matching base and head graphs")
+        base_reverse = _reverse_imports(base_graph)
+        base_files = {n["id"][5:] for n in base_graph["nodes"] if n["type"] == "file"}
+        head_files = {n["id"][5:] for n in graph["nodes"] if n["type"] == "file"}
     for item in files:
         seed = item.get("old_path", item["path"]) if revision == base else item["path"]
-        # A file absent at the graph revision has no dependency evidence.
         absent = (revision == base and item["status"] == "added") or (revision == head and item["status"] == "deleted")
-        seen = {seed}
-        queue = deque([seed] if valid and not absent else [])
-        while queue:
-            for dependent in sorted(reverse.get(queue.popleft(), ())):
-                if dependent not in seen:
-                    seen.add(dependent)
-                    queue.append(dependent)
-        item["impact"] = sorted(seen - {seed})
+        item["impact"] = _dependents(reverse, seed) if valid and not absent else []
+        if base_graph is not None:
+            item["comparison"] = {
+                "change_evidence": "confirmed",
+                "dependency_evidence": "possible",
+                "base": _side_impact(item, "base", base_reverse, base_files),
+                "head": _side_impact(item, "head", reverse, head_files),
+            }
     return {"schema_version": SCHEMA_VERSION, "base": base, "head": head,
             "graph_commit": revision, "impact_available": valid, "files": files}

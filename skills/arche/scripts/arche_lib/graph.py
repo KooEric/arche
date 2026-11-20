@@ -6,6 +6,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from . import SCHEMA_VERSION
 from .errors import ParseError
+from .jsonio import inventory_digest
 from .langs.registry import adapter_for
 
 ReadPath = Callable[[str], Optional[str]]
@@ -163,6 +164,7 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
     repo = inventory["repo"]
     return {
         "schema_version": SCHEMA_VERSION,
+        "inventory_sha256": inventory_digest(inventory),
         "repo": {"name": repo["name"], "commit": repo["commit"], "dirty": repo["dirty"]},
         "nodes": _nodes(analyzed, extracted),
         "edges": sorted(edges, key=_edge_key),

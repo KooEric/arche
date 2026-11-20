@@ -141,3 +141,15 @@ def test_tracked_file_inside_a_vendored_dir_is_listed_individually(make_repo):
     result = inventory.build_inventory(repo)
 
     assert _entry(result, "vendor/lib/util.py")["reason"] == "vendored"
+
+
+def test_local_skill_installations_are_not_project_code(make_repo):
+    from arche_lib.inventory import build_inventory
+    files = {"main.py": "pass\n", "skills/arche/own.py": "pass\n"}
+    files.update({f"{home}/skills/arche/tool.py": "pass\n" for home in (".agents", ".claude", ".cursor")})
+    for use_git in (True, False):
+        repo = make_repo(files, name=f"skill-{use_git}", use_git=use_git)
+        inventory = build_inventory(repo)
+        analyzed = {x["path"] for x in inventory["files"] if x["status"] == "analyzed"}
+        assert analyzed == {"main.py", "skills/arche/own.py"}
+        assert sum(x.get("reason") == "installed_skill" for x in inventory["files"]) == 3

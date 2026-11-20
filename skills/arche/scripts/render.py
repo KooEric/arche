@@ -12,8 +12,9 @@ import time
 from pathlib import Path
 
 from arche_lib import cli, gitinfo
+from arche_lib.audit import build_audit, delta
 from arche_lib.errors import IntegrityError, UsageError
-from arche_lib.jsonio import read_json, write_text
+from arche_lib.jsonio import check_graph, inventory_digest, read_snapshot, read_json, write_json, write_text
 from arche_lib.paths import is_within
 from arche_lib.report import render
 from arche_lib.runlog import RUN_FILE, record_step
@@ -38,20 +39,21 @@ def module_summary(inventory, graph):
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory holding inventory.json and graph.json")
+    parser.add_argument("--internal-exports", action="append", default=[], metavar="DIR", help="opt in a repository-relative internal directory for explicit Python export checks")
+    parser.add_argument("--base-out", type=Path, help="clean base snapshot run directory for finding comparison")
     parser.add_argument("--tour", type=Path, help="optional tour JSON to validate and include")
     args = parser.parse_args(argv)
     out = args.out
     started = time.time()
-    inventory = read_json(out / "inventory.json")
-    graph = read_json(out / "graph.json")
+    inventory = read_snapshot(out / "inventory.json")
+    graph = read_snapshot(out / "graph.json")
     run = read_json(out / RUN_FILE)
     try:
         repo = inventory["repo"]
         root = Path(repo["root"])
         if is_within(root, out):
             raise UsageError("report output must be outside the scanned repository")
-        if graph["repo"] != {key: repo[key] for key in ("name", "commit", "dirty")}:
-            raise IntegrityError("inventory.json and graph.json describe different snapshots")
+        check_graph(inventory, graph)
         commit = repo["commit"]
         if commit is not None and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
             raise IntegrityError("invalid commit in inventory.json")
@@ -67,14 +69,36 @@ def main(argv):
         if args.tour is not None:
             validate_tour(tour, inventory, make_reader(inventory))
         changes_path = out / "changes.json"
-        changes = read_json(changes_path) if changes_path.exists() else None
+        changes = read_snapshot(changes_path) if changes_path.exists() else None
         if changes is not None and changes["graph_commit"] != graph["repo"]["commit"]:
             raise IntegrityError("changes.json and graph.json describe different snapshots")
-        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes)
+        for prefix in args.internal_exports:
+            if not prefix or prefix.startswith('/') or any(part in ('', '.', '..') for part in prefix.split('/')):
+                raise UsageError("internal export directories must be relative paths without . or ..")
+        internal_exports = sorted(set(args.internal_exports))
+        findings = build_audit(graph, make_reader(inventory), internal_exports)
+        finding_delta = None
+        if args.base_out is not None:
+            base_inventory = read_snapshot(args.base_out / "inventory.json")
+            base_graph = read_snapshot(args.base_out / "graph.json")
+            check_graph(base_inventory, base_graph)
+            base_repo = base_inventory["repo"]
+            if (changes is None or check != "match" or repo["dirty"] is not False or base_repo["dirty"] is not False
+                    or repo["commit"] != changes["head"] or base_repo["commit"] != changes["base"]
+                    or base_graph["repo"] != {key: base_repo[key] for key in ("name", "commit", "dirty")}
+                    or base_repo["root"] != repo["root"] or base_repo["name"] != repo["name"]):
+                raise IntegrityError("finding comparison requires matching clean base/head snapshots and changes.json")
+            base_audit = read_json(args.base_out / "audit.json")
+            if base_audit.get("repo") != base_graph["repo"] or base_audit.get("schema_version") != 1 or base_audit.get("inventory_sha256") != inventory_digest(base_inventory) or base_audit.get("internal_exports", []) != internal_exports:
+                raise IntegrityError("base audit and graph snapshots do not match")
+            base_findings = base_audit["findings"]
+            finding_delta = delta(base_findings, findings)
+        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta)
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise IntegrityError(f"invalid report inputs: {exc!r}") from None
 
     path = out / "report.html"
+    write_json(out / "audit.json", {"schema_version": 1, "repo": graph["repo"], "inventory_sha256": inventory_digest(inventory), "internal_exports": internal_exports, "findings": findings, "delta": finding_delta})
     write_text(path, report)
     record_step(out, "render", started, extra={"status_after": after, "readonly_check": check})
     return {"step": "render", "report": str(path.resolve()), "readonly_check": check}

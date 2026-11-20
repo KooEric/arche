@@ -54,3 +54,27 @@ def test_cli_rescores_jsonl_and_converts(tmp_path):
     runs.write_text('{bad}\n')
     result = subprocess.run(cmd, capture_output=True, text=True)
     assert result.returncode == 2 and "line 1" in result.stderr
+
+
+def test_condition_identity_and_forbidden_direct_call():
+    case = {"id": "branch", "required_steps": ["a"], "expected_edges": [],
+            "expected_conditions": [{"id": "a:show", "expression": "x and y"}],
+            "forbidden_edges": [{"from": "a", "to": "b", "kind": "calls"}]}
+    run = {"case_id": "branch", "steps": [{"id": "a"}],
+           "conditions": [{"id": "a:hide", "expression": "x and y"}],
+           "edges": [{"from": "a", "to": "b", "kind": "calls"}]}
+    score = harness_score.score_runs({"cases": [case]}, [run])["results"][0]["score"]
+    assert score["condition_recall"] == 0
+    assert score["missing_conditions"] == case["expected_conditions"]
+    assert score["forbidden_edges"] == case["forbidden_edges"]
+    run["conditions"][0]["id"] = "a:show"
+    assert harness_score.score_runs({"cases": [case]}, [run])["results"][0]["score"]["condition_recall"] == 1
+
+
+def test_archived_step_local_conditions_are_scored_by_content():
+    condition = {"id": "one:allowed", "expression": "ready and allowed"}
+    case = dict(GOLDEN["cases"][0], expected_conditions=[condition])
+    run = {"case_id": "one", "steps": [{"id": "a", "conditions": [condition]}], "edges": []}
+    assert harness_score.score_runs({"cases": [case]}, [run])["results"][0]["score"]["condition_recall"] == 1
+    run["steps"][0]["conditions"] = [dict(condition, expression="ready or allowed")]
+    assert harness_score.score_runs({"cases": [case]}, [run])["results"][0]["score"]["condition_recall"] == 0

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arche repair run record",
+  "type": "object",
+  "required": ["schema_version", "task", "execution", "provenance"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task": {"enum": ["pickup-undo", "translation-fallback"]},
+    "prompt_variant": {"enum": ["task-only", "verify"]},
+    "execution": {
+      "type": "object",
+      "properties": {
+        "command": {"type": "array", "items": {"type": "string"}},
+        "prompt": {"type": "string"},
+        "model": {"type": ["string", "null"]},
+        "duration_seconds": {"type": "number"},
+        "returncode": {"type": ["integer", "null"]},
+        "timed_out": {"type": "boolean"},
+        "usage": {"type": "array"},
+        "error": {"type": "string"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "baseline": {"type": "object"},
+        "candidate": {"type": "object"},
+        "baseline_digest": {"type": "string"},
+        "candidate_digest": {"type": "string"},
+        "prompt_digest": {"type": "string"}
+      }
+    }
+  }
+}

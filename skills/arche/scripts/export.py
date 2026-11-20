@@ -10,7 +10,7 @@ from pathlib import Path
 
 from arche_lib import cli
 from arche_lib.errors import IntegrityError, UsageError
-from arche_lib.jsonio import dumps, read_json, write_text
+from arche_lib.jsonio import read_snapshot, dumps, read_json, write_text
 from arche_lib.paths import is_within
 
 
@@ -89,7 +89,7 @@ def main(argv):
     parser.add_argument("--format", required=True, choices=("json", "markdown", "mermaid"))
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
-    inventory = read_json(args.out / "inventory.json")
+    inventory = read_snapshot(args.out / "inventory.json")
     document = export_document(inventory, read_json(args.tour))
     root = inventory["repo"].get("root")
     if root and is_within(Path(root), args.output):

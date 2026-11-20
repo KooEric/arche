@@ -7,6 +7,8 @@ from graphlib import CycleError, TopologicalSorter
 from html import escape
 from string import Template
 
+from .focus import select_steps
+
 
 def _code(text):
     return f"<code>{escape(str(text))}</code>"
@@ -117,6 +119,38 @@ def _screens(tour, anchors):
     return '<section id="screens"><h2>Screens and features</h2>' + "".join(cards) + '</section>'
 
 
+
+def _feature_focus(tour, connections, anchors):
+    if not tour or not tour.get("steps"):
+        return ""
+    buttons, panels = [], []
+    labels = defaultdict(list)
+    for screen in tour.get("screens", []):
+        for item in screen["items"]:
+            labels[item["step"]].append((screen["title"], item["label"], item["behavior"]))
+    for index, step in enumerate(tour["steps"]):
+        step_id = step["id"]
+        buttons.append(f'<button type="button" data-focus-select="{index}" aria-pressed="{str(index == 0).lower()}">{escape(step_id)}</button>')
+        for title, label, behavior in labels[step_id]:
+            buttons.append(f'<button type="button" data-focus-select="{index}" aria-pressed="{str(index == 0).lower()}">{escape(title)} · {escape(label)}</button>')
+        selected = select_steps(tour, {step_id}, 2, connections)
+        cards = []
+        for selected_step in selected["steps"]:
+            sid = selected_step["id"]
+            details = ''.join(f'<p><strong>{escape(title)} · {escape(label)}</strong> — {escape(behavior)}</p>' for title, label, behavior in labels[sid])
+            source = _file_link('file:' + selected_step['path'], anchors)
+            cards.append(f'<li><strong>{_code(sid)}</strong>{details}<p>Evidence · {source}:{selected_step["start_line"]}–{selected_step["end_line"]}</p></li>')
+        relations = []
+        for edge in selected["edges"]:
+            relations.append(f'{_code(edge["from"])} → <strong>{escape(edge["kind"])}</strong> → {_code(edge["to"])}')
+        for edge in selected["http_candidates"]:
+            relations.append(f'{_code(edge["from"])} ⇢ <strong>inferred HTTP</strong> {_code(edge["method"])} {_code(edge["path"])} ⇢ {_code(edge["to"])}')
+        panels.append(f'<div data-focus-panel="{index}"' + ('' if index == 0 else ' hidden') + '>'
+                      + '<h3>Selected steps</h3><ul class="focus-nodes">' + ''.join(cards) + '</ul>'
+                      + '<h3>Connections</h3>' + _items(relations, 'No connected tour relationships within two hops.') + '</div>')
+    return ('<section id="feature-focus"><h2>Feature focus</h2><p>Select a screen control or tour step to see connected evidence within two relationships. HTTP links are inferred from exact cited request and route or handler lines.</p>'
+            + '<div class="focus-controls" aria-label="Select feature or tour step">' + ''.join(buttons) + '</div>' + ''.join(panels) + '</section>')
+
 def _http_section(connections, anchors):
     if not connections:
         return ""
@@ -200,6 +234,14 @@ def _changes(changes, anchors):
         elif absent:
             empty = "File absent at the graph revision; impact unavailable."
         impact = _items((_file_link("file:" + target, anchors) for target in item["impact"]), empty)
+        if "comparison" in item:
+            sections = []
+            for side in ("base", "head"):
+                data = item["comparison"][side]
+                paths = _items((_code(name) for name in data["paths"]), "No recorded dependents.")
+                sections.append(f"<h3>{side.title()} · {escape(data['state'])}</h3>" +
+                                (paths if data["state"] == "analyzed" else ""))
+            impact = "".join(sections)
         rows.append(f'<li data-change-status="{escape(status, quote=True)}"><p>Change · {escape(status)} · {_file_link("file:" + path, anchors)}{old}</p><p>Static impact candidates</p>{impact}</li>')
     statuses = sorted({item["status"] for item in files})
     options = ''.join(f'<option value="{escape(status, quote=True)}">{escape(status)}</option>' for status in statuses)
@@ -217,7 +259,28 @@ def _csp(template):
     return "; ".join(["default-src 'none'", "base-uri 'none'", "form-action 'none'", *allowed])
 
 
-def render(template, graph, commits, readonly_check, *, modules=None, tour=None, changes=None):
+def _audit_findings(findings, anchors, comparison=None):
+    descriptions = {
+        "unused-private-symbol": "Private symbol with no observed name reference",
+        "unused-internal-export": "Opted-in internal export with no observed name reference",
+        "duplicate-block": "Identical Python function bodies",
+        "isolated-module": "Module without observed import connections",
+    }
+    def row(item):
+        location = _file_link("file:" + item["path"], anchors) + ":" + str(item["line"])
+        name = " · " + _code(item["name"]) if item.get("name") else ""
+        locations = "".join(" · " + _file_link("file:" + loc["path"], anchors) + ":" + str(loc["line"]) + " " + _code(loc["name"]) for loc in item.get("locations", []))
+        return escape(descriptions[item["rule"]]) + " · " + location + name + locations
+    content = ('<h3>Source-backed candidates</h3><p>Review candidates, not confirmed defects. Python only; public exports are protected by default; explicitly opted-in internal directories are checked against declared Python exports. External consumers cannot be ruled out. Tests, fixtures, generated and vendor paths, package entry points, decorated definitions and referenced names are excluded. Dynamic loading and unscanned code can hide uses. Compare the cited source and callers before editing.</p>'
+               + _items((row(item) for item in findings), "No candidates identified within these controls."))
+    if comparison is not None:
+        content += '<h3>Finding changes</h3><p>Static candidate changes between clean snapshots; line movement alone does not introduce a finding. Renames may appear as resolved and introduced.</p>'
+        for status in ("introduced", "resolved", "unchanged"):
+            content += '<h4>' + status.title() + '</h4>' + _items((row(item) for item in comparison[status]), 'None.')
+    return content
+
+
+def render(template, graph, commits, readonly_check, *, modules=None, tour=None, changes=None, findings=None, finding_delta=None):
     repo = graph["repo"]
     commit = _code(repo["commit"]) if repo["commit"] else "No scanned commit"
     state = {True: "dirty", False: "clean", None: "unknown"}[repo["dirty"]]
@@ -237,11 +300,13 @@ def render(template, graph, commits, readonly_check, *, modules=None, tour=None,
         modules=_modules(modules),
         screen_nav='<a href="#screens">Screens and features</a>' if tour and tour.get("screens") else "",
         screens=_screens(tour, anchors),
+        feature_focus=_feature_focus(tour, graph.get("http_connections", []), anchors),
+        focus_nav='<a href="#feature-focus">Feature focus</a>' if tour and tour.get("steps") else "",
         tour=_tour(tour, anchors),
         files=_files(graph, files, anchors),
         http_nav='<a href="#http">HTTP connections</a>' if graph.get("http_connections") else "",
         http=_http_section(graph.get("http_connections", []), anchors),
-        audit=_audit(edges, anchors),
+        audit=_audit(edges, anchors) + _audit_findings(findings or [], anchors, finding_delta),
         changes=_changes(changes, anchors),
         history=_items(
             (f"{_code(item['commit'])} · {escape(item['date'])}" for item in commits or ()),

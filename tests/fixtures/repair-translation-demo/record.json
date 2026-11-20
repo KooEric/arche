@@ -1,0 +1,41 @@
+{
+  "execution": {
+    "model": null,
+    "prompt": "Fix the translation fallback bug described in README.md. Work only in this repository. Preserve the application and change only the return expression in translator.py. Do not access the network. Explain the change and any tests you ran.",
+    "returncode": 0,
+    "source": "synthetic demonstration; no model was run",
+    "timed_out": false
+  },
+  "prompt_variant": "task-only",
+  "provenance": {
+    "baseline": {
+      "README.md": {
+        "sha256": "db1fde6a1a0d9776e8cd101ebd32a0bbce5491a5b3ced7672c34111894aab405",
+        "size": 422,
+        "type": "file"
+      },
+      "translator.py": {
+        "sha256": "a82eedc61e0b9e221c59530e6c360abd2317b8d2a4de80d5a7f57cf7bf0fd252",
+        "size": 343,
+        "type": "file"
+      }
+    },
+    "baseline_digest": "d7a2de35d08758a1b0fa7c6d6749a4eb3458415d423924181552056aff7b9c0d",
+    "candidate": {
+      "README.md": {
+        "sha256": "db1fde6a1a0d9776e8cd101ebd32a0bbce5491a5b3ced7672c34111894aab405",
+        "size": 422,
+        "type": "file"
+      },
+      "translator.py": {
+        "sha256": "7ffc46b4d5dbc9782e7d6c9c68125ffbc82273a3a8e837ae35835b753eefcec3",
+        "size": 361,
+        "type": "file"
+      }
+    },
+    "candidate_digest": "347d9790c70c23b5840c5d1cbbba29648f3fc92c18df089a8107ba302c508810",
+    "prompt_digest": "a730051593f4fc3b8a7a800e42c828e6fd2c98e83df564fe43be395fc22c07a3"
+  },
+  "schema_version": 1,
+  "task": "translation-fallback"
+}

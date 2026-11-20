@@ -1,0 +1,54 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-22.04' || 'ubuntu-latest' }}
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - run: python evals/score.py
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build and validate tagged archives
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$(git rev-parse "$EVENT_SHA^{commit}")"
+          python tools/package-release.py "$RELEASE_TAG" --output "$RUNNER_TEMP/arche-release"
+      - name: Publish only a new release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite.' >&2
+            exit 1
+          fi
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/arche-release/arche.zip" "$RUNNER_TEMP/arche-release/arche-eval.zip" "$RUNNER_TEMP/arche-release/SHA256SUMS" --verify-tag --generate-notes "${flags[@]}"

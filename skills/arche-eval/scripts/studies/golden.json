@@ -1,0 +1,183 @@
+{
+  "cases": [
+    {
+      "id": "dispatch",
+      "required_steps": [
+        "main.py:main",
+        "handler.py:process",
+        "output.py:format_result"
+      ],
+      "expected_edges": [
+        {
+          "from": "main.py:main",
+          "to": "handler.py:process",
+          "kind": "calls"
+        },
+        {
+          "from": "handler.py:process",
+          "to": "output.py:format_result",
+          "kind": "calls"
+        }
+      ],
+      "citation_lines": {
+        "main.py:main": {
+          "main.py": [
+            4,
+            5
+          ]
+        },
+        "handler.py:process": {
+          "handler.py": [
+            4,
+            5
+          ]
+        },
+        "output.py:format_result": {
+          "output.py": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "receipt",
+      "required_steps": [
+        "cli.py:run",
+        "receipt.py:make_receipt",
+        "tax.py:total"
+      ],
+      "expected_edges": [
+        {
+          "from": "cli.py:run",
+          "to": "receipt.py:make_receipt",
+          "kind": "calls"
+        },
+        {
+          "from": "receipt.py:make_receipt",
+          "to": "tax.py:total",
+          "kind": "calls"
+        }
+      ],
+      "citation_lines": {
+        "cli.py:run": {
+          "cli.py": [
+            4,
+            5
+          ]
+        },
+        "receipt.py:make_receipt": {
+          "receipt.py": [
+            4,
+            5
+          ]
+        },
+        "tax.py:total": {
+          "tax.py": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "conjunction",
+      "required_steps": [
+        "ui.py:render"
+      ],
+      "expected_edges": [],
+      "expected_conditions": [
+        {
+          "id": "ui.py:render:show",
+          "expression": "ready and permitted and items"
+        }
+      ],
+      "citation_lines": {
+        "ui.py:render": {
+          "ui.py": [
+            1,
+            2,
+            3,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "missing_translator",
+      "required_steps": [
+        "app.py:show"
+      ],
+      "expected_edges": [],
+      "forbidden_edges": [
+        {
+          "from": "app.py:show",
+          "to": "translator.py:translate",
+          "kind": "calls"
+        }
+      ],
+      "citation_lines": {
+        "app.py:show": {
+          "app.py": [
+            3,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "pipeline",
+      "required_steps": [
+        "main.py:run",
+        "stages.py:clean",
+        "stages.py:publish"
+      ],
+      "expected_edges": [
+        {
+          "from": "main.py:run",
+          "to": "stages.py:clean",
+          "kind": "dispatches"
+        },
+        {
+          "from": "main.py:run",
+          "to": "stages.py:publish",
+          "kind": "dispatches"
+        }
+      ],
+      "forbidden_edges": [
+        {
+          "from": "main.py:run",
+          "to": "stages.py:clean",
+          "kind": "calls"
+        },
+        {
+          "from": "main.py:run",
+          "to": "stages.py:publish",
+          "kind": "calls"
+        }
+      ],
+      "citation_lines": {
+        "main.py:run": {
+          "main.py": [
+            3,
+            4,
+            5,
+            6
+          ]
+        },
+        "stages.py:clean": {
+          "stages.py": [
+            1,
+            2
+          ]
+        },
+        "stages.py:publish": {
+          "stages.py": [
+            4,
+            5
+          ]
+        }
+      }
+    }
+  ]
+}
