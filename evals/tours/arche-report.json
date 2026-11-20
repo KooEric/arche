@@ -13,14 +13,14 @@
       "path": "skills/arche/scripts/imports.py",
       "start_line": 42,
       "end_line": 53,
-      "sha256": "e95ef74ddf218c4c8e27cd6b813bbf6ed1366a1c19f9f22d7096c1ec6aaee1ea"
+      "sha256": "7d91b566233faa7b1192c2b32d25fb815bd596aa1a3ba57c85d21f4bdb00e0fb"
     },
     {
       "id": "render_html",
       "path": "skills/arche/scripts/render.py",
       "start_line": 38,
-      "end_line": 81,
-      "sha256": "8bb7b4e11a3ce203b46eaae39067b4d79625d9e6ee1ef40254f585ba7a05276e"
+      "end_line": 104,
+      "sha256": "f1efb9c318b9705f0de6ed30ede416ea21f6fdc6a61d21def9024cab66b97f89"
     }
   ],
   "edges": [

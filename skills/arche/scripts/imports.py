@@ -14,7 +14,7 @@ from pathlib import Path
 from arche_lib import cli
 from arche_lib.errors import IntegrityError
 from arche_lib.graph import build_graph
-from arche_lib.jsonio import read_json, write_json
+from arche_lib.jsonio import read_snapshot, write_json
 from arche_lib.runlog import record_step
 from arche_lib.sources import make_reader
 
@@ -43,7 +43,7 @@ def main(argv):
     args = _parser().parse_args(argv)
     out_dir = Path(args.out)
     started = time.time()
-    inventory = read_json(out_dir / INVENTORY_FILE)
+    inventory = read_snapshot(out_dir / INVENTORY_FILE)
     try:
         graph = build_graph(inventory, make_reader(inventory))
     except (KeyError, TypeError) as exc:

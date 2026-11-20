@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "model": "gpt-6.1-terra",
+  "timeout_seconds": 180,
+  "trials": 2,
+  "arms": [
+    "off",
+    "on"
+  ],
+  "sandbox": "read-only",
+  "cases": [
+    {
+      "id": "dispatch",
+      "repo": "fixtures/dispatch",
+      "question": "Trace main(value) to the returned formatted result."
+    },
+    {
+      "id": "receipt",
+      "repo": "fixtures/receipt",
+      "question": "Trace run(amount) to the returned receipt total."
+    },
+    {
+      "id": "conjunction",
+      "repo": "fixtures/conjunction",
+      "question": "Explain when render shows checkout. Include conditions as objects with id \"ui.py:render:show\" and expression exactly as in source."
+    },
+    {
+      "id": "missing_translator",
+      "repo": "fixtures/missing_translator",
+      "question": "Trace show(message). Identify only source-defined steps and calls; the imported translator implementation is absent."
+    },
+    {
+      "id": "pipeline",
+      "repo": "fixtures/pipeline",
+      "question": "Trace run(value, config) using config.json. Distinguish indirect registry dispatch from direct calls; report dispatch edges with kind \"dispatches\"."
+    }
+  ]
+}

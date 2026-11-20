@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pickup queue</title></head>
+<body><h1>Pickup queue</h1><p id="status"></p><button id="pickup">Mark picked up</button><button id="undo">Undo pickup</button>
+<script>
+let pickedUp = false;
+function render() {
+  document.querySelector('#status').textContent = pickedUp ? 'Picked up' : 'Ready for pickup';
+  document.querySelector('#pickup').hidden = pickedUp;
+  document.querySelector('#undo').hidden = !pickedUp;
+}
+document.querySelector('#pickup').onclick = () => { pickedUp = true; render(); };
+document.querySelector('#undo').onclick = () => { pickedUp = true; render(); };
+render();
+</script></body></html>

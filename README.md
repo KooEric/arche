@@ -46,8 +46,14 @@ python3 evals/score.py
 
 스킬을 설치한 Codex에서 `$arche 레포 분석`으로 시작하세요. 이어서 “번역기가 없을 때 흐름을 보여줘”, “이 두 커밋의 변경과 영향 후보를 설명해줘”, “이 투어를 Mermaid로 내보내줘”처럼 요청할 수 있습니다. Git 변경 목록에는 정적 의존성으로 찾은 영향 후보가 표시됩니다. 감사 규칙은 근거 줄과 함께 순환·반복 import를 표시합니다.
 
-[클라이언트별 호출과 투어 재사용](docs/installation-and-reuse.md) · [Terra on/off 실험과 재채점](evals/experiments/README.md)
+[클라이언트별 호출과 투어 재사용](docs/installation-and-reuse.md) · [Terra on/off 실험과 재채점](skills/arche-eval/scripts/studies/README.md)
 
 [공개 후보 변경 사항](docs/release-notes.md) · [MIT 라이선스](LICENSE)
 
 [공개 개발과 PR 절차](CONTRIBUTING.md)
+
+## 평가 및 1.0 개발
+
+`arche-eval`로 합성 레포의 코드 이해와 수정 행동을 평가하고, 저장된 실행을 모델 재호출 없이 채점할 수 있습니다.
+
+[평가 사용법](docs/evaluation.md) · [정적 감사](docs/audit.md) · [RC 자료 호환성](docs/artifact-compatibility.md) · [릴리스 패키징](docs/releasing.md)

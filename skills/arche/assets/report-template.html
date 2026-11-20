@@ -37,6 +37,12 @@ ul { padding-left: 1.4rem; overflow-wrap: anywhere; }
 .module:hover span, .module[aria-pressed="true"] span { color: #e2e9db; }
 .tour-list { list-style: none; padding: 0; }
 .step-number { display: inline-block; width: 3rem; }
+.focus-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+.focus-controls button { padding: .45rem .7rem; border: 1px solid #7a8573; background: #fffdf7; cursor: pointer; }
+.focus-controls button[aria-pressed="true"] { background: #334735; color: #fffdf7; }
+.focus-nodes { display: flex; flex-wrap: wrap; gap: .75rem; list-style: none; padding: 0; }
+.focus-nodes li { flex: 1 1 14rem; border: 1px solid #a7b1a1; padding: .7rem; background: #fffdf7; }
+.focus-nodes p { margin: .4rem 0; }
 .detail code { overflow-wrap: anywhere; }
 .filter-bar { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
 button { font: inherit; }
@@ -51,6 +57,7 @@ button { font: inherit; }
     <a href="#tour">Tour</a>
     <a href="#files">Dependencies</a>
     $screen_nav
+    $focus_nav
     $http_nav
     <a href="#changes">Changes</a>
     <a href="#audit">Audit</a>
@@ -62,6 +69,7 @@ button { font: inherit; }
   <section id="modules"><h2>Module map</h2><p>Select a module to explore its parsed files. Excluded counts include unsupported files.</p>$modules</section>
   $screens
   <section id="tour"><h2>Evidence tour</h2><p>Open each step to inspect its source location and relationships.</p>$tour</section>
+  $feature_focus
   $http
   <section id="files">
     <h2>File dependencies</h2>
@@ -77,6 +85,13 @@ button { font: inherit; }
   <section id="excluded"><h2>Excluded files</h2>$excluded</section>
 </main>
 <script>
+const focusButtons = [...document.querySelectorAll('[data-focus-select]')];
+const focusPanels = [...document.querySelectorAll('[data-focus-panel]')];
+for (const button of focusButtons) button.addEventListener('click', () => {
+  const choice = button.dataset.focusSelect;
+  for (const item of focusButtons) item.setAttribute('aria-pressed', String(item.dataset.focusSelect === choice));
+  for (const panel of focusPanels) panel.hidden = panel.dataset.focusPanel !== choice;
+});
 const changeFilter = document.getElementById('change-filter');
 if (changeFilter) {
   const changeRows = [...document.querySelectorAll('[data-change-status]')];

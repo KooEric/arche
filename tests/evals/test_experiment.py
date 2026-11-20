@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -52,3 +53,43 @@ def test_citations_and_reject_external_fixture(tmp_path):
     import pytest
     with pytest.raises(ValueError):
         experiment.load_manifest(path)
+
+
+def test_alternate_model_and_prompt_are_paired(tmp_path):
+    prompt = tmp_path / 'prompt.txt'
+    prompt.write_text('Inspect: {question}')
+    result = subprocess.run([sys.executable, str(PATH), '--dry-run', '--output', str(tmp_path / 'out'), '--model', 'alternate', '--prompt-file', str(prompt)], capture_output=True, text=True, check=True)
+    plan = json.loads(result.stdout)
+    assert plan['model'] == 'alternate'
+    for case in {item['case_id'] for item in plan['trials']}:
+        assert {item['arm'] for item in plan['trials'] if item['case_id'] == case} == {'off', 'on'}
+
+
+def test_installed_study_uses_sibling_skill_and_selected_case(tmp_path):
+    import shutil
+    skills = tmp_path / 'installed'
+    shutil.copytree(experiment.HERE.parents[2] / 'arche', skills / 'arche', ignore=shutil.ignore_patterns('__pycache__'))
+    shutil.copytree(experiment.HERE.parents[1], skills / 'arche-eval', ignore=shutil.ignore_patterns('__pycache__'))
+    fake = tmp_path / 'fake-codex'
+    fake.write_text('#!/usr/bin/env python3\nimport json\nprint(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":json.dumps({"steps":[],"edges":[]})}}))\n')
+    fake.chmod(0o755)
+    runner = skills / 'arche-eval/scripts/studies/run.py'
+    output = tmp_path / 'output'
+    subprocess.run([sys.executable, str(runner), '--cases', 'dispatch', '--codex', str(fake), '--output', str(output)], check=True, capture_output=True, text=True)
+    runs = [json.loads(line) for line in (output / 'runs.jsonl').read_text().splitlines()]
+    assert len(runs) == 4 and {r['case_id'] for r in runs} == {'dispatch'}
+    assert {r['arm'] for r in runs} == {'off', 'on'} and all(r['status'] == 'ok' for r in runs)
+    assert json.loads((output / 'input-hashes.json').read_text())['tool/codex']
+    score = skills / 'arche-eval/scripts/studies/harness_score.py'
+    subprocess.run([sys.executable, str(score), str(output / 'golden.json'), str(output / 'runs.jsonl')], check=True, capture_output=True, text=True)
+
+
+def test_malformed_response_is_recorded_and_remaining_trials_continue(tmp_path):
+    fake = tmp_path / 'codex'
+    fake.write_text('#!/usr/bin/env python3\nimport json\nprint(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":json.dumps({"steps":[{"id":"a","citations":None}],"edges":[]})}}))\n')
+    fake.chmod(0o755)
+    output = tmp_path / 'run'
+    subprocess.run([sys.executable, str(PATH), '--cases', 'dispatch', '--codex', str(fake), '--output', str(output)], check=True, capture_output=True, text=True)
+    runs = [json.loads(line) for line in (output / 'runs.jsonl').read_text().splitlines()]
+    assert len(runs) == 4
+    assert all(run['status'] == 'response_error' for run in runs)
