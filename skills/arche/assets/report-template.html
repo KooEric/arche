@@ -46,6 +46,31 @@ ul { padding-left: 1.4rem; overflow-wrap: anywhere; }
 .detail code { overflow-wrap: anywhere; }
 .filter-bar { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
 button { font: inherit; }
+
+/* The map is the first view. Keep existing detailed evidence below it. */
+#architecture, #visual-flow { margin-block: 2.4rem; }
+#architecture h2, #visual-flow h2 { font: 600 clamp(1.55rem, 3vw, 2.15rem)/1.15 Georgia, serif; }
+.map-note { margin-block: .4rem .8rem; color: #485750; }
+.map-key { display: flex; gap: .55rem 1.35rem; flex-wrap: wrap; font: .8rem/1.45 ui-monospace, monospace; color: #41544d; }
+.map-key span::before { content: ""; display: inline-block; width: 1.45rem; border-top: 2px solid #356952; vertical-align: middle; margin-right: .45rem; }
+.map-key span + span::before { border-top: 2px dashed #965721; }
+.diagram-scroll { overflow: auto; max-height: 34rem; border: 1px solid #b5c1b5; border-radius: .45rem; background: radial-gradient(circle at center, #c6d4c8 1px, transparent 1px) 0 0 / 19px 19px, #eaf0e8; }
+.diagram-scroll:focus-visible { outline: 2px solid #276349; outline-offset: 3px; }
+.diagram { position: relative; display: flex; flex-direction: column; gap: 2.75rem; padding: 1.45rem; width: max-content; min-width: 100%; box-sizing: border-box; }
+.diagram-lane { display: flex; gap: 4.5rem; align-items: stretch; }
+.diagram-lane-reverse { flex-direction: row-reverse; justify-content: flex-start; }
+.diagram-column { display: flex; flex-direction: column; justify-content: center; gap: .85rem; z-index: 1; min-width: 0; }
+.diagram canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.diagram-card { box-sizing: border-box; width: 13rem; padding: .8rem .9rem; border: 1px solid #879d8e; border-left: 4px solid #356952; border-radius: .28rem; background: #fffef7; box-shadow: 0 2px 4px #244a3813; overflow-wrap: anywhere; }
+.diagram-card strong { display: block; font-size: 1.04rem; line-height: 1.25; }
+.diagram-facts { display: block; margin-bottom: .45rem; font-size: .72rem; color: #41544d; }
+.diagram-card p:empty { display: none; }
+.diagram-card p { margin: .35rem 0 .55rem; color: #485750; font-size: .87rem; line-height: 1.42; }
+.diagram-card a { display: block; font-size: .73rem; }
+.diagram-card button { padding: .2rem .5rem; border: 1px solid #8b9c91; border-radius: .2rem; color: #244a38; background: #edf1e8; cursor: pointer; font-size: .82rem; }
+.diagram-card button:hover { background: #dfeadb; }
+#diagram-choice { font: inherit; color: inherit; max-width: 100%; padding: .4rem .55rem; background: #fffef7; border: 1px solid #879d8e; border-radius: .25rem; }
+#architecture details, #visual-flow details { font-size: .9rem; }
 </style>
 <header>
   <span class="label">ARCHE / REPOSITORY REPORT</span>
@@ -53,6 +78,8 @@ button { font: inherit; }
   <p>$snapshot</p>
   <p>$coverage</p>
   <nav aria-label="Report sections">
+    $map_nav
+    $flow_nav
     <a href="#modules">Modules</a>
     <a href="#tour">Tour</a>
     <a href="#files">Dependencies</a>
@@ -66,6 +93,8 @@ button { font: inherit; }
   </nav>
 </header>
 <main>
+  $architecture
+  $visual_flow
   <section id="modules"><h2>Module map</h2><p>Select a module to explore its parsed files. Excluded counts include unsupported files.</p>$modules</section>
   $screens
   <section id="tour"><h2>Evidence tour</h2><p>Open each step to inspect its source location and relationships.</p>$tour</section>
@@ -85,6 +114,65 @@ button { font: inherit; }
   <section id="excluded"><h2>Excluded files</h2>$excluded</section>
 </main>
 <script>
+function drawMap(map) {
+  const canvas = map.querySelector('canvas');
+  const rect = map.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const ratio = Math.min(devicePixelRatio || 1, 2);
+  canvas.width = Math.ceil(rect.width * ratio);
+  canvas.height = Math.ceil(rect.height * ratio);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.scale(ratio, ratio);
+  const cards = new Map([...map.querySelectorAll('[data-node]')].map(card =>
+    [card.dataset.node, card.getBoundingClientRect()]));
+  const links = JSON.parse(map.dataset.links);
+  for (const [from, to, kind] of links) {
+    const a = cards.get(from), b = cards.get(to);
+    if (!a || !b) continue;
+    const forward = a.right <= b.left;
+    const backward = b.right <= a.left;
+    const x = (backward ? a.left : a.right) - rect.left;
+    const end = (forward ? b.left : b.right) - rect.left;
+    const y = a.top + a.height / 2 - rect.top;
+    const targetY = b.top + b.height / 2 - rect.top;
+    const dir = forward ? 1 : -1;
+    const bend = forward || backward ? (x + end) / 2 : Math.max(x, end) + 12;
+    const dashed = kind.includes('inferred') || kind === 'http_candidate';
+    ctx.strokeStyle = dashed ? '#965721' : '#356952';
+    ctx.lineWidth = dashed ? 1.8 : 2.25;
+    ctx.setLineDash(dashed ? [6, 5] : []);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.bezierCurveTo(bend, y, bend, targetY, end, targetY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(end - dir * 8, targetY - 4);
+    ctx.lineTo(end, targetY);
+    ctx.lineTo(end - dir * 8, targetY + 4);
+    ctx.stroke();
+    if (forward && links.length <= 12) {
+      const label = kind === 'http_candidate' ? 'HTTP candidate' : kind === 'verified' ? 'imports' : kind.replace('_', ' ');
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#354c41';
+      ctx.fillText(label, bend, (y + targetY) / 2 - 7, end - x - 8);
+    }
+  }
+}
+const maps = [...document.querySelectorAll('.diagram[data-links]')];
+for (const map of maps) {
+  drawMap(map);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => drawMap(map)).observe(map);
+}
+const diagramChoice = document.getElementById('diagram-choice');
+if (diagramChoice) diagramChoice.addEventListener('change', () => {
+  for (const view of document.querySelectorAll('[data-diagram-view]')) {
+    view.hidden = view.dataset.diagramView !== diagramChoice.value;
+    if (!view.hidden) drawMap(view.querySelector('.diagram'));
+  }
+});
 const focusButtons = [...document.querySelectorAll('[data-focus-select]')];
 const focusPanels = [...document.querySelectorAll('[data-focus-panel]')];
 for (const button of focusButtons) button.addEventListener('click', () => {

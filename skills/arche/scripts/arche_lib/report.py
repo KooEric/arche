@@ -8,6 +8,7 @@ from html import escape
 from string import Template
 
 from .focus import select_steps
+from .diagrams import feature_map, system_map
 
 
 def _code(text):
@@ -292,11 +293,17 @@ def render(template, graph, commits, readonly_check, *, modules=None, tour=None,
         [f"{len(files)} parsed files", f'{len(graph["skipped"])} excluded']
         + [f"{statuses[status]} {status}" for status in ("verified", "inferred", "unresolved")]
     )
+    architecture = system_map(modules, graph, tour, anchors)
+    visual_flow = feature_map(tour, graph.get("http_connections", []), anchors)
     return Template(template).substitute(
         csp=_csp(template),
         repo=escape(repo["name"]),
         snapshot=f"{commit} · worktree {state} · Git status comparison {_code(readonly_check)}",
         coverage=coverage,
+        architecture=architecture,
+        map_nav='<a href="#architecture">System map</a>' if architecture else "",
+        visual_flow=visual_flow,
+        flow_nav='<a href="#visual-flow">Feature flow</a>' if visual_flow else "",
         modules=_modules(modules),
         screen_nav='<a href="#screens">Screens and features</a>' if tour and tour.get("screens") else "",
         screens=_screens(tour, anchors),
