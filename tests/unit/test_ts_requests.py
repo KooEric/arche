@@ -35,3 +35,36 @@ def test_records_the_host_of_an_absolute_url():
     found = requests("auth.ts", 'await fetch("https://kapi.example.com/v2/user/me");\n')
     assert found == [{"file": "auth.ts", "line": 1, "method": "GET", "path": "/v2/user/me",
                       "dynamic": False, "host": "kapi.example.com"}]
+
+
+def test_a_url_literal_followed_by_concatenation_is_not_read_as_the_whole_url():
+    source = '''fetch("/items/" + id);
+axios.get("/users/" + id + "/posts");
+fetch("/ok", { method: "POST" });
+axios.get("/fine", config);
+'''
+    assert [(r["method"], r["path"]) for r in requests("client.ts", source)] == [
+        ("POST", "/ok"), ("GET", "/fine")]
+
+
+def test_a_fetch_whose_method_cannot_be_read_is_dropped():
+    source = '''fetch("/a", opts);
+fetch("/b", { method });
+fetch("/c", { method: verb });
+fetch("/d", { method: post ? "POST" : "GET" });
+fetch("/e", { ...base });
+fetch("/f", { headers: { method: "X" } });
+fetch("/g", { body, method: "put", });
+fetch("/h", {});
+fetch("/i",);
+'''
+    assert [(r["method"], r["path"]) for r in requests("client.ts", source)] == [
+        ("GET", "/f"), ("PUT", "/g"), ("GET", "/h"), ("GET", "/i")]
+
+
+def test_many_unclosed_fetch_calls_are_read_in_linear_time():
+    import time
+    started = time.perf_counter()
+    assert requests("client.ts", "fetch(" * 8000) == []
+    assert requests("client.ts", 'fetch("/x", {' * 8000) == []
+    assert time.perf_counter() - started < 2

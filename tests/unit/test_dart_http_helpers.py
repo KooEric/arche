@@ -107,3 +107,51 @@ abstract class Api {
 }
 """
     assert requests("client.dart", source) == []
+
+
+def test_a_helper_call_with_a_concatenated_path_is_not_read():
+    source = r"""
+class Api {
+  Future<void> a(String id) async {
+    await _get('/items/' + id);
+    await _get('/items', {});
+  }
+
+  Future<void> _get(String path, [Map<String, String>? query]) async {
+    final uri = Uri.parse('${base}$path');
+    await _client.get(uri);
+  }
+}
+"""
+    assert [(r["method"], r["path"], r["line"]) for r in requests("client.dart", source)] == [
+        ("GET", "/items", 5)]
+
+
+def test_a_helper_name_declared_twice_is_not_used():
+    source = r"""
+class A {
+  Future<void> run() async {
+    await _send('/items');
+  }
+
+  Future<void> _send(String path) async {
+    await _client.get(Uri.parse('${base}$path'));
+  }
+}
+
+class B {
+  Future<void> _send(String path) async {
+    await _client.post(Uri.parse('${base}$path'));
+  }
+}
+"""
+    assert requests("client.dart", source) == []
+
+
+def test_many_helpers_are_read_in_linear_time():
+    import time
+    helper = "  Future<void> _h{0}(String path) async {{\n    await _client.get(Uri.parse('${{base}}$path'));\n  }}\n"
+    source = "class Api {\n" + "".join(helper.format(i) for i in range(2000)) + "}\n"
+    started = time.perf_counter()
+    requests("client.dart", source)
+    assert time.perf_counter() - started < 2
