@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; style-src 'sha256-h10Kv0lKrvNWIkGiS/XzpA3ncTba+IzjDRY38ltL2xo='; script-src 'sha256-wGzdcF6ZDUzZmGpIO31PH46bkUfLBo5Qafv+7G1OueM='">
+<title>pickup-list · Arkhion</title>
+<style>
+:root { color-scheme: light; background: #f8f6ed; color: #252820; font: 1rem/1.55 Georgia, serif; }
+body { margin: 0 auto; max-width: 70rem; padding: 2rem clamp(1rem, 4vw, 4rem) 4rem; }
+header { border-top: .45rem solid #334735; border-bottom: 1px solid #7a8573; padding: 1rem 0 1.2rem; }
+h1 { margin: 0; font-size: clamp(2rem, 7vw, 4.5rem); line-height: 1.1; overflow-wrap: anywhere; }
+h2 { margin: 0 0 .6rem; font-size: 1.65rem; }
+h3 { margin: 1rem 0 .2rem; font-size: 1.05rem; }
+section { margin-block: 1.8rem; }
+nav, .label, .status, code, input { font-family: ui-monospace, Menlo, monospace; }
+nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+.label, .status { font-size: .85rem; }
+.label { color: #425543; }
+a { color: #244a38; text-underline-offset: .18em; }
+a:focus-visible, summary:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid #276349; outline-offset: 3px; }
+[hidden] { display: none !important; }
+input { display: block; box-sizing: border-box; width: min(100%, 34rem); padding: .55rem; margin-bottom: .8rem; border: 1px solid #7a8573; background: #fffdf7; }
+summary { cursor: pointer; padding: .6rem .25rem; overflow-wrap: anywhere; }
+details { border-bottom: 1px solid #c6cabd; }
+details:target { outline: 2px solid #41674e; outline-offset: 3px; }
+.detail { padding: 0 .75rem 1rem; }
+ul { padding-left: 1.4rem; overflow-wrap: anywhere; }
+.status { border-bottom: 2px solid #41674e; }
+.status[data-state="inferred"] { border-bottom-style: dashed; }
+.status[data-state="unresolved"] { border-bottom-style: dotted; }
+.modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .6rem; }
+.module { text-align: left; padding: .85rem; border: 1px solid #7a8573; background: #f0f0e4; color: inherit; cursor: pointer; }
+.module strong, .module span { display: block; overflow-wrap: anywhere; }
+.module strong { font: 1.15rem Georgia, serif; }
+.module span, .step-number { font: .8rem ui-monospace, Menlo, monospace; color: #425543; }
+.module:hover, .module[aria-pressed="true"] { background: #334735; color: #fffdf7; }
+.module:hover span, .module[aria-pressed="true"] span { color: #e2e9db; }
+.tour-list { list-style: none; padding: 0; }
+.step-number { display: inline-block; width: 3rem; }
+.detail code { overflow-wrap: anywhere; }
+.filter-bar { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+button { font: inherit; }
+</style>
+<header>
+  <span class="label">ARKHION / REPOSITORY REPORT</span>
+  <h1>pickup-list</h1>
+  <p>No scanned commit · worktree unknown · Git status comparison <code>unavailable</code></p>
+  <p>1 parsed files · 2 excluded · 0 verified · 0 inferred · 0 unresolved</p>
+  <nav aria-label="Report sections">
+    <a href="#modules">Modules</a>
+    <a href="#tour">Tour</a>
+    <a href="#files">Dependencies</a>
+    <a href="#screens">Screens and features</a>
+
+    <a href="#changes">Changes</a>
+    <a href="#audit">Audit</a>
+    <a href="#history">History</a>
+    <a href="#excluded">Excluded files</a>
+  </nav>
+</header>
+<main>
+  <section id="modules"><h2>Module map</h2><p>Select a module to explore its parsed files. Excluded counts include unsupported files.</p><div class="modules"><button type="button" class="module" data-select-module="."><strong>.</strong><span>1 parsed · 2 excluded</span></button></div></section>
+  <section id="screens"><h2>Screens and features</h2><details><summary>수령 확인</summary><ul><li><strong>대기 중 / 수령 처리</strong><p>대기 상태에서 수령 처리 버튼을 누르면 수령 완료로 바뀌고 취소 버튼이 나타납니다.</p><a href="#file-0"><code>app.js</code></a>:9–10</li><li><strong>수령 완료 / 처리 취소</strong><p>처리 취소를 누르면 대기 상태로 돌아가고 수령 처리 버튼이 다시 나타납니다.</p><a href="#file-0"><code>app.js</code></a>:4–8</li></ul></details></section>
+  <section id="tour"><h2>Evidence tour</h2><p>Open each step to inspect its source location and relationships.</p><ol class="tour-list"><li class="tour-step"><details><summary><span class="step-number">01</span> <code>state</code></summary><div class="detail"><p>Evidence · <a href="#file-0"><code>app.js</code></a>:4–8</p><p>SHA-256 · <code>a740e937a881d90c3be392a43c18450f65a4c908c7db2a0a05cd3e67dfc093c2</code></p><h3>Relationships</h3><ul><li><code>handlers</code> → <code>state</code> · calls</li></ul></div></details></li><li class="tour-step"><details><summary><span class="step-number">02</span> <code>handlers</code></summary><div class="detail"><p>Evidence · <a href="#file-0"><code>app.js</code></a>:9–10</p><p>SHA-256 · <code>a740e937a881d90c3be392a43c18450f65a4c908c7db2a0a05cd3e67dfc093c2</code></p><h3>Relationships</h3><p>Starting step; no incoming tour relationship.</p></div></details></li></ol></section>
+
+  <section id="files">
+    <h2>File dependencies</h2>
+    <div class="filter-bar"><p id="module-filter">All modules</p><button type="button" id="clear-module" hidden>Show all modules</button></div>
+    <label for="search" hidden>Filter by file path</label>
+    <input type="search" id="search" hidden>
+    <p id="empty" role="status" hidden>No matching files.</p>
+    <details id="file-0" data-file="app.js" data-module="."><summary>app.js <span class="label">· javascript · 10 lines</span></summary><div class="detail"><h3>Symbols</h3><ul><li><code>display</code> · function · line 4</li><li><code>pickup</code> · variable · line 1</li><li><code>status</code> · variable · line 3</li><li><code>undo</code> · variable · line 2</li></ul><h3>Imports</h3><p>No recorded imports.</p><h3>Imported by</h3><p>No recorded importers.</p><h3>External packages</h3><p>No recorded external packages.</p></div></details>
+  </section>
+  <section id="changes"><h2>Changes and impact</h2><p>No change comparison available for this snapshot.</p></section>
+  <section id="audit"><h2>Audit</h2><p>No cycle found among verified unconditional static imports.</p><h3>Repeated static imports</h3><p>Distinct locations importing the same target may be redundant; aliases and separate uses can be intentional. Review each location before changing it.</p><p>No repeated verified unconditional imports at distinct locations.</p></section>
+  <section id="history"><h2>Recent Git history</h2><p>Git history unavailable for this snapshot.</p></section>
+  <section id="excluded"><h2>Excluded files</h2><ul><li><code>README.md</code> · unsupported_lang</li><li><code>index.html</code> · unsupported_lang</li></ul></section>
+</main>
+<script>
+const changeFilter = document.getElementById('change-filter');
+if (changeFilter) {
+  const changeRows = [...document.querySelectorAll('[data-change-status]')];
+  changeFilter.addEventListener('change', () => {
+    for (const row of changeRows) row.hidden = !!changeFilter.value && row.dataset.changeStatus !== changeFilter.value;
+    document.getElementById('change-empty').hidden = changeRows.some(row => !row.hidden);
+  });
+}
+const search = document.getElementById('search');
+const rows = [...document.querySelectorAll('[data-file]')];
+const empty = document.getElementById('empty');
+const moduleButtons = [...document.querySelectorAll('[data-select-module]')];
+const clearModule = document.getElementById('clear-module');
+const moduleFilter = document.getElementById('module-filter');
+let selectedModule = null;
+function filter() {
+  const query = search.value.trim().toLowerCase();
+  let found = false;
+  for (const row of rows) {
+    row.hidden = (selectedModule !== null && row.dataset.module !== selectedModule) || !row.dataset.file.toLowerCase().includes(query);
+    found ||= !row.hidden;
+  }
+  empty.hidden = found || (!rows.length && selectedModule === null);
+}
+function selectModule(name) {
+  selectedModule = name;
+  moduleFilter.textContent = name === null ? 'All modules' : 'Module: ' + name;
+  clearModule.hidden = name === null;
+  for (const button of moduleButtons) button.setAttribute('aria-pressed', String(button.dataset.selectModule === name));
+  filter();
+}
+for (const button of moduleButtons) {
+  button.setAttribute('aria-pressed', 'false');
+  button.addEventListener('click', () => {
+    selectModule(button.dataset.selectModule);
+    document.getElementById('files').scrollIntoView({block: 'start'});
+  });
+}
+clearModule.addEventListener('click', () => selectModule(null));
+function revealTarget() {
+  const row = document.getElementById(location.hash.slice(1));
+  if (!row?.matches('[data-file]')) return;
+  if (row.hidden) {
+    search.value = '';
+    selectModule(null);
+  }
+  row.open = true;
+  row.scrollIntoView({block: 'nearest'});
+}
+if (rows.length) {
+  search.hidden = false;
+  document.querySelector('label[for="search"]').hidden = false;
+  search.addEventListener('input', filter);
+  document.addEventListener('click', event => {
+    if (event.target.closest('a')?.hash === location.hash) revealTarget();
+  });
+  window.addEventListener('hashchange', revealTarget);
+  revealTarget();
+}
+</script>
+</html>
