@@ -27,7 +27,7 @@ FIXTURES_DIR = EVALS_DIR / "fixtures"
 EXPECTED_FILE = "expected_graph.json"
 DEFAULT_MIN_PRECISION = 0.98
 DEFAULT_MIN_RECALL = 0.95
-EXACT_SETS = ("analyzed", "skipped", "inferred", "unresolved", "externals", "symbols")
+EXACT_SETS = ("analyzed", "skipped", "inferred", "unresolved", "externals", "symbols", "http")
 OUTCOMES = ("true_positive", "false_positive", "false_negative")
 
 
@@ -56,7 +56,16 @@ def observed_sets(graph):
         "unresolved": {(_path(e["from"]), e["spec"]) for e in edges if e["status"] == "unresolved"},
         "externals": {(_path(x["from"]), x["package"]) for x in graph["externals"]},
         "symbols": {n["id"] for n in graph["nodes"] if n["type"] == "symbol"},
+        "http": {_http_key(c) for c in graph.get("http_connections", [])},
     }
+
+
+def _http_key(connection):
+    """(request file, line, method, path, reason, sorted route file:line targets)."""
+    request = connection["request"]
+    targets = tuple(sorted("%s:%d" % (r["file"], r["line"]) for r in connection["candidates"]))
+    return (request["file"], request["line"], request["method"], request["path"],
+            connection["reason"], targets)
 
 
 def expected_sets(expected):
@@ -69,6 +78,8 @@ def expected_sets(expected):
         "unresolved": {(u["from"], u["spec"]) for u in expected["unresolved"]},
         "externals": {(x["from"], x["package"]) for x in expected["externals"]},
         "symbols": set(expected["symbols"]),
+        "http": {(h["file"], h["line"], h["method"], h["path"], h["reason"], tuple(sorted(h["routes"])))
+                 for h in expected.get("http", [])},
     }
 
 

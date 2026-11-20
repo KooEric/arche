@@ -168,8 +168,8 @@ def _http_section(connections, anchors):
             + _items(candidates, "No matching literal route identified.")
         )
     return (
-        '<section id="http"><h2>Mobile requests and Worker handlers</h2>'
-        '<p>Static candidates use the HTTP method and path. The deployment host is unknown.</p>'
+        '<section id="http"><h2>HTTP requests and route handlers</h2>'
+        '<p>Candidates share the HTTP method and path shape. A request to a named outside host is listed as external_host. The deployment host of this repository is unknown.</p>'
         + _items(rows, "") + "</section>"
     )
 
