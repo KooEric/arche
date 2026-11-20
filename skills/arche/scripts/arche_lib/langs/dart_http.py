@@ -94,17 +94,48 @@ _HELPER = re.compile(r"\b(" + _IDENT + r")\s*\(\s*String\s+(" + _IDENT + r")\s*[
 _FORWARDED = re.compile(r"^(?:\$\{[^{}]+\}|\$[A-Za-z_]\w*)\$\{?(" + _IDENT + r")\}?$")
 
 
-def _body(code: str, start: int):
-    """(open, close) offsets of the first brace block after `start`."""
-    opening = code.find('{', code.find(')', start))
+def _matching(code: str, opening: int, open_char: str, close_char: str):
+    """Offset of the bracket closing the one at `opening`, or None."""
     depth = 0
-    for pos in range(opening, len(code)) if opening != -1 else ():
-        if code[pos] == '{':
+    for pos in range(opening, len(code)):
+        if code[pos] == open_char:
             depth += 1
-        elif code[pos] == '}':
+        elif code[pos] == close_char:
             depth -= 1
             if not depth:
-                return opening, pos
+                return pos
+    return None
+
+
+_MODIFIER = re.compile(r"\s*(?:async\s*\*?|sync\s*\*)?\s*")
+
+
+def _body(code: str, paren: int):
+    """(start, end) offsets of the helper's own body, or None.
+
+    `paren` is the `(` opening the parameter list. A braced body is returned as
+    (open, close); an arrow body as (just after `=>`, the terminating `;`).
+    Declarations without a body (`;`) have none.
+    """
+    close = _matching(code, paren, '(', ')')
+    if close is None:
+        return None
+    pos = _MODIFIER.match(code, close + 1).end()
+    if code.startswith('{', pos):
+        end = _matching(code, pos, '{', '}')
+        return None if end is None else (pos, end)
+    if not code.startswith('=>', pos):
+        return None
+    start = pos + 2
+    depth = 0
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in '([{':
+            depth += 1
+        elif char in ')]}':
+            depth -= 1
+        elif char == ';' and depth == 0:
+            return start, index
     return None
 
 
@@ -116,11 +147,11 @@ def _helper_requests(path: str, text: str, masked, code: str) -> list:
     """
     helpers = {}
     for match in _HELPER.finditer(code):
-        block = _body(code, match.end() - 1)
-        if block is None or code[match.end() - 1:block[0]].count('(') > code[match.end() - 1:block[0]].count(')'):
+        block = _body(code, match.group(0).index('(') + match.start())
+        if block is None:
             continue
         forwards = any(found and found.group(1) == match.group(2)
-                       for offset, body in masked.strings.items() if block[0] < offset < block[1]
+                       for offset, body in masked.strings.items() if block[0] <= offset < block[1]
                        for found in [_FORWARDED.match(body)])
         methods = {call.group(1).upper() for call in _CALL.finditer(code, block[0], block[1])}
         if forwards and len(methods) == 1:
