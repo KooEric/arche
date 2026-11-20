@@ -54,20 +54,49 @@ def _bindings(tree) -> Dict[str, dict]:
     return found
 
 
+def _mount_arguments(call):
+    """(prefix node, mounted node) of a `.mount(prefix, app)` call."""
+    def pick(position, keyword):
+        if len(call.args) > position:
+            return call.args[position]
+        return next((k.value for k in call.keywords if k.arg == keyword), None)
+    return pick(0, "path"), pick(1, "app")
+
+
 def _includes(tree, known) -> Dict[str, List[tuple]]:
-    """Router name -> [(receiving router name or None, include prefix)] per include call."""
+    """Router name -> [(receiving name or None, prefix, replaces)] per include call.
+
+    `replaces` is true for a Flask blueprint registered with its own
+    `url_prefix`, which stands in for the blueprint's prefix instead of
+    extending it. A root object passed to `.mount(prefix, obj)` is included
+    with that prefix; only a root receiver gives it a known prefix.
+    """
     found: Dict[str, List[tuple]] = {}
     for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and _callee(node) in _INCLUDES):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
             continue
-        keyword = _INCLUDES[_callee(node)]
+        receiver = node.func.value
+        name = receiver.id if isinstance(receiver, ast.Name) and receiver.id in known else None
+        if node.func.attr == "mount":
+            path, included = _mount_arguments(node)
+            if not (isinstance(included, ast.Name) and known.get(included.id, {}).get("root")):
+                continue
+            prefix = _text(path)
+            if name is not None and not known[name]["root"]:
+                name = None
+            found.setdefault(included.id, []).append(
+                (name, _UNREADABLE if prefix is None else prefix, False))
+            continue
+        if node.func.attr not in _INCLUDES:
+            continue
+        keyword = _INCLUDES[node.func.attr]
         included = node.args[0] if node.args else next(
             (k.value for k in node.keywords if k.arg == keyword), None)
         if not (isinstance(included, ast.Name) and included.id in known):
             continue
-        receiver = node.func.value if isinstance(node.func, ast.Attribute) else None
-        name = receiver.id if isinstance(receiver, ast.Name) and receiver.id in known else None
-        found.setdefault(included.id, []).append((name, _prefix(node)))
+        replaces = node.func.attr == "register_blueprint" and any(
+            k.arg == "url_prefix" for k in node.keywords)
+        found.setdefault(included.id, []).append((name, _prefix(node), replaces))
     return found
 
 
@@ -89,12 +118,14 @@ def _prefixes(tree) -> Dict[str, Tuple[str, bool]]:
             return own, False
         if not calls:
             return own, known[name]["root"]
-        receiver, prefix = calls[0]
+        receiver, prefix, replaces = calls[0]
         if receiver is None or prefix is _UNREADABLE:
             return own, False
         outer, outer_known = resolve(receiver, seen | {name})
         if not outer_known:
             return own, False
+        if replaces:
+            return join_path(outer, prefix) if prefix else outer, True
         return join_path(join_path(outer, prefix), own) if own else join_path(outer, prefix), True
 
     return {name: resolve(name, frozenset()) for name in known}

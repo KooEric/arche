@@ -112,7 +112,7 @@ def x():
 
 app.register_blueprint(blueprint=bp, url_prefix="/api")
 '''
-    assert _flags(routes("app.py", source)) == [("GET", "/api/b/x", False)]
+    assert _flags(routes("app.py", source)) == [("GET", "/api/x", False)]
 
 
 def test_route_methods_must_be_a_literal_collection_of_strings():
@@ -139,3 +139,93 @@ def d():
     return ""
 '''
     assert _flags(routes("app.py", source)) == [("POST", "/a", False), ("PUT", "/d", False)]
+
+
+def test_a_sub_application_mounted_with_a_literal_prefix_takes_it():
+    source = '''app = FastAPI()
+sub = FastAPI()
+other = FastAPI()
+
+
+@sub.get("/ping")
+def ping():
+    return {}
+
+
+@other.get("/pong")
+def pong():
+    return {}
+
+
+app.mount("/sub", sub)
+app.mount("/o", app=other)
+'''
+    assert _flags(routes("main.py", source)) == [("GET", "/sub/ping", False), ("GET", "/o/pong", False)]
+
+
+def test_a_mounted_sub_application_without_a_known_literal_mount_has_an_unknown_prefix():
+    source = '''app = FastAPI()
+sub = FastAPI()
+dyn = FastAPI()
+loose = FastAPI()
+
+
+@sub.get("/ping")
+def ping():
+    return {}
+
+
+@dyn.get("/d")
+def d():
+    return {}
+
+
+@loose.get("/l")
+def l():
+    return {}
+
+
+app.mount(PREFIX, dyn)
+outside.mount("/s", loose)
+router = APIRouter()
+router.mount("/r", sub)
+'''
+    assert _flags(routes("main.py", source)) == [
+        ("GET", "/ping", True), ("GET", "/d", True), ("GET", "/l", True)]
+
+
+def test_a_flask_blueprint_url_prefix_at_registration_replaces_its_own():
+    source = '''app = Flask(__name__)
+bp = Blueprint("b", __name__, url_prefix="/a")
+plain = Blueprint("p", __name__, url_prefix="/p")
+
+
+@bp.route("/x")
+def x():
+    return ""
+
+
+@plain.route("/y")
+def y():
+    return ""
+
+
+app.register_blueprint(bp, url_prefix="/z")
+app.register_blueprint(plain)
+'''
+    assert _flags(routes("app.py", source)) == [("GET", "/z/x", False), ("GET", "/p/y", False)]
+
+
+def test_a_fastapi_include_prefix_still_joins_the_router_prefix():
+    source = '''app = FastAPI()
+router = APIRouter(prefix="/items")
+
+
+@router.get("/{i}")
+def show(i):
+    return {}
+
+
+app.include_router(router, prefix="/api")
+'''
+    assert _flags(routes("main.py", source)) == [("GET", "/api/items/{i}", False)]

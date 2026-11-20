@@ -156,9 +156,9 @@ def _mount_targets(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[Dict[
     """(router key -> mounts made on it from other files, router keys left unknown).
 
     A mount `{file, prefix, name, router}` reaches router R of file B only when
-    `name` is imported from B and its original name is R, or is `default` and B
-    binds exactly one router. A default import of a file with several routers
-    leaves all of them unknown.
+    `name` is imported from B and its original name is R, or is `default` and
+    B's default export is router R. A default import of a file whose default
+    export is not one of its routers leaves all of them unknown.
     """
     imported = _imported_names(edges)
     targets: Dict[tuple, List[dict]] = defaultdict(list)
@@ -172,10 +172,12 @@ def _mount_targets(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[Dict[
             owned = extracted.get(target, {}).get("http_routers", {})
             if original in owned:
                 targets[(target, original)].append(mount)
-            elif original == "default" and len(owned) == 1:
-                targets[(target, next(iter(owned)))].append(mount)
             elif original == "default":
-                ambiguous.update((target, name) for name in owned)
+                exported = [name for name, info in owned.items() if info.get("default")]
+                if len(exported) == 1:
+                    targets[(target, exported[0])].append(mount)
+                else:
+                    ambiguous.update((target, name) for name in owned)
     return targets, ambiguous
 
 

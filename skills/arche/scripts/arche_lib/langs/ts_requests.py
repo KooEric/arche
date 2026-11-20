@@ -10,7 +10,7 @@ from arche_lib.lexer import JS, line_of, mask
 _IDENT = r"[A-Za-z_$][\w$]*"
 _CLIENT = re.compile(r"\b(?:const|let|var)\s+(" + _IDENT + r")\s*=\s*axios\s*\.\s*create\s*\(")
 _FETCH = re.compile(r"(?<![\w$.])fetch\s*\(\s*")
-_VERB = re.compile(r"(?<![\w$.])(" + _IDENT + r")\s*\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[^;=()]*>)?\s*\(\s*")
+_VERB = re.compile(r"(?<![\w$.])(" + _IDENT + r")\s*\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[^;=()\n]{0,200}>)?\s*\(\s*")
 _ARGUMENT_END = re.compile(r"\s*([,)])")
 _NEXT = re.compile(r"\s*(\S)")
 _KEY = re.compile(r"\s*(?:(method)\b|(" + _IDENT + r"))\s*(:)?\s*")

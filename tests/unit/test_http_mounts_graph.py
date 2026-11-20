@@ -114,13 +114,13 @@ def test_a_router_mounted_with_two_prefixes_is_not_guessed(make_repo):
         ("/list", "unresolved", "route_prefix_unknown")]
 
 
-def test_a_default_export_takes_the_prefix_only_when_the_file_binds_one_router(make_repo):
+def test_a_default_export_that_is_not_a_router_of_the_file_takes_no_prefix(make_repo):
     files = {
         "src/app.ts": 'import { Hono } from "hono";\nimport api from "./api";\n'
                       'const app = new Hono();\napp.route("/api", api);\n',
         "src/api.ts": 'import { Hono } from "hono";\nconst api = new Hono();\n'
                       'const extra = new Hono();\napi.get("/items", (c) => c.json([]));\n'
-                      'export default api;\n',
+                      'export default wrap(api);\n',
         "src/client.ts": 'fetch("/api/items");\nfetch("/items");\n',
     }
     assert _outcomes(_connections(make_repo, files)) == [
@@ -137,3 +137,27 @@ def test_a_default_export_of_a_file_with_one_router_takes_the_prefix(make_repo):
         "src/client.ts": 'fetch("/api/items");\n',
     }
     assert _outcomes(_connections(make_repo, files)) == [("/api/items", "inferred", "method_and_path")]
+
+
+def test_a_default_import_is_a_router_only_when_the_default_export_is_that_router(make_repo):
+    files = {
+        "a.ts": 'import express from "express";\nimport auth from "./u";\n'
+                'const app = express();\napp.use("/x", auth);\n',
+        "u.ts": 'import { Router } from "express";\nconst router = Router();\n'
+                'router.get("/list", h);\nexport default function auth(req, res, next) { next(); }\n',
+        "client.ts": 'export const load = () => fetch("/x/list");\n',
+    }
+    (request,) = _connections(make_repo, files)
+    assert (request["status"], request["reason"]) == ("unresolved", "no_literal_handler")
+
+
+def test_a_default_import_of_a_router_exported_as_default_takes_the_prefix(make_repo):
+    files = {
+        "a.ts": 'import express from "express";\nimport auth from "./u";\n'
+                'const app = express();\napp.use("/x", auth);\n',
+        "u.ts": 'import { Router } from "express";\nconst router = Router();\n'
+                'router.get("/list", h);\nexport { router as default };\n',
+        "client.ts": 'export const load = () => fetch("/x/list");\n',
+    }
+    (request,) = _connections(make_repo, files)
+    assert (request["status"], request["reason"]) == ("inferred", "method_and_path")

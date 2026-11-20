@@ -17,7 +17,7 @@ _CALL = re.compile(r"\b(?:" + _IDENT + r"\s*\.\s*)+(get|post|put|patch|delete|he
 _ASSIGN = re.compile(r"\b(" + _IDENT + r")\s*=(?!=|>)")
 _URI = re.compile(r"\s*Uri\s*\.\s*parse\s*\(")
 _METHOD = re.compile(r"\)\s*(?:async\s*\*?|sync\s*\*)?\s*$")
-_CONTROL = re.compile(r"\b(?:if|for|while|switch|catch|assert)\s*\([^{}]*\)\s*$")
+_CONTROL = re.compile(r"\b(?:if|for|while|switch|catch|assert)\s*\([^{}]{0,500}\)\s*$")
 _URI_END = re.compile(r"\s*,?\s*\)")
 _ARG_NAME = re.compile(r"\s*(" + _IDENT + r")\s*(?=,|\))")
 _ARGUMENT_END = re.compile(r"\s*[,)]")

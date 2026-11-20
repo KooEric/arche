@@ -115,3 +115,23 @@ def test_a_hono_app_with_a_chained_base_path_has_an_unknown_prefix():
     routes, _, routers = routes_and_mounts("app.ts", source)
     assert routers == {"app": {"sub": True}}
     assert routes[0]["prefix_unknown"] is True
+
+
+def test_a_long_run_of_type_annotations_is_read_in_linear_time():
+    import time
+    started = time.perf_counter()
+    assert routes_and_mounts("a.ts", "const a:" * 30000)[0] == []
+    assert routes_and_mounts("a.ts", "const a=Router<" * 5000)[0] == []
+    assert time.perf_counter() - started < 2
+
+
+def _default(source):
+    return [name for name, info in routes_and_mounts("u.ts", source)[2].items() if info.get("default")]
+
+
+def test_reports_the_router_a_file_exports_as_default():
+    assert _default('const router = Router();\nexport default router;\n') == ["router"]
+    assert _default('const r = Router();\nexport { r as default };\n') == ["r"]
+    assert _default('const r = Router();\nexport default function auth() {}\n') == []
+    assert _default('const r = Router();\nexport default other;\n') == []
+    assert _default('const r = Router();\nexport default r;\nexport default r;\n') == []

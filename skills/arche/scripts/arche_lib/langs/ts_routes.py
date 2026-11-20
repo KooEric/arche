@@ -19,8 +19,8 @@ from arche_lib.lexer import JS, line_of, mask
 _IDENT = r"[A-Za-z_$][\w$]*"
 _FACTORY = r"(Hono|OpenAPIHono|Router|express|fastify|Fastify)"
 _BOUND = re.compile(
-    r"\b(?:const|let|var)\s+(" + _IDENT + r")\s*(?::[^=;]+)?=\s*(?:await\s+)?(?:new\s+)?"
-    r"(?:express\s*\.\s*)?" + _FACTORY + r"\s*(?:<[^;=()]*>)?\s*\(")
+    r"\b(?:const|let|var)\s+(" + _IDENT + r")\s*(?::[^=;\n]{0,200})?=\s*(?:await\s+)?(?:new\s+)?"
+    r"(?:express\s*\.\s*)?" + _FACTORY + r"\s*(?:<[^;=()\n]{0,200}>)?\s*\(")
 _PARAM = re.compile(
     r"[(,]\s*(" + _IDENT + r")\s*:\s*(?:Hono|OpenAPIHono|Router|Express|Application|FastifyInstance)\b")
 _CALL = re.compile(
@@ -29,6 +29,9 @@ _MOUNT = re.compile(r"(?<![\w$.])(" + _IDENT + r")\s*\.\s*(route|use)\s*\(\s*")
 _TARGET = re.compile(r"\s*,\s*(" + _IDENT + r")\s*[,)]")
 _COMMA = re.compile(r"\s*,")
 _CHAINED = re.compile(r"\s*\.")
+_DEFAULT_NAME = re.compile(r"\bexport\s+default\s+(" + _IDENT + r")\s*(?:;|$)", re.M)
+_DEFAULT_AS = re.compile(r"\bexport\s*\{([^{}]{0,2000})\}")
+_AS_DEFAULT = re.compile(r"(?<![\w$])(" + _IDENT + r")\s+as\s+default\b")
 _WINDOW = 2000  # constructor arguments longer than this are not read
 
 
@@ -63,6 +66,15 @@ def routers(masked) -> Dict[str, dict]:
     for match in _PARAM.finditer(masked.text):
         found[match.group(1)] = {"sub": True}
     return found
+
+
+def _default_export(masked) -> Optional[str]:
+    """The identifier exported as default (`export default x;` or `export { x as default }`),
+    or None when there is none or more than one."""
+    names = [m.group(1) for m in _DEFAULT_NAME.finditer(masked.text)]
+    for block in _DEFAULT_AS.finditer(masked.text):
+        names.extend(_AS_DEFAULT.findall(block.group(1)))
+    return names[0] if len(names) == 1 else None
 
 
 def _outermost(name: str, local: Dict[str, set]) -> Optional[Tuple[str, str]]:
@@ -127,6 +139,9 @@ def routes_and_mounts(path: str, text: str):
     """
     masked = mask(text, JS)
     known = routers(masked)
+    exported = _default_export(masked)
+    if exported in known:
+        known[exported] = {**known[exported], "default": True}
     found = _routes(path, text, masked, known)
     local, mounts = _mounts(path, text, masked, known)
     routes = []
