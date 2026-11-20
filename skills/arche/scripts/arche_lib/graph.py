@@ -6,6 +6,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from . import SCHEMA_VERSION
 from .errors import ParseError
+from .httpmatch import connect, join_path
 from .jsonio import inventory_digest
 from .langs.registry import adapter_for
 
@@ -125,31 +126,124 @@ def _skipped(inventory: dict, failures: List[str]) -> List[dict]:
     return sorted(from_scan + from_parse, key=lambda item: item["path"])
 
 
-def _http_connections(extracted: Dict[str, dict]) -> List[dict]:
-    """Link literal Dart requests to registered routes by verb and path."""
-    routes = defaultdict(list)
-    for result in extracted.values():
-        for route in result.get("http_routes", []):
-            if not route["dynamic"]:
-                routes[route["method"], route["path"]].append(route)
+_UNKNOWN = None  # an effective prefix that could not be read
+_MOUNT_PASSES = 8  # nested mounts: app -> api -> users, with room to spare
 
-    connections = []
-    for result in extracted.values():
-        for request in result.get("http_requests", []):
-            candidates = [] if request["dynamic"] else routes[request["method"], request["path"]]
-            if request["dynamic"]:
-                reason = "dynamic_request_path"
-            elif len(candidates) > 1:
-                reason = "multiple_handlers"
-            elif candidates:
-                reason = "method_and_path"
+
+def _imported_names(edges: List[dict]) -> Dict[str, Dict[str, Optional[Tuple[str, str]]]]:
+    """File id -> local name -> (target path, original exported name).
+
+    A local name brought in by two different imports maps to None.
+    """
+    imported: Dict[str, Dict[str, Optional[Tuple[str, str]]]] = defaultdict(dict)
+    for edge in edges:
+        if edge["status"] not in _RESOLVED:
+            continue
+        aliases = edge.get("aliases", {})
+        pairs = list(aliases.items()) + [(name, name) for name in edge.get("names", ())
+                                         if name not in aliases.values() and name not in ("default", "*")]
+        target = edge["to"][len("file:"):]
+        for local, original in pairs:
+            known = imported[edge["from"]]
+            if local in known and known[local] != (target, original):
+                known[local] = None
             else:
-                reason = "no_literal_handler"
-            connections.append({
-                "request": request, "candidates": candidates, "reason": reason,
-                "status": "inferred" if len(candidates) == 1 else "unresolved",
-            })
-    return connections
+                known[local] = (target, original)
+    return imported
+
+
+def _mount_targets(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[Dict[tuple, List[dict]], set]:
+    """(router key -> mounts made on it from other files, router keys left unknown).
+
+    A mount `{file, prefix, name, router}` reaches router R of file B only when
+    `name` is imported from B and its original name is R, or is `default` and
+    B's default export is router R. A default import of a file whose default
+    export is not one of its routers leaves all of them unknown.
+    """
+    imported = _imported_names(edges)
+    targets: Dict[tuple, List[dict]] = defaultdict(list)
+    ambiguous = set()
+    for path, result in extracted.items():
+        for mount in result.get("http_mounts", []):
+            found = imported[_file_id(path)].get(mount["name"])
+            if found is None:
+                continue
+            target, original = found
+            owned = extracted.get(target, {}).get("http_routers", {})
+            if original in owned:
+                targets[(target, original)].append(mount)
+            elif original == "default":
+                exported = [name for name, info in owned.items() if info.get("default")]
+                if len(exported) == 1:
+                    targets[(target, exported[0])].append(mount)
+                else:
+                    ambiguous.update((target, name) for name in owned)
+    return targets, ambiguous
+
+
+def _effective_prefixes(extracted: Dict[str, dict], edges: List[dict]) -> Dict[tuple, Optional[str]]:
+    """(file, router) -> prefix every route on that router takes, or None when unknown.
+
+    A root router no other file mounts has the empty prefix; a sub-router no
+    other file mounts is unknown. A router mounted from several places with
+    different prefixes, or through a router whose own prefix is unknown, is
+    unknown. Mounts that do not settle within a few passes stay unknown.
+    """
+    targets, ambiguous = _mount_targets(extracted, edges)
+    base: Dict[tuple, Optional[str]] = {
+        (path, name): (_UNKNOWN if info.get("sub") else "")
+        for path, result in extracted.items()
+        for name, info in result.get("http_routers", {}).items()}
+    state = dict(base)
+    for key in ambiguous:
+        state[key] = _UNKNOWN
+    settled = False
+    for _ in range(_MOUNT_PASSES):
+        following = dict(state)
+        for key, mounts in targets.items():
+            if key in ambiguous:
+                continue
+            values = set()
+            for mount in mounts:
+                outer = state.get((mount["file"], mount["router"]), _UNKNOWN)
+                unreadable = mount.get("prefix_unknown") or outer is _UNKNOWN
+                values.add(_UNKNOWN if unreadable else join_path(outer, mount["prefix"]))
+            following[key] = values.pop() if len(values) == 1 else _UNKNOWN
+        if following == state:
+            settled = True
+            break
+        state = following
+    if not settled:
+        for key in targets:
+            state[key] = _UNKNOWN
+    return state
+
+
+def _mounted_routes(extracted: Dict[str, dict], edges: List[dict]) -> List[dict]:
+    """All routes, with prefixes from routers mounted in another file applied.
+
+    A route whose router prefix could not be read carries `prefix_unknown`.
+    """
+    prefixes = _effective_prefixes(extracted, edges)
+    routes = []
+    for path, result in extracted.items():
+        for found in result.get("http_routes", []):
+            route = {key: value for key, value in found.items()
+                     if key not in ("router", "prefix_unknown")}
+            if "router" not in found:
+                routes.append({**route, **({"prefix_unknown": True} if found.get("prefix_unknown") else {})})
+                continue
+            prefix = prefixes.get((path, found["router"]), _UNKNOWN)
+            if prefix is _UNKNOWN:
+                routes.append({**route, "prefix_unknown": True})
+            else:
+                routes.append({**route, "path": join_path(prefix, route["path"]) if prefix else route["path"]})
+    return routes
+
+
+def _http_connections(extracted: Dict[str, dict], edges: List[dict]) -> List[dict]:
+    requests = [request for result in extracted.values() for request in result.get("http_requests", [])]
+    return connect(requests, _mounted_routes(extracted, edges))
 
 
 def build_graph(inventory: dict, read_path: ReadPath) -> dict:
@@ -169,6 +263,6 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
         "nodes": _nodes(analyzed, extracted),
         "edges": sorted(edges, key=_edge_key),
         "externals": _dedupe_externals(externals),
-        "http_connections": _http_connections(extracted),
+        "http_connections": _http_connections(extracted, edges),
         "skipped": _skipped(inventory, failures),
     }

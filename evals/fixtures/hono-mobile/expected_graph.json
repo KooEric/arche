@@ -1,0 +1,104 @@
+{
+  "analyzed": [
+    "mobile/lib/api_client.dart",
+    "mobile/lib/config.dart",
+    "worker/src/index.ts",
+    "worker/src/routes/orders.ts",
+    "worker/src/session.ts"
+  ],
+  "skipped": [],
+  "imports": [
+    {
+      "from": "mobile/lib/api_client.dart",
+      "to": "mobile/lib/config.dart"
+    },
+    {
+      "from": "worker/src/index.ts",
+      "to": "worker/src/routes/orders.ts"
+    },
+    {
+      "from": "worker/src/index.ts",
+      "to": "worker/src/session.ts"
+    }
+  ],
+  "inferred": [],
+  "unresolved": [],
+  "externals": [
+    {
+      "from": "mobile/lib/api_client.dart",
+      "package": "package:http"
+    },
+    {
+      "from": "worker/src/index.ts",
+      "package": "hono"
+    },
+    {
+      "from": "worker/src/routes/orders.ts",
+      "package": "hono"
+    }
+  ],
+  "symbols": [
+    "sym:mobile/lib/api_client.dart#ApiClient",
+    "sym:mobile/lib/config.dart#Config",
+    "sym:worker/src/index.ts#app",
+    "sym:worker/src/index.ts#default",
+    "sym:worker/src/routes/orders.ts#orders",
+    "sym:worker/src/session.ts#verifyToken"
+  ],
+  "http": [
+    {
+      "file": "mobile/lib/api_client.dart",
+      "line": 12,
+      "method": "GET",
+      "path": "/catalog/version",
+      "reason": "method_and_path",
+      "routes": [
+        "worker/src/index.ts:8"
+      ]
+    },
+    {
+      "file": "mobile/lib/api_client.dart",
+      "line": 15,
+      "method": "GET",
+      "path": "/orders",
+      "reason": "method_and_path",
+      "routes": [
+        "worker/src/routes/orders.ts:5"
+      ]
+    },
+    {
+      "file": "mobile/lib/api_client.dart",
+      "line": 17,
+      "method": "GET",
+      "path": "/orders/$id",
+      "reason": "method_and_path_pattern",
+      "routes": [
+        "worker/src/routes/orders.ts:6"
+      ]
+    },
+    {
+      "file": "mobile/lib/api_client.dart",
+      "line": 19,
+      "method": "POST",
+      "path": "/auth/$provider",
+      "reason": "dynamic_request_path",
+      "routes": []
+    },
+    {
+      "file": "mobile/lib/api_client.dart",
+      "line": 21,
+      "method": "POST",
+      "path": "/events",
+      "reason": "no_literal_handler",
+      "routes": []
+    },
+    {
+      "file": "worker/src/session.ts",
+      "line": 2,
+      "method": "POST",
+      "path": "/oauth/tokeninfo",
+      "reason": "external_host",
+      "routes": []
+    }
+  ]
+}

@@ -50,7 +50,7 @@ GitHub에서 HTML 예제를 보려면 파일 페이지에서 **Download raw file
 
 ## 검증과 범위
 
-정적 분석 어댑터는 Python·TypeScript·JavaScript·Dart·Go를 지원합니다. 합성 레포 7개의 정답과 import 관계를 대조합니다. Dart의 HTTP 요청과 Worker의 OpenAPI 라우트가 발견되면 HTML의 **HTTP connections**에서 메서드·경로와 양쪽 소스 위치를 볼 수 있습니다. 유일하게 매칭된 후보도 배포 호스트와 런타임 호출은 별도 확인이 필요합니다.
+정적 분석 어댑터는 Python·TypeScript·JavaScript·Dart·Go를 지원합니다. 합성 레포 8개의 정답과 import 관계를 대조합니다. Dart·TypeScript·JavaScript의 HTTP 요청과 Hono·Express·Fastify·FastAPI·Flask 라우트가 발견되면 HTML의 **HTTP connections**에서 메서드·경로와 양쪽 소스 위치를 볼 수 있습니다. 유일하게 매칭된 후보도 배포 호스트와 런타임 호출은 별도 확인이 필요합니다.
 
 ```sh
 python3 evals/score.py
