@@ -6,8 +6,7 @@ Dart evaluation. Unknown or reassigned expressions are intentionally omitted.
 from __future__ import annotations
 
 import re
-from urllib.parse import urlsplit
-
+from ..httpmatch import request_path, request_record
 from ..lexer import DART, line_of, mask
 
 _IDENT = r"[A-Za-z_$][\w$]*"
@@ -16,25 +15,6 @@ _ASSIGN = re.compile(r"\b(" + _IDENT + r")\s*=(?!=|>)")
 _URI = re.compile(r"\s*Uri\s*\.\s*parse\s*\(")
 _METHOD = re.compile(r"\)\s*(?:async\s*\*?|sync\s*\*)?\s*$")
 _CONTROL = re.compile(r"\b(?:if|for|while|switch|catch|assert)\s*\([^{}]*\)\s*$")
-_INTERPOLATION = re.compile(r"\$\{[^{}]*\}|\$[A-Za-z_]\w*")
-
-
-def _path(value: str):
-    # A single interpolated host is allowed; any interpolation in the path
-    # remains visible to consumers and marks the result dynamic.
-    host = re.match(r"^(?:\$\{[^{}]+\}|\$[A-Za-z_]\w*)(?=/)", value)
-    if host:
-        value = value[host.end():]
-    elif value.startswith(('http://', 'https://')):
-        try:
-            parsed = urlsplit(value)
-        except ValueError:
-            return None
-        value = parsed.path or '/'
-    elif not value.startswith('/'):
-        return None
-    value = re.split(r'[?#]', value, maxsplit=1)[0]
-    return value, bool(_INTERPOLATION.search(value))
 
 
 def requests(path: str, text: str) -> list:
@@ -66,7 +46,7 @@ def requests(path: str, text: str) -> list:
         end = quote + quote_len + len(masked.strings[quote]) + quote_len
         if not re.match(r'\s*,?\s*\)', code[end:]):
             return None
-        return _path(masked.strings[quote])
+        return request_path(masked.strings[quote])
 
     events = [(m.start(), 'assign', m) for m in _ASSIGN.finditer(code)]
     events += [(m.start(), 'call', m) for m in _CALL.finditer(code)]
@@ -105,7 +85,54 @@ def requests(path: str, text: str) -> list:
                     value = next((scope[arg.group(1)] for scope, _ in reversed(scopes)
                                   if arg.group(1) in scope), None)
             if value is not None:
-                result.append({'file': path, 'line': line_of(masked, match.start(1)),
-                               'method': match.group(1).upper(), 'path': value[0],
-                               'dynamic': value[1]})
+                result.append(request_record(path, line_of(masked, match.start(1)),
+                                             match.group(1).upper(), value))
+    return sorted(result + _helper_requests(path, text, masked, code), key=lambda item: item['line'])
+
+
+_HELPER = re.compile(r"\b(" + _IDENT + r")\s*\(\s*String\s+(" + _IDENT + r")\s*[,)]")
+_FORWARDED = re.compile(r"^(?:\$\{[^{}]+\}|\$[A-Za-z_]\w*)\$\{?(" + _IDENT + r")\}?$")
+
+
+def _body(code: str, start: int):
+    """(open, close) offsets of the first brace block after `start`."""
+    opening = code.find('{', code.find(')', start))
+    depth = 0
+    for pos in range(opening, len(code)) if opening != -1 else ():
+        if code[pos] == '{':
+            depth += 1
+        elif code[pos] == '}':
+            depth -= 1
+            if not depth:
+                return opening, pos
+    return None
+
+
+def _helper_requests(path: str, text: str, masked, code: str) -> list:
+    """Calls to a same-file helper that appends its first String argument to a host.
+
+    `_getJson('/items')` is a GET of /items when `_getJson(String path, ...)`
+    builds `Uri.parse('${base}$path')` and makes exactly one kind of client call.
+    """
+    helpers = {}
+    for match in _HELPER.finditer(code):
+        block = _body(code, match.end() - 1)
+        if block is None or code[match.end() - 1:block[0]].count('(') > code[match.end() - 1:block[0]].count(')'):
+            continue
+        forwards = any(found and found.group(1) == match.group(2)
+                       for offset, body in masked.strings.items() if block[0] < offset < block[1]
+                       for found in [_FORWARDED.match(body)])
+        methods = {call.group(1).upper() for call in _CALL.finditer(code, block[0], block[1])}
+        if forwards and len(methods) == 1:
+            helpers[match.group(1)] = (methods.pop(), match.start())
+    result = []
+    for name, (method, declared) in helpers.items():
+        for call in re.finditer(r"(?<![\w$.])" + re.escape(name) + r"\s*\(", code):
+            quote = call.end()  # string bodies are blank in `code`; find the quote in the source
+            while quote < len(text) and text[quote].isspace():
+                quote += 1
+            body = masked.strings.get(quote)
+            value = request_path(body) if call.start() != declared and body is not None else None
+            if value is not None:
+                result.append(request_record(path, line_of(masked, call.start()), method, value))
     return result
