@@ -68,6 +68,8 @@ printf 'Report: %s/report.html\n' "$out"
 |---|---|
 | Codex | 새 세션에서 사용자 스킬을 한 줄로 호출해 합성 UI·CLI의 오프라인 HTML을 열었다. 빈 사용자 설치 경로에 공개 후보 ZIP을 복사해 scan·imports·render를 검증했다. 기존 전역 스킬 경로를 비활성화한 별도 Codex 세션에서도 프로젝트 로컬 설치본의 SKILL.md와 scripts를 읽고 HTML을 생성한 실행 기록을 확인했다. |
 | Claude Code | 2.1.207에서 합성 레포의 프로젝트 로컬 스킬을 `/arche 레포 분석`으로 호출해 HTML을 생성했다. 설치된 스킬 폴더는 분석에서 제외됐고, Python 소스 2개가 분석됐다. |
-| Cursor Agent | 2026.11.19-f005e9d에서 로그인과 프로젝트 스킬 읽기를 확인했다. 보고서 생성 검증을 진행 중이다. |
+| Cursor Agent | 2026.11.19-f005e9d에서 로그인과 프로젝트 스킬 읽기를 확인했다. 프로젝트 로컬 권한에서 합성 레포용 분석 명령 하나를 허용한 뒤 HTML을 생성했고, 오프라인 Chrome에서 소스 2개를 확인했다. |
 
 JSON·Markdown·Mermaid 내보내기와 소비 스킬의 무재스캔 근거 대조는 [재사용 예시](examples/tour-consumer/SKILL.md)에 있다.
+
+Cursor Agent의 비대화형 실행에서 Shell 도구가 거절되면 현재 프로젝트에서 실행할 분석 명령을 검토해 허용하세요. [Cursor CLI 권한 설정](https://cursor.com/docs/cli/reference/permissions).
