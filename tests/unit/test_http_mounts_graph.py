@@ -30,10 +30,110 @@ def test_prefixes_follow_imports_through_nested_router_files(make_repo):
     assert (outside["reason"], outside["request"]["host"]) == ("external_host", "id.example.com")
 
 
-def test_a_file_with_two_routers_keeps_its_unprefixed_paths(make_repo):
+def _outcomes(connections):
+    return [(c["request"]["path"], c["status"], c["reason"]) for c in connections]
+
+
+def test_only_the_mounted_router_of_a_file_takes_the_prefix(make_repo):
     files = {**FILES, "src/routes/users.ts":
              'import { Router } from "express";\nexport const usersRouter = Router();\n'
              'export const adminRouter = Router();\n'
-             'usersRouter.get("/:id", (req, res) => res.json({}));\n'}
-    request, _ = _connections(make_repo, files)
-    assert (request["status"], request["reason"]) == ("unresolved", "dynamic_request_path")
+             'usersRouter.get("/:id", (req, res) => res.json({}));\n'
+             'adminRouter.get("/flags/:id", (req, res) => res.json({}));\n',
+             "src/client.ts": 'export const load = (id: string) => fetch(`/api/users/${id}`);\n'
+                              'export const flags = () => fetch("/flags/1");\n'}
+    request, flags = _connections(make_repo, files)
+    assert (request["status"], request["reason"]) == ("inferred", "method_and_path_pattern")
+    assert request["candidates"][0]["path"] == "/api/users/:id"
+    assert "prefix_unknown" not in request["candidates"][0]
+    assert (flags["status"], flags["reason"]) == ("unresolved", "route_prefix_unknown")
+    assert flags["candidates"][0]["prefix_unknown"] is True
+
+
+def test_a_fastapi_router_included_from_another_file_is_not_guessed(make_repo):
+    files = {
+        "main.py": "from fastapi import FastAPI\nimport users\napp = FastAPI()\n"
+                   'app.include_router(users.router, prefix="/users")\n',
+        "users.py": "from fastapi import APIRouter\nrouter = APIRouter()\n\n\n"
+                    '@router.get("/{uid}")\ndef show(uid):\n    return {}\n',
+        "web/client.ts": 'export const health = () => fetch("/health");\n',
+    }
+    assert _outcomes(_connections(make_repo, files)) == [("/health", "unresolved", "route_prefix_unknown")]
+
+
+def test_an_express_router_mounted_through_require_is_not_guessed(make_repo):
+    files = {
+        "src/app.js": 'const express = require("express");\nconst app = express();\n'
+                      'app.use("/users", require("./users"));\n',
+        "src/users.js": 'const express = require("express");\nconst router = express.Router();\n'
+                        'router.get("/:id", (req, res) => res.json({}));\nmodule.exports = router;\n',
+        "src/client.js": 'fetch("/version");\n',
+    }
+    assert _outcomes(_connections(make_repo, files)) == [("/version", "unresolved", "route_prefix_unknown")]
+
+
+def test_a_mount_with_middleware_before_the_router_is_not_guessed(make_repo):
+    files = {
+        "src/app.ts": 'import express from "express";\nimport auth from "./auth";\n'
+                      'import users from "./users";\nconst app = express();\n'
+                      'app.use("/users", auth, users);\n',
+        "src/auth.ts": "export default function auth(req, res, next) { next(); }\n",
+        "src/users.ts": 'import { Router } from "express";\nconst router = Router();\n'
+                        'router.get("/:id", (req, res) => res.json({}));\nexport default router;\n',
+        "src/client.ts": 'fetch("/me");\n',
+    }
+    assert _outcomes(_connections(make_repo, files)) == [("/me", "unresolved", "route_prefix_unknown")]
+
+
+def test_middleware_imported_from_a_router_file_does_not_prefix_its_routes(make_repo):
+    files = {
+        "src/app.ts": 'import { Hono } from "hono";\nimport { users, requireAdmin } from "./users";\n'
+                      'const app = new Hono();\napp.use("/admin/*", requireAdmin);\n'
+                      'app.route("/admin", requireAdmin);\n',
+        "src/users.ts": 'import { Router } from "express";\nexport const users = Router();\n'
+                        'export const requireAdmin = (c, next) => next();\n'
+                        'users.get("/:id", (req, res) => res.json({}));\n',
+        "src/client.ts": 'fetch("/admin/42");\n',
+    }
+    found = _connections(make_repo, files)
+    assert [c["status"] for c in found] == ["unresolved"]
+
+
+def test_a_router_mounted_with_two_prefixes_is_not_guessed(make_repo):
+    files = {
+        "src/app.ts": 'import { Hono } from "hono";\nimport { users } from "./users";\n'
+                      'const app = new Hono();\napp.route("/a", users);\n',
+        "src/other.ts": 'import { Hono } from "hono";\nimport { users } from "./users";\n'
+                        'const other = new Hono();\nother.route("/b", users);\n',
+        "src/users.ts": 'import { Hono } from "hono";\nexport const users = new Hono();\n'
+                        'users.get("/list", (c) => c.json([]));\n',
+        "src/client.ts": 'fetch("/a/list");\nfetch("/list");\n',
+    }
+    assert _outcomes(_connections(make_repo, files)) == [
+        ("/a/list", "unresolved", "no_literal_handler"),
+        ("/list", "unresolved", "route_prefix_unknown")]
+
+
+def test_a_default_export_takes_the_prefix_only_when_the_file_binds_one_router(make_repo):
+    files = {
+        "src/app.ts": 'import { Hono } from "hono";\nimport api from "./api";\n'
+                      'const app = new Hono();\napp.route("/api", api);\n',
+        "src/api.ts": 'import { Hono } from "hono";\nconst api = new Hono();\n'
+                      'const extra = new Hono();\napi.get("/items", (c) => c.json([]));\n'
+                      'export default api;\n',
+        "src/client.ts": 'fetch("/api/items");\nfetch("/items");\n',
+    }
+    assert _outcomes(_connections(make_repo, files)) == [
+        ("/api/items", "unresolved", "no_literal_handler"),
+        ("/items", "unresolved", "route_prefix_unknown")]
+
+
+def test_a_default_export_of_a_file_with_one_router_takes_the_prefix(make_repo):
+    files = {
+        "src/app.ts": 'import { Hono } from "hono";\nimport api from "./api";\n'
+                      'const app = new Hono();\napp.route("/api", api);\n',
+        "src/api.ts": 'import { Hono } from "hono";\nconst api = new Hono();\n'
+                      'api.get("/items", (c) => c.json([]));\nexport default api;\n',
+        "src/client.ts": 'fetch("/api/items");\n',
+    }
+    assert _outcomes(_connections(make_repo, files)) == [("/api/items", "inferred", "method_and_path")]

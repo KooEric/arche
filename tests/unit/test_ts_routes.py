@@ -22,7 +22,7 @@ app.get(path, handler);
     assert _paths(routes) == [("GET", "/benefits", 2), ("POST", "/usage-events", 3)]
     assert routes[0] == {"file": "worker.ts", "line": 2, "handler_line": 2, "method": "GET",
                          "path": "/benefits", "dynamic": False, "router": "app"}
-    assert (mounts, routers) == ([], ["app"])
+    assert (mounts, routers) == ([], {"app": {"sub": False}})
 
 
 def test_recognises_express_fastify_and_typed_parameters():
@@ -39,7 +39,9 @@ server.get("/ready", ready);
     routes, _, routers = routes_and_mounts("app.ts", source)
     assert _paths(routes) == [("DELETE", "/items/:id", 5), ("ALL", "/health", 7),
                               ("PUT", "/flags", 8), ("GET", "/ready", 9)]
-    assert routers == ["admin", "app", "router", "server"]
+    assert routers == {"admin": {"sub": True}, "app": {"sub": False},
+                       "router": {"sub": True}, "server": {"sub": False}}
+    assert [bool(route.get("prefix_unknown")) for route in routes] == [True, False, True, False]
 
 
 def test_applies_prefixes_of_routers_mounted_in_the_same_file():
@@ -63,11 +65,53 @@ app.use("/me/*", jwtAuth);
 app.use(cors());
 '''
     _, mounts, _ = routes_and_mounts("app.ts", source)
-    assert mounts == [{"file": "app.ts", "line": 2, "prefix": "/api", "name": "apiRouter"},
-                      {"file": "app.ts", "line": 3, "prefix": "/me/*", "name": "jwtAuth"}]
+    assert mounts == [{"file": "app.ts", "line": 2, "prefix": "/api", "name": "apiRouter",
+                       "router": "app"}]
 
 
 def test_marks_template_paths_dynamic():
     source = 'const app = new Hono();\napp.get(`/items/${kind}`, handler);\n'
     routes, _, _ = routes_and_mounts("app.ts", source)
     assert (routes[0]["path"], routes[0]["dynamic"]) == ("/items/${kind}", True)
+
+
+def test_a_sub_router_mounted_in_the_same_file_takes_a_known_prefix():
+    source = '''const app = express();
+const users = express.Router();
+const loose = Router();
+users.get("/:id", show);
+loose.get("/:id", show);
+app.use("/users", users);
+'''
+    routes, _, _ = routes_and_mounts("app.ts", source)
+    assert [(r["path"], bool(r.get("prefix_unknown")), r.get("router")) for r in routes] == [
+        ("/users/:id", False, "app"), ("/:id", True, "loose")]
+
+
+def test_a_mount_on_a_locally_mounted_router_names_the_outermost_router():
+    source = '''const app = new Hono();
+const api = new Hono();
+api.route("/users", users);
+app.route("/v1", api);
+'''
+    _, mounts, _ = routes_and_mounts("app.ts", source)
+    assert mounts == [{"file": "app.ts", "line": 3, "prefix": "/v1/users", "name": "users",
+                       "router": "app"}]
+
+
+def test_a_router_mounted_twice_in_the_same_file_has_an_unknown_prefix():
+    source = '''const app = new Hono();
+const users = new Hono();
+users.get("/:id", show);
+app.route("/a", users);
+app.route("/b", users);
+'''
+    routes, _, _ = routes_and_mounts("app.ts", source)
+    assert routes[0]["prefix_unknown"] is True and "router" not in routes[0]
+
+
+def test_a_hono_app_with_a_chained_base_path_has_an_unknown_prefix():
+    source = 'const app = new Hono().basePath("/api");\napp.get("/items", list);\n'
+    routes, _, routers = routes_and_mounts("app.ts", source)
+    assert routers == {"app": {"sub": True}}
+    assert routes[0]["prefix_unknown"] is True
