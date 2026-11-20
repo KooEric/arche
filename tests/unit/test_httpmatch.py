@@ -72,3 +72,47 @@ def test_connect_reports_each_outcome_with_its_reason():
         ("unresolved", "dynamic_request_path", 0),
         ("unresolved", "external_host", 0),
     ]
+
+
+def test_request_path_reads_a_protocol_relative_url_as_an_outside_host():
+    assert request_path("//cdn.example.com/x") == ("/x", False, "cdn.example.com")
+
+
+def test_request_path_reads_an_interpolated_host_as_unknown():
+    assert request_path("https://$host/x") == ("/x", False, None)
+    assert request_path("https://${host}/items/${id}") == ("/items/${id}", True, None)
+    assert request_path("https://api.${domain}/x") == ("/x", False, None)
+
+
+def test_connect_never_matches_a_dynamic_route():
+    route = {**_route("GET", "/items/${kind}"), "dynamic": True}
+    connection, = connect([_request("GET", "/items/books")], [route])
+    assert (connection["status"], connection["reason"], connection["candidates"]) == (
+        "unresolved", "no_literal_handler", [])
+
+
+def test_connect_prefers_routes_whose_prefix_is_known():
+    unknown = {**_route("GET", "/items/:id", 1), "prefix_unknown": True}
+    connection, = connect([_request("GET", "/items/7")], [unknown, _route("GET", "/items/:id", 2)])
+    assert (connection["status"], connection["reason"]) == ("inferred", "method_and_path_pattern")
+    assert [route["line"] for route in connection["candidates"]] == [2]
+
+
+def test_connect_does_not_infer_from_routes_whose_prefix_is_unknown():
+    unknown = {**_route("GET", "/health", 1), "prefix_unknown": True}
+    connection, = connect([_request("GET", "/health")], [unknown])
+    assert (connection["status"], connection["reason"], connection["candidates"]) == (
+        "unresolved", "route_prefix_unknown", [unknown])
+
+
+def test_connect_does_not_infer_from_a_route_made_only_of_variables():
+    for path in ("/:id", "/{x}", "/*", "/:a/<b>"):
+        route = _route("GET", path)
+        connection, = connect([_request("GET", "/" + "/".join(["v"] * (path.count("/"))))], [route])
+        assert (connection["status"], connection["reason"], connection["candidates"]) == (
+            "unresolved", "variable_only_route", [route])
+
+
+def test_connect_counts_all_routes_once_for_an_all_request():
+    connection, = connect([_request("ALL", "/health")], [_route("ALL", "/health")])
+    assert (connection["status"], len(connection["candidates"])) == ("inferred", 1)

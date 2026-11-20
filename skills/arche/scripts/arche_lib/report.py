@@ -162,10 +162,12 @@ def _http_section(connections, anchors):
         for route in item["candidates"]:
             target = _file_link("file:" + route["file"], anchors)
             candidates.append(f"{target} · route line {route['line']:d}, handler line {route['handler_line']:d}")
+        host = f" · host {_code(request['host'])}" if request.get("host") else ""
+        empty = "" if item["reason"] == "external_host" else "No matching literal route identified."
         rows.append(
-            f"<p>{_code(request['method'])} {_code(request['path'])} · {escape(item['status'])}"
+            f"<p>{_code(request['method'])} {_code(request['path'])}{host} · {escape(item['status'])}"
             f" ({escape(item['reason'])})</p><p>{source} · request line {request['line']:d}</p>"
-            + _items(candidates, "No matching literal route identified.")
+            + (_items(candidates, empty) if candidates or empty else "")
         )
     return (
         '<section id="http"><h2>HTTP requests and route handlers</h2>'
