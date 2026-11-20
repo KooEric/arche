@@ -1,11 +1,15 @@
-# Arkhion
+# Arche
 
-Arkhion은 AI와 함께 변경한 코드베이스의 구조를 파악하고, 설명과 감사 결과를 소스 위치까지 거슬러 확인하는 [Agent Skill](https://agentskills.io/specification)입니다. 제품명은 **Arkhion**, 설치 폴더와 스킬 식별자는 **`arche`**입니다.
+Arche은 AI와 함께 변경한 코드베이스의 구조를 파악하고, 설명과 감사 결과를 소스 위치까지 거슬러 확인하는 [Agent Skill](https://agentskills.io/specification)입니다. 스킬 식별자는 **`arche`**입니다.
 
-## Codex에서 시작하기
+[공개 로드맵](docs/ROADMAP.md) · [에이전트 평가](docs/evaluation.md) · [릴리스](https://github.com/KooEric/arche/releases)
 
-1. Python 3.9 이상을 준비하고 [설치 ZIP](https://github.com/KooEric/arche/releases/download/v0.1.0-rc.1/arche-v0.1.0-rc.1.zip)을 내려받아 압축을 풉니다.
-2. `skills/arche/SKILL.md`가 보이는 압축 해제 폴더에서 아래 명령을 실행합니다. 기존 설치가 있으면 위치를 알려줍니다.
+Arche helps developers understand codebases through source-backed walkthroughs, offline reports, change audits, and reproducible synthetic agent evaluations.
+
+## 스킬 설치와 실행
+
+1. Python 3.9 이상을 준비하고 [GitHub Releases](https://github.com/KooEric/arche/releases)에서 선택한 버전의 분석 스킬 ZIP을 내려받아 압축을 풉니다.
+2. `skills/arche/SKILL.md`가 있는 폴더에서 사용하는 클라이언트에 맞게 설치합니다. 다음 명령은 Codex의 사용자 설치 예시입니다. 기존 설치가 있으면 위치를 출력합니다.
 
 ```sh
 skill_home="$HOME/.agents/skills"
@@ -16,7 +20,15 @@ else
 fi
 ```
 
-3. 분석할 레포를 열고 **새 Codex 세션**에서 **`$arche 레포 분석`**을 입력합니다. 답변에서 프로젝트 용도와 대표 흐름을 읽고, 마지막의 로컬 HTML 링크를 엽니다.
+3. 분석할 레포에서 새 세션을 열고 아래처럼 호출합니다. 답변에 있는 로컬 HTML을 열면 대표 기능과 소스 근거를 볼 수 있습니다.
+
+| 클라이언트 | 사용자 설치 위치 | 호출 예 |
+|---|---|---|
+| Codex | `~/.agents/skills/arche` | `$arche 레포 분석` |
+| Claude Code | `~/.claude/skills/arche` | `/arche 레포 분석` |
+| Cursor Agent | `~/.cursor/skills/arche` | `arche 스킬로 레포 분석해 줘` |
+
+[프로젝트별 설치, 수동 실행 및 실제 검증 기록](docs/installation-and-reuse.md)
 
 ## 어떤 결과가 나오나요?
 

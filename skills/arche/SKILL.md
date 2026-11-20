@@ -4,7 +4,7 @@ description: Explain or audit the current repository with source-backed file rol
 license: MIT
 ---
 
-# Arkhion
+# Arche
 
 Use the bundled helpers for repository facts, then explain what those facts mean for the user's question.
 

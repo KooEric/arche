@@ -57,6 +57,13 @@ GENERATED_PATTERNS = (
     "pnpm-lock.yaml",
     "go.sum",
 )
+SKILL_HOMES = frozenset({".agents", ".claude", ".cursor"})
+
+def _installed_skill(rel: str) -> bool:
+    parts = PurePosixPath(rel).parts
+    return len(parts) >= 2 and parts[0] in SKILL_HOMES and parts[1] == "skills"
+
+
 GENERATED_MARKERS = ("GENERATED", "DO NOT EDIT", "@generated")
 
 
@@ -95,10 +102,14 @@ def classify(root: Path, rel: str) -> dict:
     name = PurePosixPath(rel).name
     if os.path.islink(full) or not is_within(root, full):
         return _skipped(rel, "symlink")
+    if _installed_skill(rel):
+        return _skipped(rel, "installed_skill")
     if os.path.isdir(full):
         return _skipped(rel, "vendored" if name in VENDORED_DIRS else "submodule")
     if _matches(name, SECRET_PATTERNS):
         return _skipped(rel, "secret")
+    if not full.is_file():
+        return _skipped(rel, "unreadable")
     try:
         size = os.path.getsize(full)
         if size > MAX_BYTES:
@@ -130,7 +141,7 @@ def walk_files(root: Path) -> List[str]:
         for dirname in sorted(dirnames):
             if dirname == GIT_DIR:
                 continue
-            if dirname in VENDORED_DIRS or os.path.islink(os.path.join(current, dirname)):
+            if _installed_skill(prefix + dirname) or dirname in VENDORED_DIRS or os.path.islink(os.path.join(current, dirname)):
                 found.append(prefix + dirname)
                 continue
             descend.append(dirname)
