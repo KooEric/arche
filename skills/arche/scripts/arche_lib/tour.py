@@ -79,6 +79,9 @@ def validate_tour(
         label = f"steps[{index}]"
         step = _mapping(raw_step, label)
         _required(step, ("id", "path", "start_line", "end_line", "sha256"), label)
+        for optional in ("label", "description"):
+            if optional in step:
+                _string(step[optional], f"{label}.{optional}")
         step_id = _string(step["id"], f"{label}.id")
         if step_id in step_ids:
             _bad(f"duplicate step id: {step_id}")
@@ -141,3 +144,22 @@ def validate_tour(
                 _string(item.get(key), "screen item." + key)
             if item["step"] not in step_ids:
                 _bad("screen item references an unknown step")
+
+    if "overview" in document:
+        overview = _mapping(document["overview"], "overview")
+        _string(overview.get("summary"), "overview.summary")
+        roles = overview.get("modules", [])
+        if not isinstance(roles, list):
+            _bad("overview.modules must be a list")
+        known = {path.split("/", 1)[0] if "/" in path else "." for path in inventory_files}
+        seen = set()
+        for role in roles:
+            role = _mapping(role, "overview module")
+            module = _string(role.get("module"), "overview module path")
+            if module not in known or module in seen:
+                _bad("overview module must identify a unique inventory module")
+            seen.add(module)
+            _string(role.get("title"), "overview module title")
+            _string(role.get("description"), "overview module description")
+            if role.get("step") not in step_ids:
+                _bad("overview module references an unknown step")
