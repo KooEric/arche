@@ -1,11 +1,11 @@
 """Build graph.json content: file and symbol nodes plus IMPORTS edges."""
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import SCHEMA_VERSION
 from .errors import ParseError
+from .httpmatch import connect
 from .jsonio import inventory_digest
 from .langs.registry import adapter_for
 
@@ -126,30 +126,9 @@ def _skipped(inventory: dict, failures: List[str]) -> List[dict]:
 
 
 def _http_connections(extracted: Dict[str, dict]) -> List[dict]:
-    """Link literal Dart requests to registered routes by verb and path."""
-    routes = defaultdict(list)
-    for result in extracted.values():
-        for route in result.get("http_routes", []):
-            if not route["dynamic"]:
-                routes[route["method"], route["path"]].append(route)
-
-    connections = []
-    for result in extracted.values():
-        for request in result.get("http_requests", []):
-            candidates = [] if request["dynamic"] else routes[request["method"], request["path"]]
-            if request["dynamic"]:
-                reason = "dynamic_request_path"
-            elif len(candidates) > 1:
-                reason = "multiple_handlers"
-            elif candidates:
-                reason = "method_and_path"
-            else:
-                reason = "no_literal_handler"
-            connections.append({
-                "request": request, "candidates": candidates, "reason": reason,
-                "status": "inferred" if len(candidates) == 1 else "unresolved",
-            })
-    return connections
+    requests = [request for result in extracted.values() for request in result.get("http_requests", [])]
+    routes = [route for result in extracted.values() for route in result.get("http_routes", [])]
+    return connect(requests, routes)
 
 
 def build_graph(inventory: dict, read_path: ReadPath) -> dict:
