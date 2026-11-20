@@ -1,11 +1,12 @@
 """Build graph.json content: file and symbol nodes plus IMPORTS edges."""
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import SCHEMA_VERSION
 from .errors import ParseError
-from .httpmatch import connect
+from .httpmatch import connect, join_path
 from .jsonio import inventory_digest
 from .langs.registry import adapter_for
 
@@ -125,10 +126,39 @@ def _skipped(inventory: dict, failures: List[str]) -> List[dict]:
     return sorted(from_scan + from_parse, key=lambda item: item["path"])
 
 
-def _http_connections(extracted: Dict[str, dict]) -> List[dict]:
+def _mounted_routes(extracted: Dict[str, dict], edges: List[dict]) -> List[dict]:
+    """All routes, with prefixes from routers mounted in another file applied.
+
+    A mount is followed through the import that brings its name into the file.
+    The prefix is applied only when the imported file binds exactly one router,
+    so the routes it belongs to are not a guess.
+    """
+    imported = defaultdict(dict)
+    for edge in edges:
+        if edge["status"] in _RESOLVED:
+            for name in list(edge.get("names", ())) + list(edge.get("aliases", {})):
+                imported[edge["from"]].setdefault(name, edge["to"])
+    owners = {path: result.get("http_routers", []) for path, result in extracted.items()}
+    prefixes: Dict[str, str] = {}
+    for _ in range(4):  # nested mounts: app -> api -> users
+        for path, result in extracted.items():
+            for mount in result.get("http_mounts", []):
+                target = imported[_file_id(path)].get(mount["name"], "").removeprefix("file:")
+                if len(owners.get(target, ())) == 1:
+                    prefixes[target] = join_path(prefixes.get(path, ""), mount["prefix"])
+    routes = []
+    for path, result in extracted.items():
+        for found in result.get("http_routes", []):
+            route = {key: value for key, value in found.items() if key != "router"}
+            if path in prefixes and "router" in found:
+                route["path"] = join_path(prefixes[path], route["path"])
+            routes.append(route)
+    return routes
+
+
+def _http_connections(extracted: Dict[str, dict], edges: List[dict]) -> List[dict]:
     requests = [request for result in extracted.values() for request in result.get("http_requests", [])]
-    routes = [route for result in extracted.values() for route in result.get("http_routes", [])]
-    return connect(requests, routes)
+    return connect(requests, _mounted_routes(extracted, edges))
 
 
 def build_graph(inventory: dict, read_path: ReadPath) -> dict:
@@ -148,6 +178,6 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
         "nodes": _nodes(analyzed, extracted),
         "edges": sorted(edges, key=_edge_key),
         "externals": _dedupe_externals(externals),
-        "http_connections": _http_connections(extracted),
+        "http_connections": _http_connections(extracted, edges),
         "skipped": _skipped(inventory, failures),
     }
