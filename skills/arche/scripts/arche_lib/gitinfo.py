@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 GIT_TIMEOUT_SECONDS = 60
+SUBJECT_LIMIT = 120
 
 # A hostile repository can set core.fsmonitor to a command that `git status`
 # would execute. Override it on every call, and pass --no-optional-locks so
@@ -77,11 +78,12 @@ def recent_commits(root: Path, commit: str) -> Optional[List[dict]]:
     """Return up to 12 commits reachable from the scanned revision."""
     out = _git(
         root, "log", "--no-show-signature", "--no-notes", "--no-decorate",
-        "--max-count=12", "--format=%H %cI", commit, "--", ".",
+        "--max-count=12", "--format=%H %cI %s", commit, "--", ".",
     )
     if out is None:
         return None
-    return [
-        {"commit": revision, "date": date}
-        for revision, date in (line.split(" ", 1) for line in out.decode("ascii").splitlines())
-    ]
+    commits = []
+    for line in out.decode("utf-8", errors="replace").splitlines():
+        revision, date, *subject = line.split(" ", 2)
+        commits.append({"commit": revision, "date": date, "subject": subject[0][:SUBJECT_LIMIT] if subject else ""})
+    return commits

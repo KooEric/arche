@@ -74,3 +74,18 @@ def test_modules_and_optional_validated_tour(make_repo, run_script, tmp_path):
     done = run_script("render.py", "--out", out, "--tour", tour_path)
     assert done.returncode != 0
     assert "stale SHA256" in done.stderr
+
+
+def test_one_command_runs_every_step(make_repo, run_script, tmp_path, git_cmd):
+    repo = make_repo({"a.py": "import b\n", "b.py": "pass\n"})
+    out = tmp_path / "out"
+    done = run_script("arche.py", repo, "--out", out, "--lang", "ko")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert summary["step"] == "arche" and summary["analyzed"] == 2 and summary["edges"] == {"verified": 1}
+    html = (out / "report.html").read_text(encoding="utf-8")
+    assert summary["report"] == str((out / "report.html").resolve())
+    assert '<html lang="ko">' in html
+    subject = git_cmd(repo, "log", "-1", "--format=%s").strip()
+    assert subject in html
+    assert run_script("arche.py", repo / "missing").returncode != 0

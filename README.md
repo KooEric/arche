@@ -32,21 +32,34 @@ fi
 
 ## 어떤 결과가 나오나요?
 
-**화면에서 코드로.** 합성 수령 확인 앱에서 ‘수령 처리’를 누르면 상태가 ‘수령 완료’로 바뀌고 ‘처리 취소’가 나타납니다. 리포트의 **Screens and features**를 펼치면 이 전환을 설명하는 `app.js` 줄을 찾을 수 있습니다.
+**화면에서 코드로.** 합성 수령 확인 앱에서 ‘수령 처리’를 누르면 상태가 ‘수령 완료’로 바뀌고 ‘처리 취소’가 나타납니다. 리포트의 **화면과 기능**에서 이 전환을 설명하는 `app.js` 줄을 찾을 수 있습니다.
 
 ![수령 확인 화면의 상태와 버튼을 app.js의 근거 줄에 연결한 리포트](docs/examples/first-run/ui.png)
 
-[UI 소스](evals/walkthrough-fixtures/ui) · [오프라인 UI 리포트](docs/examples/first-run/ui.html)
+[UI 소스](evals/walkthrough-fixtures/ui) · [오프라인 UI 리포트](docs/examples/first-run/ui.html) · [리포트에 쓴 투어](docs/examples/first-run/ui-tour.json)
 
-**명령에서 출력으로.** 합성 CLI에서 `python3 count_tags.py red red blue`의 예상 출력은 순서대로 `blue 1`, `red 2`입니다. **File dependencies**에서 `count_tags.py`를 펼치면 집계를 담당하는 `tally.py`로 이어지는 import를 확인할 수 있습니다.
+**명령에서 출력으로.** 합성 CLI에서 `python3 count_tags.py red red blue`의 예상 출력은 순서대로 `blue 1`, `red 2`입니다. **파일 의존성**에서 `count_tags.py`를 펼치면 집계를 담당하는 `tally.py`로 이어지는 import를 확인할 수 있습니다.
 
-![count_tags.py의 의존 파일과 import 근거를 펼친 리포트](docs/examples/first-run/cli.png)
+![count_tags.py와 tally.py의 핵심 파일 순위와 의존성 맵을 보여 주는 리포트](docs/examples/first-run/cli.png)
 
 [CLI 소스](evals/walkthrough-fixtures/cli) · [오프라인 CLI 리포트](docs/examples/first-run/cli.html)
 
 GitHub에서 HTML 예제를 보려면 파일 페이지에서 **Download raw file**을 선택하고 내려받은 파일을 브라우저로 여세요. 직접 설치를 시험해 볼 수 있는 [첫 사용자 과제](docs/first-use.md)도 있습니다.
 
-스킬은 결과를 레포 밖의 새 디렉터리에 씁니다. HTML은 브라우저에서 오프라인으로 열 수 있습니다. 파일명을 검색하고 파일을 펼쳐 심볼, 들어오고 나가는 의존성, 외부 패키지, 근거 위치를 볼 수 있습니다. 리포트에는 분석 제외 사유, 최근 Git 커밋, 검증된 정적 import의 대표 순환 참조가 포함됩니다. 파일의 역할과 배경은 에이전트가 소스 근거를 바탕으로 대화에서 설명합니다.
+스킬은 결과를 레포 밖의 새 디렉터리에 씁니다. HTML은 브라우저에서 오프라인으로 열 수 있고 라이트·다크 테마와 한국어·영어 화면을 지원합니다. 리포트는 다음 순서로 읽습니다.
+
+- **개요와 요약**: 파일·줄·심볼·의존성 수, 언어 비율, 에이전트가 소스를 읽고 쓴 요약을 봅니다.
+- **핵심 파일**: 진입점 후보, 가장 많이 의존되는 파일, 가장 큰 파일에서 읽기 시작할 곳을 고릅니다.
+- **의존성 맵**: 폴더를 눌러 펼치며 import 방향을 따라갑니다. 서로 순환하는 파일은 같은 열에 놓입니다.
+- **화면과 기능, 근거 투어**: 버튼과 단계마다 설명과 소스 줄 범위를 확인합니다.
+- **파일 의존성**: 파일명을 검색하고 파일을 펼쳐 심볼, 들어오고 나가는 의존성, 외부 패키지, 근거 위치를 봅니다.
+
+에이전트 없이 직접 실행하려면 한 줄이면 됩니다. 출력의 `report` 경로를 브라우저로 여세요.
+
+```sh
+python3 -B skills/arche/scripts/arche.py /path/to/repo --lang ko
+```
+ 리포트에는 분석 제외 사유, 최근 Git 커밋, 검증된 정적 import의 대표 순환 참조가 포함됩니다. 파일의 역할과 배경은 에이전트가 소스 근거를 바탕으로 대화에서 설명합니다.
 
 ## 검증과 범위
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from arche_lib import cli, gitinfo
 from arche_lib.audit import build_audit, delta
+from arche_lib.i18n import LANGUAGES
 from arche_lib.errors import IntegrityError, UsageError
 from arche_lib.jsonio import check_graph, inventory_digest, read_snapshot, read_json, write_json, write_text
 from arche_lib.paths import is_within
@@ -42,6 +43,7 @@ def main(argv):
     parser.add_argument("--internal-exports", action="append", default=[], metavar="DIR", help="opt in a repository-relative internal directory for explicit Python export checks")
     parser.add_argument("--base-out", type=Path, help="clean base snapshot run directory for finding comparison")
     parser.add_argument("--tour", type=Path, help="optional tour JSON to validate and include")
+    parser.add_argument("--lang", choices=LANGUAGES, default="en", help="language of the report interface (default: en)")
     args = parser.parse_args(argv)
     out = args.out
     started = time.time()
@@ -93,7 +95,7 @@ def main(argv):
                 raise IntegrityError("base audit and graph snapshots do not match")
             base_findings = base_audit["findings"]
             finding_delta = delta(base_findings, findings)
-        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta)
+        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang)
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise IntegrityError(f"invalid report inputs: {exc!r}") from None
 

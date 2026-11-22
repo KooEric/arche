@@ -38,7 +38,7 @@ def test_skill_scripts_import_only_the_standard_library():
         (str(path.relative_to(SCRIPTS_DIR)), name)
         for path in SCRIPTS_DIR.rglob("*.py")
         for name in set(_top_level_imports(path))
-        if name != OWN_PACKAGE and not _is_stdlib(name)
+        if name != OWN_PACKAGE and not (SCRIPTS_DIR / f"{name}.py").is_file() and not _is_stdlib(name)
     )
 
     assert offenders == []
