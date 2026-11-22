@@ -89,3 +89,34 @@ def test_one_command_runs_every_step(make_repo, run_script, tmp_path, git_cmd):
     subject = git_cmd(repo, "log", "-1", "--format=%s").strip()
     assert subject in html
     assert run_script("arche.py", repo / "missing").returncode != 0
+
+
+def test_cited_step_survives_edits_elsewhere_and_fails_when_its_lines_change(make_repo, run_script, tmp_path):
+    body = "def keep():\n    return 1\n"
+    repo = make_repo({"a.py": "import os\n\n" + body})
+    out = tmp_path / "out"
+    assert run_script("arche.py", repo, "--out", out).returncode == 0
+    done = run_script("cite.py", "--out", out, "--path", "a.py", "--start", "3", "--end", "4", "--id", "keep")
+    assert done.returncode == 0, done.stderr
+    step = json.loads(done.stdout)
+    assert step["id"] == "keep" and len(step["range_sha256"]) == 64
+    tour = tmp_path / "tour.json"
+    tour.write_text(json.dumps({"version": 1, "steps": [step], "edges": []}))
+
+    # Lines added above move the citation; the tour follows them.
+    (repo / "a.py").write_text("import os\nimport sys\n\n\n" + body)
+    moved = tmp_path / "moved"
+    done = run_script("arche.py", repo, "--out", moved, "--tour", tour)
+    assert done.returncode == 0, done.stderr
+    assert ":5–6" in (moved / "report.html").read_text(encoding="utf-8")
+    fresh = tmp_path / "fresh.json"
+    done = run_script("cite.py", "--out", moved, "--refresh", tour, "--output", fresh)
+    assert json.loads(done.stdout)["reanchored"] == ["keep"]
+    assert json.loads(fresh.read_text())["steps"][0]["start_line"] == 5
+
+    # Editing the cited lines themselves makes the citation stale.
+    (repo / "a.py").write_text("import os\n\ndef keep():\n    return 2\n")
+    done = run_script("arche.py", repo, "--out", tmp_path / "stale", "--tour", tour)
+    assert done.returncode != 0 and "stale SHA256" in done.stderr
+
+    assert run_script("cite.py", "--out", out, "--path", "missing.py", "--start", "1").returncode != 0

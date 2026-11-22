@@ -32,6 +32,8 @@ _JAVA_DECL = re.compile(rf"(?m)^[ \t]*{_ANNOTATIONS}({_MODIFIERS})(class|interfa
 _KOTLIN_DECL = re.compile(rf"(?m)^[ \t]*{_ANNOTATIONS}({_MODIFIERS})(fun\s+interface|class|interface|object|typealias|fun|val|var)\b[ \t]*([^\n]*)")
 _KOTLIN_MEMBER = re.compile(rf"(?:<[^>]*>\s*)?(?:[\w<>?,.\s]*\.)?({_NAME})")
 _TYPE_REFERENCE = re.compile(r"(?<![\w$.])[A-Z][\w$]*")
+_CALL = re.compile(r"(?<![\w$.])([a-z_][\w$]*)\s*\(")
+_LOCAL_FUNCTION = re.compile(rf"\bfun\s+(?:<[^>]*>\s*)?(?:[\w<>?,.\s]*\.)?({_NAME})\s*\(")
 _KINDS = {"class": "class", "interface": "interface", "enum": "enum", "record": "class", "@interface": "class",
           "object": "class", "typealias": "typedef", "fun": "function", "val": "variable", "var": "variable"}
 _TYPE_KINDS = frozenset({"class", "interface", "enum", "typedef"})
@@ -92,12 +94,17 @@ def extract(path, text):
     # A capitalized name that is neither imported nor declared here may be a type
     # from the same package. The resolver keeps only the names that really are.
     seen = set(imported) | declared
-    for match in _TYPE_REFERENCE.finditer(masked.text, body_start):
-        name = match.group(0)
+    candidates = [(match.start(), match.group(0)) for match in _TYPE_REFERENCE.finditer(masked.text, body_start)]
+    if kotlin:
+        # A bare call may reach a top-level function of the same package. Names this
+        # file defines at any depth are left out, since a member or local function wins.
+        seen |= {match.group(1) for match in _LOCAL_FUNCTION.finditer(masked.text)}
+        candidates += [(match.start(1), match.group(1)) for match in _CALL.finditer(masked.text, body_start)]
+    for offset, name in sorted(candidates):
         if name in seen:
             continue
         seen.add(name)
-        line = line_of(masked, match.start())
+        line = line_of(masked, offset)
         imports.append({"spec": name, "line": line, "quote": source_line(lines, line), "names": [name], "implicit": True})
     references = {match.group(0) for match in _TYPE_REFERENCE.finditer(masked.text, body_start)}
     return {"imports": imports, "symbols": symbols, "package": package, "references": references}
@@ -110,10 +117,11 @@ class Context(NamedTuple):
     package_of: dict    # file -> package
     references: dict    # file -> capitalized names used in its code
     type_names: dict    # file -> type names it declares
+    functions: dict     # fully qualified Kotlin top-level function -> files that declare it
 
 
 def build_context(parsed_paths, all_paths, read_path):
-    declared, types, packages, package_of, references, type_names = {}, {}, {}, {}, {}, {}
+    declared, types, packages, package_of, references, type_names, functions = {}, {}, {}, {}, {}, {}, {}
     for path in sorted(parsed_paths):
         try:
             result = extract(path, read_path(path) or "")
@@ -129,11 +137,13 @@ def build_context(parsed_paths, all_paths, read_path):
             declared.setdefault(prefix + symbol["name"], []).append(path)
             if symbol["kind"] in _TYPE_KINDS:
                 types.setdefault(prefix + symbol["name"], []).append(path)
+            elif symbol["kind"] == "function":
+                functions.setdefault(prefix + symbol["name"], []).append(path)
         # Java names a public type after its file; cover a declaration the pattern missed.
         stem = posixpath.basename(path).rsplit(".", 1)[0]
         if not _is_kotlin(path) and path not in declared.get(prefix + stem, ()):
             declared.setdefault(prefix + stem, []).append(path)
-    return Context(declared, types, packages, package_of, references, type_names)
+    return Context(declared, types, packages, package_of, references, type_names, functions)
 
 
 def _targets(paths, names, rule):
@@ -155,7 +165,8 @@ def resolve(imp, importer, ctx):
     spec = imp["spec"]
     if imp.get("implicit"):
         package = ctx.package_of.get(importer, "")
-        paths = [path for path in ctx.types.get((package + "." if package else "") + spec, ()) if path != importer]
+        index = ctx.types if spec[:1].isupper() else ctx.functions
+        paths = [path for path in index.get((package + "." if package else "") + spec, ()) if path != importer]
         return [{"status": "inferred", "to": path, "names": [spec], "rule": "jvm_same_package"} for path in paths]
 
     if spec.endswith(".*"):

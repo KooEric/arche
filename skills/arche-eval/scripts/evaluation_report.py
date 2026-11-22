@@ -225,14 +225,21 @@ def write_report(out, rows):
                       + " · ".join(links) + f"<pre>{escape(trial_data)}</pre>" + "".join(sources) + "</details>")
     html = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'">
-<title>Arche evaluation</title><style>body{font:16px/1.5 system-ui;max-width:85rem;margin:3rem auto;padding:0 1rem}
-table{border-collapse:collapse}td,th{text-align:left;padding:.5rem;border-bottom:1px solid #bbb}
-details{padding:.7rem 0}summary{cursor:pointer}pre{overflow:auto;background:#f3f4f0;padding:1rem}</style>
-<h1>Agent evaluation</h1><table><thead><tr>"""
+<title>Arche evaluation</title><style>:root{color-scheme:light dark;--ink:#111214;--muted:#6a6d75;--line:#e9e9ec;--sunken:#f5f5f6;--bg:#fff;--accent:#0e7a4f;
+--sans:"Pretendard Variable","Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif;
+--mono:"JetBrains Mono","D2Coding","SF Mono",ui-monospace,Menlo,Consolas,monospace}
+@media(prefers-color-scheme:dark){:root{--ink:#ececee;--muted:#8f939b;--line:#202326;--sunken:#16181a;--bg:#0c0d0e;--accent:#5fd49b}}
+body{font:14.5px/1.65 var(--sans);max-width:85rem;margin:3rem auto;padding:0 1.5rem;background:var(--bg);color:var(--ink)}
+h1,h2{font-family:var(--mono);font-weight:600;letter-spacing:-.02em}h1{font-size:1.9rem}h2{font-size:1.02rem;margin-top:3rem;padding-bottom:.7rem;border-bottom:1px solid var(--line)}
+a{color:var(--accent)}.table{overflow-x:auto}table{border-collapse:collapse;font-size:.86rem;width:100%}
+th{font:500 .76rem var(--mono);color:var(--muted);white-space:nowrap}td,th{text-align:left;padding:.5rem .8rem .5rem 0;border-bottom:1px solid var(--line)}
+details{padding:.6rem 0;border-bottom:1px solid var(--line)}summary{cursor:pointer}code,pre{font-family:var(--mono);font-size:.82rem}
+pre{overflow:auto;background:var(--sunken);padding:1rem;border-radius:8px}</style>
+<h1>Agent evaluation</h1><div class="table"><table><thead><tr>"""
     headers = ["Task", "Model", "Configuration", "Passed", "Trials", "Execution errors", "Mean seconds",
                "Seconds range", "Mean input tokens", "Mean output tokens", "Mean cost", "Format errors", "Support errors"]
     html += "".join(f"<th>{h}</th>" for h in headers) + "</tr></thead><tbody>" + "".join(body)
-    html += "</tbody></table><h2>Trial evidence</h2>" + "".join(trials)
+    html += "</tbody></table></div><h2>Trial evidence</h2>" + "".join(trials)
     out.mkdir(parents=True, exist_ok=False)
     (out/"report.html").write_text(html, encoding="utf-8")
     (out/"comparison.json").write_text(json.dumps({"schema_version": 1, "summary": summary, "trials": rows},

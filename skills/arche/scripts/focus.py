@@ -9,7 +9,7 @@ from arche_lib.focus import http_steps, mermaid, select
 from arche_lib.jsonio import check_graph, read_json, read_snapshot, write_json, write_text
 from arche_lib.paths import is_within
 from arche_lib.sources import make_reader
-from arche_lib.tour import validate_tour
+from arche_lib.tour import refresh_tour, validate_tour
 
 
 
@@ -28,6 +28,7 @@ def main(argv):
     if is_within(Path(inventory["repo"]["root"]), args.output) or args.output.exists():
         raise UsageError("choose a new output file outside the repository")
     tour = read_json(args.tour)
+    tour, _ = refresh_tour(tour, inventory, make_reader(inventory))
     validate_tour(tour, inventory, make_reader(inventory))
     focused = select(tour, args.query, args.hops, graph.get("http_connections", []))
     if args.format == "mermaid":

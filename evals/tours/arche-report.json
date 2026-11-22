@@ -8,7 +8,8 @@
       "end_line": 67,
       "sha256": "4fc120ac34bd2ca755f2f2405581ad547867966677227cd54bb729313b196bff",
       "title": "Scan the repository",
-      "note": "Classifies every file and writes inventory.json and the run record."
+      "note": "Classifies every file and writes inventory.json and the run record.",
+      "range_sha256": "bbe46243cdc0258c6296cd8dca3cbc70b7bc0a859de4226df9d9914b4c0a125d"
     },
     {
       "id": "imports_graph",
@@ -17,16 +18,18 @@
       "end_line": 53,
       "sha256": "7d91b566233faa7b1192c2b32d25fb815bd596aa1a3ba57c85d21f4bdb00e0fb",
       "title": "Resolve imports",
-      "note": "Reads the inventory, parses supported languages and writes graph.json."
+      "note": "Reads the inventory, parses supported languages and writes graph.json.",
+      "range_sha256": "1b57ad0b115a95361ec3de9dd3b113fd5b972d2d26a80f6829f2a67f57716a7e"
     },
     {
       "id": "render_html",
       "path": "skills/arche/scripts/render.py",
       "start_line": 40,
-      "end_line": 106,
-      "sha256": "a57a8b78801c10b8a0c0af9bf52afcd76f787b37a56c6e0e7bc90e63b4009078",
+      "end_line": 111,
+      "sha256": "7ff99dbdbd9472d46377d9d9c524bc48d3f32556b5d14c05a82a797ef8f2dba3",
       "title": "Render the report",
-      "note": "Checks the snapshot, audits the graph and writes report.html."
+      "note": "Checks the snapshot, audits the graph and writes report.html.",
+      "range_sha256": "077f9628eeef8794c6758320416084f1c5bb614e51e8a07c155fd1b4ec3702c9"
     }
   ],
   "edges": [

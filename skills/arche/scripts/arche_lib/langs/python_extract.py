@@ -65,29 +65,38 @@ def _dynamic_module(call: ast.Call) -> Tuple[bool, Optional[str]]:
 
 
 def _walk(nodes: Iterable[ast.AST], lines, conditional: bool, type_only: bool) -> Iterator[dict]:
-    for node in nodes:
-        yield from _visit(node, lines, conditional, type_only)
-
-
-def _visit(node: ast.AST, lines, conditional: bool, type_only: bool) -> Iterator[dict]:
-    if isinstance(node, ast.Import):
-        for alias in node.names:
-            yield _record("import", alias.name, 0, [], node, lines, conditional, type_only)
-        return
-    if isinstance(node, ast.ImportFrom):
-        names = [alias.name for alias in node.names]
-        yield _record("from", node.module or "", node.level, names, node, lines, conditional, type_only)
-        return
-    if isinstance(node, ast.If) and _is_type_checking(node.test):
-        yield from _walk(node.body, lines, True, True)
-        yield from _walk(node.orelse, lines, True, type_only)
-        return
-    if isinstance(node, ast.Call):
-        is_dynamic, module = _dynamic_module(node)
-        if is_dynamic:
-            yield _record("dynamic", module, 0, [], node, lines, conditional, type_only, dynamic=True)
-    nested = conditional or isinstance(node, _BRANCH_NODES)
-    yield from _walk(ast.iter_child_nodes(node), lines, nested, type_only)
+    """Visit every node in source order. An explicit stack keeps large files fast."""
+    stack = [(node, conditional, type_only) for node in reversed(list(nodes))]
+    while stack:
+        node, conditional, type_only = stack.pop()
+        kind = node.__class__
+        if kind is ast.Name or kind is ast.Constant:
+            continue
+        if kind is ast.Import:
+            for alias in node.names:
+                yield _record("import", alias.name, 0, [], node, lines, conditional, type_only)
+            continue
+        if kind is ast.ImportFrom:
+            names = [alias.name for alias in node.names]
+            yield _record("from", node.module or "", node.level, names, node, lines, conditional, type_only)
+            continue
+        if kind is ast.If and _is_type_checking(node.test):
+            stack.extend((child, True, type_only) for child in reversed(node.orelse))
+            stack.extend((child, True, True) for child in reversed(node.body))
+            continue
+        if kind is ast.Call:
+            is_dynamic, module = _dynamic_module(node)
+            if is_dynamic:
+                yield _record("dynamic", module, 0, [], node, lines, conditional, type_only, dynamic=True)
+        nested = conditional or isinstance(node, _BRANCH_NODES)
+        children = []
+        for field in node._fields:
+            value = getattr(node, field, None)
+            if value.__class__ is list:
+                children.extend(item for item in value if isinstance(item, ast.AST))
+            elif isinstance(value, ast.AST):
+                children.append(value)
+        stack.extend((child, nested, type_only) for child in reversed(children))
 
 
 def _definitions(node: ast.AST) -> List[Tuple[str, str]]:

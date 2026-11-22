@@ -1,5 +1,6 @@
 """Conservative, source-backed audit candidates; no claim of runtime reachability."""
 import ast
+import gc
 from collections import defaultdict
 
 
@@ -12,6 +13,18 @@ def _protected(path):
 
 def build_audit(graph, read_path, internal_exports=()):
     """Identify review candidates in parsed Python files using hashed snapshot content."""
+    # Every syntax tree stays alive until the end, so the cyclic collector would
+    # rescan millions of live nodes while more are being built.
+    collecting = gc.isenabled()
+    gc.disable()
+    try:
+        return _build_audit(graph, read_path, internal_exports)
+    finally:
+        if collecting:
+            gc.enable()
+
+
+def _build_audit(graph, read_path, internal_exports):
     files = sorted(n['id'][5:] for n in graph['nodes'] if n['type'] == 'file' and n.get('lang') == 'python')
     trees = {}
     for path in files:
@@ -31,17 +44,29 @@ def build_audit(graph, read_path, internal_exports=()):
     for tree in trees.values():
         for stmt in tree.body:
             names = set()
-            for node in ast.walk(stmt):
-                if isinstance(node, ast.Name):
-                    if isinstance(node.ctx, ast.Load):
+            stack = [stmt]
+            while stack:
+                node = stack.pop()
+                kind = node.__class__
+                if kind is ast.Name:
+                    if node.ctx.__class__ is ast.Load:
                         names.add(node.id)
-                elif isinstance(node, ast.Attribute):
-                    names.add(node.attr)
-                elif isinstance(node, ast.Constant):
-                    if isinstance(node.value, str):
+                    continue
+                if kind is ast.Constant:
+                    if node.value.__class__ is str:
                         names.add(node.value)
-                elif isinstance(node, ast.alias):
+                    continue
+                if kind is ast.Attribute:
+                    names.add(node.attr)
+                elif kind is ast.alias:
                     names.add(node.name.split('.')[-1])
+                    continue
+                for field in node._fields:
+                    value = getattr(node, field, None)
+                    if value.__class__ is list:
+                        stack.extend(item for item in value if isinstance(item, ast.AST))
+                    elif isinstance(value, ast.AST):
+                        stack.append(value)
             references |= names
             if not (isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '__all__' for t in stmt.targets)):
                 export_references |= names
