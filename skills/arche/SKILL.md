@@ -16,7 +16,7 @@ For a bare invocation or “레포 분석”, use the current repository root. A
 2. Group the main features by user task. Point to the entry point and the module that implements each feature.
 3. Trace one representative flow from entry to output. Draw a compact diagram with relationship labels (calls, imports, reads, writes). Cite the supporting source lines and identify any unverified hop.
 4. Give one concrete way to use the project, with prerequisites, working directory and expected result drawn from docs or examples. Mark commands as documented or executed. Keep this inspection read-only.
-5. Link the offline report and state what was parsed or excluded. Point the user to its Key files and Dependency map for where to read next. On a follow-up about one feature, reuse this snapshot when its evidence still matches.
+5. Link the map and the offline report and state what was parsed or excluded. Point the user to its Key files and Dependency map for where to read next. On a follow-up about one feature, reuse this snapshot when its evidence still matches.
 
 ## Run the scan
 
@@ -29,6 +29,18 @@ python3 -B "$scripts/arche.py" "$repo" --out "$out" --lang ko
 ```
 
 Pass `--lang ko` when the user writes Korean and `--lang en` otherwise. The same work runs as separate steps (`scan.py "$repo" --out "$out"`, `imports.py --out "$out"`, `render.py --out "$out"`) when a later step needs repeating, for example to render again with a tour.
+
+## Draw the map
+
+`render.py` also writes `map.html` next to the report: parts of the system as cards, the connections between them, and a way into each part down to its files. Without further input the parts are folders marked "Not named yet". Name them whenever you explain a repository:
+
+1. Run `python3 -B "$scripts/brief.py" --out "$out"` and read `brief.txt`, the README, the manifests and the entry points.
+2. Write `"$out/map.json"` following `references/choosing-parts.md`: 3 to 9 parts with a label and one-sentence summary each, external services, cited edges the scan cannot see, and one or two flows.
+3. Run `python3 -B "$scripts/map.py" --out "$out"`. Fix every error it names and edit until `files_assigned` covers at least 90% and the warnings are ones you accept.
+4. Run `python3 -B "$scripts/describe.py" --out "$out"`, read the files it lists, and fill `descriptions/*.json` following `references/writing-descriptions.md`. Leave unread files empty.
+5. Run `map.py` and then `render.py --out "$out" --lang "$lang"` again. Give the user the `map` path first, then the report.
+
+A solid line is a static import the scan resolved, a dashed line is inferred, and a cited line is your claim with a checked location. Say so when you describe a connection.
 
 Open the report with a tour whenever you explain the repository. After reading the source, write a tour JSON in the output directory and run `render.py --out "$out" --tour "$tour" --lang "$lang"`. The tour's optional `title` and `summary`, and each step's optional `title` and `note`, appear in the report as written, so put the walkthrough's main points there in the user's language. Keep them to plain text without source excerpts or credentials.
 

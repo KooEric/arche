@@ -12,7 +12,9 @@ import time
 from pathlib import Path
 
 from arche_lib import cli, gitinfo
+from arche_lib.atlas import build_atlas, read_descriptions
 from arche_lib.audit import build_audit, delta
+from arche_lib.mapview import render_map
 from arche_lib.i18n import LANGUAGES
 from arche_lib.errors import IntegrityError, UsageError
 from arche_lib.jsonio import check_graph, inventory_digest, read_snapshot, read_json, write_json, write_text
@@ -23,6 +25,7 @@ from arche_lib.sources import make_reader
 from arche_lib.tour import refresh_tour, validate_tour
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "report-template.html"
+MAP_TEMPLATE = TEMPLATE.with_name("map-template.html")
 
 
 def module_summary(inventory, graph):
@@ -98,14 +101,22 @@ def main(argv):
             base_findings = base_audit["findings"]
             finding_delta = delta(base_findings, findings)
         report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang)
+        atlas_path = out / "atlas.json"
+        atlas = read_json(atlas_path) if atlas_path.exists() else None
+        if atlas is not None and atlas.get("inventory_sha256") != graph["inventory_sha256"]:
+            raise IntegrityError("atlas.json describes a different snapshot; run map.py again")
+        if atlas is None:
+            atlas = build_atlas(inventory, graph, None, read_descriptions(out), changes, findings)
+        atlas_html = render_map(MAP_TEMPLATE.read_text(encoding="utf-8"), atlas, args.lang)
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise IntegrityError(f"invalid report inputs: {exc!r}") from None
 
     path = out / "report.html"
     write_json(out / "audit.json", {"schema_version": 1, "repo": graph["repo"], "inventory_sha256": inventory_digest(inventory), "internal_exports": internal_exports, "findings": findings, "delta": finding_delta})
     write_text(path, report)
+    write_text(out / "map.html", atlas_html)
     record_step(out, "render", started, extra={"status_after": after, "readonly_check": check})
-    summary = {"step": "render", "report": str(path.resolve()), "readonly_check": check}
+    summary = {"step": "render", "report": str(path.resolve()), "map": str((out / "map.html").resolve()), "readonly_check": check}
     if moved:
         summary["tour_steps_reanchored"] = moved
     return summary

@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 import imports
+import map as atlas_map
 import render
 import scan
 from arche_lib import cli
@@ -43,6 +44,8 @@ def main(argv):
     scanned = scan.main([args.repo, *(["--out", out] if out else [])])
     out = scanned["out"]
     resolved = imports.main(["--out", out])
+    # Rebuild the atlas for this snapshot: from OUT/map.json when the agent wrote one, else from folders.
+    mapped = atlas_map.main(["--out", out])
     options = ["--out", out, "--lang", args.lang]
     if args.tour:
         options += ["--tour", str(Path(args.tour).resolve())]
@@ -53,12 +56,15 @@ def main(argv):
         "step": "arche",
         "out": out,
         "report": rendered["report"],
+        "map": rendered["map"],
         "readonly_check": rendered["readonly_check"],
         "repo": scanned["repo"],
         "commit": scanned["commit"],
         "analyzed": scanned["analyzed"],
         "skipped": scanned["skipped"],
         "edges": resolved["edges"],
+        "map_source": mapped["source"],
+        "map_warnings": mapped["warnings"],
     }
 
 

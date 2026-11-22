@@ -241,9 +241,12 @@ def _mounted_routes(extracted: Dict[str, dict], edges: List[dict]) -> List[dict]
     return routes
 
 
-def _http_connections(extracted: Dict[str, dict], edges: List[dict]) -> List[dict]:
+def _http(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[List[dict], List[dict]]:
+    """(request-to-route connections, every route that was read)."""
     requests = [request for result in extracted.values() for request in result.get("http_requests", [])]
-    return connect(requests, _mounted_routes(extracted, edges))
+    routes = _mounted_routes(extracted, edges)
+    listed = sorted(routes, key=lambda route: (route["file"], route["line"], route["method"], route["path"]))
+    return connect(requests, routes), listed
 
 
 def build_graph(inventory: dict, read_path: ReadPath) -> dict:
@@ -256,6 +259,7 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
     contexts = _contexts(analyzed, extracted, inventory, read_path)
     edges, externals = _resolve_all(analyzed, extracted, contexts)
     repo = inventory["repo"]
+    connections, routes = _http(extracted, edges)
     return {
         "schema_version": SCHEMA_VERSION,
         "inventory_sha256": inventory_digest(inventory),
@@ -263,6 +267,7 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
         "nodes": _nodes(analyzed, extracted),
         "edges": sorted(edges, key=_edge_key),
         "externals": _dedupe_externals(externals),
-        "http_connections": _http_connections(extracted, edges),
+        "http_connections": connections,
+        "http_routes": routes,
         "skipped": _skipped(inventory, failures),
     }
