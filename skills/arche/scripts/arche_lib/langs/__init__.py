@@ -9,6 +9,7 @@ LANG_BY_EXT = {
     ".ts": "typescript", ".tsx": "typescript", ".mts": "typescript", ".cts": "typescript",
     ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript",
     ".dart": "dart", ".go": "go",
+    ".java": "java", ".kt": "kotlin", ".kts": "kotlin",
 }
 
 

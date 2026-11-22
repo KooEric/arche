@@ -1,82 +1,282 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; style-src 'sha256-h10Kv0lKrvNWIkGiS/XzpA3ncTba+IzjDRY38ltL2xo='; script-src 'sha256-wGzdcF6ZDUzZmGpIO31PH46bkUfLBo5Qafv+7G1OueM='">
-<title>tagcount · Arche</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; style-src 'sha256-MCXB7JqjRsd4CPAokmey+SyYw+/iXjPUwdaXqWVMcpw='; script-src 'sha256-hFSPYlfC1sMZeGBdl1eugfpAwJeG3ibynl5b8VpU19M='">
+<title>tag-counter · Arche</title>
 <style>
-:root { color-scheme: light; background: #f8f6ed; color: #252820; font: 1rem/1.55 Georgia, serif; }
-body { margin: 0 auto; max-width: 70rem; padding: 2rem clamp(1rem, 4vw, 4rem) 4rem; }
-header { border-top: .45rem solid #334735; border-bottom: 1px solid #7a8573; padding: 1rem 0 1.2rem; }
-h1 { margin: 0; font-size: clamp(2rem, 7vw, 4.5rem); line-height: 1.1; overflow-wrap: anywhere; }
-h2 { margin: 0 0 .6rem; font-size: 1.65rem; }
-h3 { margin: 1rem 0 .2rem; font-size: 1.05rem; }
-section { margin-block: 1.8rem; }
-nav, .label, .status, code, input { font-family: ui-monospace, Menlo, monospace; }
-nav { display: flex; flex-wrap: wrap; gap: 1rem; }
-.label, .status { font-size: .85rem; }
-.label { color: #425543; }
-a { color: #244a38; text-underline-offset: .18em; }
-a:focus-visible, summary:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid #276349; outline-offset: 3px; }
+:root {
+  color-scheme: light;
+  --bg: #ffffff; --surface: #ffffff; --sunken: #f5f5f6; --ink: #111214; --muted: #6a6d75; --line: #e9e9ec; --line-strong: #d3d4d9;
+  --accent: #0e7a4f; --accent-ink: #ffffff; --accent-soft: #ebf6f0; --warn: #94590a; --warn-soft: #fdf4e3; --bad: #b4342c; --bad-soft: #fceceb;
+  --c0: #0e7a4f; --c1: #c27a1a; --c2: #3b6fb6; --c3: #a2466f; --c4: #6a6f2a; --c5: #7a6fbf;
+  --sans: "Pretendard Variable", "Pretendard", "SUIT", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
+  --mono: "JetBrains Mono", "D2Coding", "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, "Apple SD Gothic Neo", "Noto Sans KR", monospace;
+  --radius: 8px;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c0d0e; --surface: #0c0d0e; --sunken: #16181a; --ink: #ececee; --muted: #8f939b; --line: #202326; --line-strong: #33373c;
+  --accent: #5fd49b; --accent-ink: #06130c; --accent-soft: #12241b; --warn: #e6b45c; --warn-soft: #2a2211; --bad: #f08a80; --bad-soft: #2e1717;
+  --c0: #5fd49b; --c1: #e6b45c; --c2: #7fb0f0; --c3: #e08bb0; --c4: #b9c16a; --c5: #b0a6f2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0c0d0e; --surface: #0c0d0e; --sunken: #16181a; --ink: #ececee; --muted: #8f939b; --line: #202326; --line-strong: #33373c;
+    --accent: #5fd49b; --accent-ink: #06130c; --accent-soft: #12241b; --warn: #e6b45c; --warn-soft: #2a2211; --bad: #f08a80; --bad-soft: #2e1717;
+    --c0: #5fd49b; --c1: #e6b45c; --c2: #7fb0f0; --c3: #e08bb0; --c4: #b9c16a; --c5: #b0a6f2;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.65 var(--sans); -webkit-font-smoothing: antialiased; word-break: keep-all; overflow-wrap: anywhere; font-feature-settings: "tnum"; }
 [hidden] { display: none !important; }
-input { display: block; box-sizing: border-box; width: min(100%, 34rem); padding: .55rem; margin-bottom: .8rem; border: 1px solid #7a8573; background: #fffdf7; }
-summary { cursor: pointer; padding: .6rem .25rem; overflow-wrap: anywhere; }
-details { border-bottom: 1px solid #c6cabd; }
-details:target { outline: 2px solid #41674e; outline-offset: 3px; }
-.detail { padding: 0 .75rem 1rem; }
-ul { padding-left: 1.4rem; overflow-wrap: anywhere; }
-.status { border-bottom: 2px solid #41674e; }
-.status[data-state="inferred"] { border-bottom-style: dashed; }
-.status[data-state="unresolved"] { border-bottom-style: dotted; }
-.modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .6rem; }
-.module { text-align: left; padding: .85rem; border: 1px solid #7a8573; background: #f0f0e4; color: inherit; cursor: pointer; }
-.module strong, .module span { display: block; overflow-wrap: anywhere; }
-.module strong { font: 1.15rem Georgia, serif; }
-.module span, .step-number { font: .8rem ui-monospace, Menlo, monospace; color: #425543; }
-.module:hover, .module[aria-pressed="true"] { background: #334735; color: #fffdf7; }
-.module:hover span, .module[aria-pressed="true"] span { color: #e2e9db; }
-.tour-list { list-style: none; padding: 0; }
-.step-number { display: inline-block; width: 3rem; }
-.detail code { overflow-wrap: anywhere; }
-.filter-bar { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
-button { font: inherit; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: .18em; }
+a:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+code { font: .88em var(--mono); }
+button, input, select { font: inherit; color: inherit; }
+h1, h2, h3, h4, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+.shell { display: grid; grid-template-columns: 14rem minmax(0, 1fr); min-height: 100vh; max-width: 88rem; margin: 0 auto; }
+.side { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 1.6rem 1rem 1rem 1.4rem; display: flex; flex-direction: column; gap: 1.1rem; }
+.brand { display: flex; align-items: center; gap: .5rem; font: 600 .74rem var(--mono); letter-spacing: .16em; color: var(--ink); }
+.brand svg { width: 1.25rem; height: 1.25rem; color: var(--accent); flex: none; }
+.side-repo { font: 500 .85rem/1.4 var(--mono); color: var(--muted); }
+nav { display: flex; flex-direction: column; gap: 1px; }
+nav a { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .3rem .6rem; border-radius: 6px; color: var(--muted); font-size: .88rem; }
+nav a:hover { background: var(--sunken); color: var(--ink); text-decoration: none; }
+nav a[aria-current="true"] { background: var(--sunken); color: var(--ink); font-weight: 600; }
+.count { display: inline-block; padding: 0 .3em; color: var(--muted); font: 400 .72rem/1.6 var(--mono); vertical-align: middle; }
+.theme { margin-top: auto; align-self: flex-start; display: flex; align-items: center; gap: .45rem; padding: .3rem .6rem; border: 0; border-radius: 6px; background: transparent; cursor: pointer; color: var(--muted); font-size: .82rem; }
+.theme:hover { background: var(--sunken); color: var(--ink); }
+.theme svg { width: 1rem; height: 1rem; }
+main { padding: 3rem clamp(1.1rem, 4vw, 3.5rem) 4rem; max-width: 72rem; width: 100%; }
+section { margin-top: 3.6rem; }
+section:first-child { margin-top: 0; }
+h1 { font: 600 clamp(1.7rem, 3.4vw, 2.3rem)/1.2 var(--mono); letter-spacing: -.03em; }
+h2 { font: 600 1.02rem var(--mono); letter-spacing: -.01em; margin-bottom: .4rem; padding-bottom: .7rem; border-bottom: 1px solid var(--line); }
+h3 { font: 500 .76rem var(--mono); color: var(--muted); margin: 1.2rem 0 .4rem; }
+h4 { font: 500 .8rem var(--mono); margin: .9rem 0 .3rem; }
+h1, h2, h3, h4, .eyebrow { word-spacing: -.22em; }
+.eyebrow { font: 500 .72rem var(--mono); letter-spacing: .04em; color: var(--muted); }
+.lead { color: var(--muted); max-width: 44rem; margin: .7rem 0 1rem; font-size: .9rem; }
+.empty { color: var(--muted); font-size: .9rem; padding: .2rem 0; }
+.label { color: var(--muted); font-size: .82rem; }
+.prose p { max-width: 46rem; margin-bottom: .7rem; white-space: pre-line; }
+.prose p:last-child { margin-bottom: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; margin: .8rem 0 2rem; }
+.chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--muted); }
+.chip code { color: var(--ink); }
+.chip[data-state="dirty"], .chip[data-check="changed"] { color: var(--warn); }
+.chip[data-state="dirty"] code, .chip[data-check="changed"] code { color: inherit; }
+.chip[data-check="match"] code { color: var(--accent); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 1.4rem 2rem; padding: 1.3rem 0; border-top: 1px solid var(--line); }
+.stat { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.stats.pair { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); border-bottom: 1px solid var(--line); }
+.stat > strong { font: 500 1.55rem/1.25 var(--mono); letter-spacing: -.03em; }
+.stat-label { font-size: .76rem; color: var(--muted); }
+.stat-note { font-size: .78rem; color: var(--muted); margin-top: .3rem; }
+.split { display: block; width: 100%; height: 4px; border-radius: 99px; margin-top: .5rem; background: var(--sunken); }
+.split.tall { height: 4px; }
+.seg[data-state="verified"] { fill: var(--accent); } .seg[data-state="inferred"] { fill: var(--warn); } .seg[data-state="unresolved"] { fill: var(--bad); }
+.legend { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; margin-top: .55rem; font-size: .85rem; }
+.legend li { display: flex; align-items: center; gap: .4rem; }
+.dot { width: .55rem; height: .55rem; flex: none; }
+.lang-0 { fill: var(--c0); } .lang-1 { fill: var(--c1); } .lang-2 { fill: var(--c2); } .lang-3 { fill: var(--c3); } .lang-4 { fill: var(--c4); } .lang-5 { fill: var(--c5); }
+.status { display: inline-flex; align-items: center; gap: .3rem; font: 500 .76rem var(--mono); color: var(--accent); white-space: nowrap; }
+.status::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.status[data-state="inferred"] { color: var(--warn); }
+.status[data-state="inferred"]::before { background: transparent; border: 2px solid currentColor; }
+.status[data-state="unresolved"] { color: var(--bad); }
+.status[data-state="unresolved"]::before { background: transparent; border: 2px dotted currentColor; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1.5rem 2.5rem; }
+.card { min-width: 0; }
+.card h3 { margin-top: 0; color: var(--ink); font: 600 .86rem var(--sans); }
+.card .lead { font-size: .8rem; margin: .2rem 0 .6rem; }
+.rank li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .8rem; align-items: baseline; padding: .32rem 0; }
+.rank-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.rank-name code { direction: ltr; unicode-bidi: embed; }
+.rank-value { font: .78rem var(--mono); color: var(--muted); white-space: nowrap; }
+.bar { grid-column: 1 / -1; display: block; width: 100%; height: 2px; border-radius: 99px; background: var(--line); }
+.bar rect { fill: var(--accent); }
+.map { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.map-bar { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .55rem .7rem; border-bottom: 1px solid var(--line); }
+.map-crumbs { display: flex; flex-wrap: wrap; gap: .35rem; min-height: 1.8rem; align-items: center; }
+.map-bar button { padding: .12rem .6rem; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; cursor: pointer; font: .76rem var(--mono); color: var(--muted); }
+.map-bar button:hover { border-color: var(--accent); color: var(--accent); }
+.map-canvas { overflow: auto; max-height: 44rem; padding: .4rem; background: var(--sunken); }
+.map-canvas svg { display: block; }
+.map-note { padding: 1.2rem; color: var(--muted); }
+.edge { fill: none; stroke: var(--line-strong); opacity: .75; transition: opacity .12s; }
+.edge.back { stroke: var(--warn); opacity: .6; }
+.edge.soft { stroke-dasharray: 4 4; }
+.arrow { fill: var(--line-strong); }
+.node { cursor: pointer; transition: opacity .12s; }
+.node rect { fill: var(--surface); stroke: var(--line-strong); }
+.node text { font: 11.5px var(--mono); fill: var(--ink); }
+.node .badge { fill: var(--muted); font-size: 10.5px; }
+.node.dir rect { fill: var(--surface); stroke: var(--accent); }
+.node.dir text { fill: var(--accent); font-weight: 500; }
+.node.more rect { stroke-dasharray: 4 3; fill: var(--sunken); }
+.node.more text { fill: var(--muted); }
+.node:hover rect, .node:focus rect { stroke: var(--accent); stroke-width: 1.5; }
+.node:focus { outline: none; }
+.caption { font: 500 11px var(--mono); fill: var(--muted); }
+.hl .node:not(.on) { opacity: .28; }
+.hl .edge:not(.on) { opacity: .1; }
+.hl .edge.on { stroke: var(--accent); opacity: 1; }
+.modules { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 12.5rem), 1fr)); gap: .6rem; }
+.module { text-align: left; padding: .7rem .85rem .75rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; cursor: pointer; display: grid; gap: .1rem; }
+.module strong { font: 500 .88rem var(--mono); }
+.module span { font-size: .78rem; color: var(--muted); }
+.module .bar { margin-top: .4rem; }
+.module:hover { border-color: var(--accent); }
+.module[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+details > summary { cursor: pointer; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: ""; flex: none; display: inline-block; width: .45rem; height: .45rem; margin-right: .6rem; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg) translateY(-1px); transition: transform .12s; }
+details[open] > summary::before { transform: rotate(45deg) translate(-1px, -1px); }
+.screen, .group { border-bottom: 1px solid var(--line); }
+.screen > summary, .group > summary { padding: .7rem 0; font-weight: 600; }
+.group > summary { font-weight: 500; }
+.controls { padding: 0 0 1rem 1.05rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: .6rem; }
+.controls li { border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem .9rem; display: flex; flex-direction: column; gap: .35rem; }
+.controls strong { display: inline-block; align-self: flex-start; padding: .05rem .55rem; border-radius: 5px; background: var(--sunken); font: 500 .8rem var(--mono); }
+.controls p { font-size: .92rem; }
+.evidence { font-size: .82rem; color: var(--muted); }
+.columns { padding: 0 0 1rem 1.05rem; columns: 20rem; column-gap: 1.5rem; font-size: .86rem; }
+.columns li { break-inside: avoid; padding: .1rem 0; }
+.tour-list { position: relative; display: grid; gap: 0; }
+.tour-step { display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: .8rem; position: relative; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.step-number { font: 500 .8rem/1.9 var(--mono); color: var(--accent); }
+.step-body { min-width: 0; }
+.step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; margin-bottom: .3rem; }
+.step-title { font-size: .96rem; }
+.step-head code { color: var(--muted); }
+.step-body .prose { margin: .3rem 0 .5rem; }
+.step-body ul { font-size: .88rem; }
+.sha { margin-top: .6rem; font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.focus-controls { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .6rem; }
+.focus-controls button { padding: .22rem .7rem; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; cursor: pointer; font-size: .82rem; }
+.focus-controls button:hover { border-color: var(--accent); }
+.focus-controls button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.focus-nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .6rem; }
+.focus-nodes li, .cards > li { border: 1px solid var(--line); border-radius: var(--radius); padding: .75rem .9rem; }
+.focus-nodes p { margin-top: .35rem; font-size: .9rem; }
+.cards { display: grid; gap: .6rem; }
+.cards ul { margin-top: .3rem; font-size: .88rem; }
+.method code { padding: .1rem .45rem; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.change { font: 600 .76rem var(--mono); padding: .1rem .5rem; border-radius: 5px; background: var(--sunken); }
+.change[data-kind="added"] { background: var(--accent-soft); color: var(--accent); }
+.change[data-kind="deleted"] { background: var(--bad-soft); color: var(--bad); }
+.change[data-kind="modified"], .change[data-kind="renamed"] { background: var(--warn-soft); color: var(--warn); }
+select { padding: .25rem .5rem; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); }
+.callout { padding: .1rem 0 .1rem .8rem; border-left: 2px solid var(--line-strong); margin: .8rem 0; }
+.callout[data-tone="ok"] { border-left-color: var(--accent); }
+.callout[data-tone="warn"] { border-left-color: var(--warn); color: var(--warn); }
+#audit ul, #changes ul ul { font-size: .9rem; }
+#audit li { padding: .25rem 0; }
+.filter-bar { display: flex; gap: .7rem; align-items: center; flex-wrap: wrap; margin: .6rem 0 .7rem; }
+#search { flex: 1 1 18rem; max-width: 28rem; padding: .45rem .75rem; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); font: .84rem var(--mono); }
+#module-filter { font-size: .85rem; color: var(--muted); }
+#clear-module { padding: .15rem .6rem; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; cursor: pointer; font-size: .8rem; }
+.file-list { border-top: 1px solid var(--line); }
+.file-list > .empty { border: 0; }
+.file { border-bottom: 1px solid var(--line); }
+.file > summary { display: flex; align-items: baseline; gap: .15rem .5rem; flex-wrap: wrap; padding: .42rem .3rem; }
+.file > summary:hover { background: var(--sunken); }
+.file[open] > summary { background: var(--sunken); }
+.file:target > summary { box-shadow: inset 4px 0 0 var(--accent); background: var(--accent-soft); }
+.path { font: .84rem var(--mono); }
+.degree { margin-left: auto; font: .76rem var(--mono); color: var(--muted); white-space: nowrap; }
+.detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 0 2rem; padding: .2rem .3rem 1rem 1.35rem; font-size: .86rem; }
+.detail > div { min-width: 0; }
+.detail li { padding: .14rem 0; }
+.detail .empty { font-size: .84rem; }
+.history li { display: flex; flex-wrap: wrap; gap: .2rem .7rem; align-items: baseline; padding: .45rem 0; border-bottom: 1px solid var(--line); }
+.history code { color: var(--accent); }
+.history time { margin-left: auto; font-family: var(--mono); }
+footer { margin-top: 4rem; color: var(--muted); font-size: .78rem; }
+@media (max-width: 880px) {
+  .shell { display: block; }
+  .side { position: sticky; z-index: 5; height: auto; flex-direction: row; align-items: center; gap: .8rem; padding: .5rem .8rem; border-bottom: 1px solid var(--line); background: var(--bg); overflow: visible; }
+  .side-repo { display: none; }
+  .brand span { display: none; }
+  nav { flex-direction: row; overflow-x: auto; flex: 1; scrollbar-width: none; }
+  nav a { white-space: nowrap; }
+  .theme { margin: 0; } .theme span { display: none; }
+  html { scroll-padding-top: 4rem; }
+  .detail { padding-left: 1rem; }
+}
+@media print {
+  .side, .map-bar, .filter-bar { display: none; }
+  .shell { display: block; }
+  body { background: #fff; }
+  .map-canvas { max-height: none; overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
 </style>
-<header>
-  <span class="label">ARCHE / REPOSITORY REPORT</span>
-  <h1>tagcount</h1>
-  <p>No scanned commit · worktree unknown · Git status comparison <code>unavailable</code></p>
-  <p>2 parsed files · 1 excluded · 1 verified · 0 inferred · 0 unresolved</p>
-  <nav aria-label="Report sections">
-    <a href="#modules">Modules</a>
-    <a href="#tour">Tour</a>
-    <a href="#files">Dependencies</a>
-
-
-    <a href="#changes">Changes</a>
-    <a href="#audit">Audit</a>
-    <a href="#history">History</a>
-    <a href="#excluded">Excluded files</a>
-  </nav>
-</header>
-<main>
-  <section id="modules"><h2>Module map</h2><p>Select a module to explore its parsed files. Excluded counts include unsupported files.</p><div class="modules"><button type="button" class="module" data-select-module="."><strong>.</strong><span>2 parsed · 1 excluded</span></button></div></section>
-
-  <section id="tour"><h2>Evidence tour</h2><p>Open each step to inspect its source location and relationships.</p><p>No tour available for this snapshot.</p></section>
-
-  <section id="files">
-    <h2>File dependencies</h2>
-    <div class="filter-bar"><p id="module-filter">All modules</p><button type="button" id="clear-module" hidden>Show all modules</button></div>
-    <label for="search" hidden>Filter by file path</label>
-    <input type="search" id="search" hidden>
-    <p id="empty" role="status" hidden>No matching files.</p>
-    <details id="file-0" data-file="count_tags.py" data-module="."><summary>count_tags.py <span class="label">· python · 6 lines</span></summary><div class="detail"><h3>Symbols</h3><p>No extracted symbols.</p><h3>Imports</h3><ul><li><a href="#file-1"><code>tally.py</code></a> · <span class="status" data-state="verified">verified</span> · <code>count_tags.py:2</code></li></ul><h3>Imported by</h3><p>No recorded importers.</p><h3>External packages</h3><ul><li><code>sys</code> · line 1</li></ul></div></details><details id="file-1" data-file="tally.py" data-module="."><summary>tally.py <span class="label">· python · 4 lines</span></summary><div class="detail"><h3>Symbols</h3><ul><li><code>counts</code> · function · line 3</li></ul><h3>Imports</h3><p>No recorded imports.</p><h3>Imported by</h3><ul><li><a href="#file-0"><code>count_tags.py</code></a> · <span class="status" data-state="verified">verified</span> · <code>count_tags.py:2</code></li></ul><h3>External packages</h3><ul><li><code>collections</code> · line 1</li></ul></div></details>
-  </section>
-  <section id="changes"><h2>Changes and impact</h2><p>No change comparison available for this snapshot.</p></section>
-  <section id="audit"><h2>Audit</h2><p>No cycle found among verified unconditional static imports.</p><h3>Repeated static imports</h3><p>Distinct locations importing the same target may be redundant; aliases and separate uses can be intentional. Review each location before changing it.</p><p>No repeated verified unconditional imports at distinct locations.</p></section>
-  <section id="history"><h2>Recent Git history</h2><p>Git history unavailable for this snapshot.</p></section>
-  <section id="excluded"><h2>Excluded files</h2><ul><li><code>README.md</code> · unsupported_lang</li></ul></section>
-</main>
+<body>
+<div class="shell" data-t-all="모든 모듈" data-t-module="모듈: " data-t-close="닫기" data-t-more="개 파일 더 보기" data-t-files="개 파일" data-t-isolated="연결 없음" data-t-none="이 파일들 사이에 해석된 import가 없습니다.">
+  <aside class="side">
+    <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 20V12a9 9 0 0 1 18 0v8"/><path d="M8 20v-7a4 4 0 0 1 8 0v7"/></svg><span>ARCHE</span></div>
+    <div class="side-repo">tag-counter</div>
+    <nav aria-label="리포트 목차"><a href="#overview">개요</a><a href="#key-files">핵심 파일</a><a href="#dependency-map">의존성 맵</a><a href="#modules">모듈 <span class="count">1</span></a><a href="#tour">투어</a><a href="#files">의존성 <span class="count">2</span></a><a href="#changes">변경</a><a href="#audit">감사</a><a href="#history">이력</a><a href="#excluded">제외된 파일 <span class="count">1</span></a></nav>
+    <button type="button" class="theme" id="theme" aria-label="다크 모드 전환"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span>테마</span></button>
+  </aside>
+  <main>
+    <section id="overview">
+      <span class="eyebrow">Arche · 레포지토리 리포트</span>
+      <h1>tag-counter</h1>
+      <div class="chips"><span class="chip">스캔된 커밋 없음</span><span class="chip" data-state="unknown">작업 트리 알 수 없음</span><span class="chip" data-check="unavailable">Git 상태 비교 <code>unavailable</code></span></div>
+      <div class="stats" title="2 parsed files · 1 excluded · 1 verified · 0 inferred · 0 unresolved"><div class="stat"><span class="stat-label">분석한 파일</span><strong>2</strong></div><div class="stat"><span class="stat-label">줄 수</span><strong>10</strong></div><div class="stat"><span class="stat-label">심볼</span><strong>1</strong></div><div class="stat"><span class="stat-label">외부 패키지</span><strong>2</strong></div><div class="stat"><span class="stat-label">제외됨</span><strong>1</strong></div></div><div class="stats pair"><div class="stat"><span class="stat-label">의존성</span><strong>1</strong><svg class="split" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="seg" data-state="verified" x="0.0" width="100.0" height="6"/><rect class="seg" data-state="inferred" x="100.0" width="0.0" height="6"/><rect class="seg" data-state="unresolved" x="100.0" width="0.0" height="6"/></svg><span class="stat-note">1 <span class="status" data-state="verified">verified</span> · 0 <span class="status" data-state="inferred">inferred</span> · 0 <span class="status" data-state="unresolved">unresolved</span></span></div><div class="stat"><span class="stat-label">언어별 줄 수</span><svg class="split tall" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="lang-0" x="0.0" width="100.0" height="8"/></svg><ul class="legend"><li><svg class="dot lang-0" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4"/></svg>python <span class="label">100%</span></li></ul></div></div>
+    </section>
+    <section id="key-files"><h2>핵심 파일</h2><p class="lead">어디부터 읽을지 알려 줍니다. 정적 import 그래프에서 순위를 계산했습니다.</p><div class="card-grid"><div class="card"><h3>진입점 후보</h3><p class="lead">다른 파일이 import하지 않으면서 스스로는 다른 파일을 import하는 파일입니다. 테스트는 제외합니다.</p><ul class="rank"><li><span class="rank-name"><a href="#file-0"><code>count_tags.py</code></a></span><span class="rank-value">1 import</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100.0" height="4"/></svg></li></ul></div><div class="card"><h3>가장 많이 의존되는 파일</h3><p class="lead">여기를 바꾸면 가장 많은 파일에 영향이 갑니다.</p><ul class="rank"><li><span class="rank-name"><a href="#file-1"><code>tally.py</code></a></span><span class="rank-value">1 importer</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100.0" height="4"/></svg></li></ul></div><div class="card"><h3>가장 큰 파일</h3><p class="lead">분석한 파일 중 줄 수가 가장 많습니다.</p><ul class="rank"><li><span class="rank-name"><a href="#file-0"><code>count_tags.py</code></a></span><span class="rank-value">6 줄</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100.0" height="4"/></svg></li><li><span class="rank-name"><a href="#file-1"><code>tally.py</code></a></span><span class="rank-value">4 줄</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="66.7" height="4"/></svg></li></ul></div></div></section><section id="dependency-map"><h2>의존성 맵</h2><p class="lead">A에서 B로 향하는 화살표는 A가 B를 import한다는 뜻입니다. 폴더를 선택하면 펼쳐지고, 파일을 선택하면 상세로 이동합니다.</p><div id="map" class="map" hidden><div class="map-bar"><div class="map-crumbs" data-map-crumbs></div><button type="button" data-map-reset>초기화</button></div><div class="map-canvas" data-map-canvas tabindex="0"></div></div><noscript><p class="empty">의존성 맵을 보려면 JavaScript가 필요합니다.</p></noscript></section><section id="modules"><h2>모듈 맵</h2><p class="lead">모듈을 선택하면 분석된 파일만 추려 봅니다. 제외 수에는 지원하지 않는 파일이 포함됩니다.</p><div class="modules"><button type="button" class="module" data-select-module="."><strong>.</strong><span>2 분석 · 1 제외</span><svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="66.7" height="4"/></svg></button></div></section><section id="tour"><h2>근거 투어</h2><p class="empty">이 스냅샷에는 투어가 없습니다.</p></section><section id="files"><h2>파일 의존성</h2><div class="filter-bar"><label for="search" hidden>파일 경로로 필터</label><input type="search" id="search" placeholder="파일 경로로 필터…" hidden><p id="module-filter">모든 모듈</p><button type="button" id="clear-module" hidden>모든 모듈 보기</button></div><p id="empty" class="empty" role="status" hidden>일치하는 파일이 없습니다.</p><div class="file-list"><details class="file" id="file-0" data-file="count_tags.py" data-module="."><summary><span class="path">count_tags.py</span> <span class="label">· python · 6 lines</span><span class="degree" title="이 파일을 import하는 곳 / Import">0 들어옴 · 1 나감</span></summary><div class="detail"><div><h3>심볼 <span class="count">0</span></h3><p class="empty">추출된 심볼이 없습니다.</p></div><div><h3>Import <span class="count">1</span></h3><ul><li><a href="#file-1"><code>tally.py</code></a> · <span class="status" data-state="verified">verified</span> · <code>count_tags.py:2</code></li></ul><h3>이 파일을 import하는 곳 <span class="count">0</span></h3><p class="empty">기록된 importer가 없습니다.</p><h3>외부 패키지 <span class="count">1</span></h3><ul><li><code>sys</code> · 줄 1</li></ul></div></div></details><details class="file" id="file-1" data-file="tally.py" data-module="."><summary><span class="path">tally.py</span> <span class="label">· python · 4 lines</span><span class="degree" title="이 파일을 import하는 곳 / Import">1 들어옴 · 0 나감</span></summary><div class="detail"><div><h3>심볼 <span class="count">1</span></h3><ul><li><code>counts</code> · function · 줄 3</li></ul></div><div><h3>Import <span class="count">0</span></h3><p class="empty">기록된 import가 없습니다.</p><h3>이 파일을 import하는 곳 <span class="count">1</span></h3><ul><li><a href="#file-0"><code>count_tags.py</code></a> · <span class="status" data-state="verified">verified</span> · <code>count_tags.py:2</code></li></ul><h3>외부 패키지 <span class="count">1</span></h3><ul><li><code>collections</code> · 줄 1</li></ul></div></div></details></div></section><section id="changes"><h2>변경과 영향</h2><p class="empty">이 스냅샷에는 변경 비교가 없습니다.</p></section><section id="audit"><h2>감사</h2><p class="callout" data-tone="ok">검증된 무조건 정적 import에서 순환을 찾지 못했습니다.</p><h3>반복된 정적 import <span class="count">0</span></h3><p class="lead">같은 대상을 여러 위치에서 import하면 중복일 수 있습니다. 별칭이나 용도 분리는 의도된 것일 수 있으니 수정 전에 각 위치를 검토하세요.</p><p class="empty">서로 다른 위치에서 반복된 검증된 무조건 import가 없습니다.</p><h3>소스 근거 후보 <span class="count">0</span></h3><p class="lead">확정된 결함이 아니라 검토 후보입니다. Python만 지원합니다. 공개 export는 기본적으로 보호하며, 명시적으로 지정한 내부 디렉터리만 선언된 Python export와 대조합니다. 외부 사용자를 배제할 수 없습니다. 테스트, fixture, 생성·vendor 경로, 패키지 진입점, 데코레이터가 붙은 정의, 참조된 이름은 제외합니다. 동적 로딩과 스캔하지 않은 코드에 사용처가 숨어 있을 수 있습니다. 수정 전에 인용된 소스와 호출부를 비교하세요.</p><p class="empty">이 기준 안에서 후보를 찾지 못했습니다.</p></section><section id="history"><h2>최근 Git 이력</h2><p class="empty">이 스냅샷에서는 Git 이력을 볼 수 없습니다.</p></section><section id="excluded"><h2>제외된 파일</h2><p class="lead">분석에서 제외한 파일을 사유별로 묶었습니다.</p><details class="group"><summary>지원하지 않는 언어 <code>unsupported_lang</code> <span class="count">1</span></summary><ul class="columns"><li><code>README.md</code></li></ul></details></section>
+    <footer>Arche가 오프라인으로 생성했습니다. 정적 분석 결과는 후보이며 런타임 동작을 보장하지 않습니다.</footer>
+  </main>
+</div>
+<script type="application/json" id="graph-data">{"files":[["count_tags.py",6],["tally.py",4]],"edges":[[0,1,1,0]]}</script>
 <script>
+const root = document.documentElement;
+const shell = document.querySelector('.shell');
+const text = shell.dataset;
+function stored(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    localStorage.setItem(key, value);
+  } catch (error) { /* storage can be unavailable for local files */ }
+  return null;
+}
+const savedTheme = stored('arche-theme');
+if (savedTheme) root.dataset.theme = savedTheme;
+document.getElementById('theme').addEventListener('click', () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  stored('arche-theme', root.dataset.theme);
+});
+const navLinks = [...document.querySelectorAll('nav a')];
+const navTargets = navLinks.map(link => document.getElementById(link.hash.slice(1))).filter(Boolean);
+function markCurrent() {
+  let current = navTargets[0];
+  for (const target of navTargets) if (target.getBoundingClientRect().top <= 120) current = target;
+  for (const link of navLinks) link.setAttribute('aria-current', String(current && link.hash === '#' + current.id));
+}
+let ticking = false;
+addEventListener('scroll', () => {
+  if (ticking) return;
+  ticking = true;
+  requestAnimationFrame(() => { ticking = false; markCurrent(); });
+}, {passive: true});
+markCurrent();
+const focusButtons = [...document.querySelectorAll('[data-focus-select]')];
+const focusPanels = [...document.querySelectorAll('[data-focus-panel]')];
+for (const button of focusButtons) button.addEventListener('click', () => {
+  const choice = button.dataset.focusSelect;
+  for (const item of focusButtons) item.setAttribute('aria-pressed', String(item.dataset.focusSelect === choice));
+  for (const panel of focusPanels) panel.hidden = panel.dataset.focusPanel !== choice;
+});
 const changeFilter = document.getElementById('change-filter');
 if (changeFilter) {
   const changeRows = [...document.querySelectorAll('[data-change-status]')];
@@ -88,6 +288,7 @@ if (changeFilter) {
 const search = document.getElementById('search');
 const rows = [...document.querySelectorAll('[data-file]')];
 const empty = document.getElementById('empty');
+const fileList = document.querySelector('.file-list');
 const moduleButtons = [...document.querySelectorAll('[data-select-module]')];
 const clearModule = document.getElementById('clear-module');
 const moduleFilter = document.getElementById('module-filter');
@@ -100,10 +301,11 @@ function filter() {
     found ||= !row.hidden;
   }
   empty.hidden = found || (!rows.length && selectedModule === null);
+  fileList.hidden = !found && rows.length > 0;
 }
 function selectModule(name) {
   selectedModule = name;
-  moduleFilter.textContent = name === null ? 'All modules' : 'Module: ' + name;
+  moduleFilter.textContent = name === null ? text.tAll : text.tModule + name;
   clearModule.hidden = name === null;
   for (const button of moduleButtons) button.setAttribute('aria-pressed', String(button.dataset.selectModule === name));
   filter();
@@ -128,13 +330,253 @@ function revealTarget() {
 }
 if (rows.length) {
   search.hidden = false;
-  document.querySelector('label[for="search"]').hidden = false;
   search.addEventListener('input', filter);
   document.addEventListener('click', event => {
     if (event.target.closest('a')?.hash === location.hash) revealTarget();
   });
-  window.addEventListener('hashchange', revealTarget);
+  addEventListener('hashchange', revealTarget);
   revealTarget();
 }
+
+// Dependency map: folders collapse into one node; arrows point from importer to imported.
+const mapRoot = document.getElementById('map');
+if (mapRoot) {
+  const data = JSON.parse(document.getElementById('graph-data').textContent);
+  const SVG = 'http://www.w3.org/2000/svg';
+  const LIMIT = 12, W = 196, H = 34, GAP_X = 76, GAP_Y = 12, PAD = 18;
+  const canvas = mapRoot.querySelector('[data-map-canvas]');
+  const crumbs = mapRoot.querySelector('[data-map-crumbs]');
+  const tree = {path: '', dirs: new Map(), files: [], count: 0};
+  const weight = data.files.map(() => 0);
+  for (const edge of data.edges) { weight[edge[0]] += edge[2]; weight[edge[1]] += edge[2]; }
+  data.files.forEach((file, index) => {
+    const parts = file[0].split('/');
+    let dir = tree;
+    dir.count += 1;
+    for (let depth = 0; depth < parts.length - 1; depth += 1) {
+      if (!dir.dirs.has(parts[depth])) dir.dirs.set(parts[depth], {path: parts.slice(0, depth + 1).join('/'), dirs: new Map(), files: [], count: 0});
+      dir = dir.dirs.get(parts[depth]);
+      dir.count += 1;
+    }
+    dir.files.push(index);
+  });
+  const initial = new Set(['']);
+  for (let dir = tree; dir.dirs.size === 1 && !dir.files.length;) {
+    dir = [...dir.dirs.values()][0];
+    initial.add(dir.path);
+  }
+
+  let open = new Set(initial);
+  function el(name, attrs, parent) {
+    const node = document.createElementNS(SVG, name);
+    for (const key in attrs) node.setAttribute(key, attrs[key]);
+    if (parent) parent.append(node);
+    return node;
+  }
+  function shorten(label, room) {
+    if (label.length <= room) return label;
+    const tail = Math.ceil((room - 1) * 0.6);
+    return label.slice(0, room - 1 - tail) + '…' + label.slice(-tail);
+  }
+  function visible() {
+    const nodes = [], owner = new Array(data.files.length);
+    const claim = (dir, id) => { for (const i of dir.files) owner[i] = id; for (const child of dir.dirs.values()) claim(child, id); };
+    const walk = dir => {
+      const base = dir.path ? dir.path + '/' : '';
+      for (const child of dir.dirs.values()) {
+        if (open.has(child.path)) { walk(child); continue; }
+        const id = 'd:' + child.path;
+        nodes.push({id, kind: 'dir', dir: child, label: child.path + '/', badge: String(child.count), title: child.path + '/ · ' + child.count + ' ' + text.tFiles});
+        claim(child, id);
+      }
+      const ranked = [...dir.files].sort((a, b) => weight[b] - weight[a] || a - b);
+      const shown = ranked.length > LIMIT + 1 ? ranked.slice(0, LIMIT) : ranked;
+      for (const i of shown) {
+        const id = 'f:' + i;
+        nodes.push({id, kind: 'file', index: i, label: data.files[i][0], badge: '', title: data.files[i][0] + ' · ' + data.files[i][1] + ' lines'});
+        owner[i] = id;
+      }
+      if (shown.length < ranked.length) {
+        const id = 'm:' + dir.path, rest = ranked.length - shown.length;
+        nodes.push({id, kind: 'more', dir, label: base + '… +' + rest, badge: '', title: '+' + rest + ' ' + text.tMore});
+        for (const i of ranked.slice(shown.length)) owner[i] = id;
+      }
+    };
+    walk(tree);
+    const links = new Map();
+    for (const edge of data.edges) {
+      const from = owner[edge[0]], to = owner[edge[1]];
+      if (from === to) continue;
+      const key = from + '>' + to;
+      const link = links.get(key) || {from, to, count: 0, soft: true};
+      link.count += edge[2];
+      link.soft = link.soft && !!edge[3];
+      links.set(key, link);
+    }
+    return {nodes, links: [...links.values()]};
+  }
+  function layout(nodes, links) {
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    for (const node of nodes) { node.out = []; node.near = []; node.layer = 0; node.state = 0; node.group = -1; }
+    for (const link of links) { byId.get(link.from).out.push(link); byId.get(link.from).near.push(byId.get(link.to)); byId.get(link.to).near.push(byId.get(link.from)); }
+    // Files that import each other in a cycle share one column, so the columns always read left to right.
+    let counter = 0, groups = 0;
+    const trail = [];
+    for (const start of nodes) {
+      if (start.state) continue;
+      const stack = [[start, 0]];
+      start.state = start.low = counter += 1;
+      trail.push(start);
+      start.onTrail = true;
+      while (stack.length) {
+        const frame = stack[stack.length - 1], node = frame[0];
+        const link = node.out[frame[1]];
+        frame[1] += 1;
+        if (link) {
+          const next = byId.get(link.to);
+          if (!next.state) {
+            next.state = next.low = counter += 1;
+            trail.push(next);
+            next.onTrail = true;
+            stack.push([next, 0]);
+          } else if (next.onTrail) node.low = Math.min(node.low, next.state);
+          continue;
+        }
+        stack.pop();
+        if (stack.length) stack[stack.length - 1][0].low = Math.min(stack[stack.length - 1][0].low, node.low);
+        if (node.low !== node.state) continue;
+        for (let member = null; member !== node;) {
+          member = trail.pop();
+          member.onTrail = false;
+          member.group = groups;
+        }
+        groups += 1;
+      }
+    }
+    const depth = new Array(groups).fill(0);
+    const across = links.filter(link => byId.get(link.from).group !== byId.get(link.to).group);
+    for (let pass = 0, moved = true; moved && pass <= groups; pass += 1) {
+      moved = false;
+      for (const link of across) {
+        const from = byId.get(link.from).group, to = byId.get(link.to).group;
+        if (depth[to] < depth[from] + 1) { depth[to] = depth[from] + 1; moved = true; }
+      }
+    }
+    for (const node of nodes) node.layer = depth[node.group];
+    const linked = nodes.filter(node => node.near.length), alone = nodes.filter(node => !node.near.length);
+    const layers = [];
+    for (const node of linked) (layers[node.layer] ||= []).push(node);
+    const columns = layers.filter(Boolean);
+    for (const column of columns) column.sort((a, b) => a.label < b.label ? -1 : 1);
+    const place = () => columns.forEach(column => column.forEach((node, row) => { node.row = (row + 0.5) / column.length; }));
+    place();
+    for (let sweep = 0; sweep < 6; sweep += 1) {
+      const order = sweep % 2 ? [...columns].reverse() : columns;
+      for (const column of order) {
+        for (const node of column) node.pull = node.near.reduce((sum, other) => sum + other.row, 0) / node.near.length;
+        column.sort((a, b) => a.pull - b.pull || (a.label < b.label ? -1 : 1));
+        place();
+      }
+    }
+    const tallest = Math.max(0, ...columns.map(column => column.length));
+    const height = tallest * (H + GAP_Y) - GAP_Y;
+    columns.forEach((column, x) => column.forEach((node, row) => {
+      node.x = PAD + x * (W + GAP_X);
+      node.y = PAD + (height - (column.length * (H + GAP_Y) - GAP_Y)) / 2 + row * (H + GAP_Y);
+    }));
+    let width = PAD * 2 + Math.max(0, columns.length * (W + GAP_X) - GAP_X) + (links.length > across.length ? GAP_X - PAD : 0);
+    let bottom = columns.length ? PAD + height : 0;
+    let captionY = null;
+    if (alone.length) {
+      const room = Math.max(width, canvas.clientWidth - 12, W + PAD * 2);
+      const perRow = Math.max(1, Math.floor((room - PAD * 2 + 14) / (W + 14)));
+      captionY = bottom + (columns.length ? 34 : PAD + 4);
+      alone.forEach((node, i) => {
+        node.x = PAD + (i % perRow) * (W + 14);
+        node.y = captionY + 12 + Math.floor(i / perRow) * (H + GAP_Y);
+      });
+      width = Math.max(width, PAD * 2 + Math.min(alone.length, perRow) * (W + 14) - 14);
+      bottom = captionY + 12 + Math.ceil(alone.length / perRow) * (H + GAP_Y) - GAP_Y;
+    }
+    return {width, height: bottom + PAD, captionY: columns.length && alone.length ? captionY : null, byId};
+  }
+  function draw() {
+    const graph = visible();
+    const box = layout(graph.nodes, graph.links);
+    canvas.replaceChildren();
+    crumbs.replaceChildren();
+    for (const path of [...open].filter(path => !initial.has(path)).sort()) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.textContent = path + '/ ×';
+      chip.title = text.tClose;
+      chip.addEventListener('click', () => { open = new Set([...open].filter(item => item !== path && !item.startsWith(path + '/'))); draw(); });
+      crumbs.append(chip);
+    }
+    if (!graph.nodes.length) return;
+    const svg = el('svg', {width: box.width, height: box.height, viewBox: '0 0 ' + box.width + ' ' + box.height, role: 'group'}, canvas);
+    const marker = el('marker', {id: 'arrow', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 8, markerHeight: 8, markerUnits: 'userSpaceOnUse', orient: 'auto'}, el('defs', {}, svg));
+    el('path', {d: 'M0 0L8 4L0 8z', class: 'arrow'}, marker);
+    const lines = el('g', {}, svg);
+    for (const link of graph.links) {
+      const from = box.byId.get(link.from), to = box.byId.get(link.to);
+      let path;
+      const cycle = to.x === from.x;
+      if (cycle) {
+        // Same column means both files sit on one import cycle; arc around the side.
+        const x = from.x + W, y1 = from.y + H / 2 + 5, y2 = to.y + H / 2 - 5, bulge = Math.min(GAP_X - 16, 22 + Math.abs(y2 - y1) * 0.12);
+        path = 'M' + x + ' ' + y1 + 'C' + (x + bulge) + ' ' + y1 + ' ' + (x + bulge) + ' ' + y2 + ' ' + (x + 2) + ' ' + y2;
+      } else {
+        const x1 = from.x + W, y1 = from.y + H / 2, x2 = to.x - 2, y2 = to.y + H / 2, bend = Math.max(34, (x2 - x1) / 2);
+        path = 'M' + x1 + ' ' + y1 + 'C' + (x1 + bend) + ' ' + y1 + ' ' + (x2 - bend) + ' ' + y2 + ' ' + x2 + ' ' + y2;
+      }
+      link.el = el('path', {class: 'edge' + (link.soft ? ' soft' : '') + (cycle ? ' back' : ''), 'marker-end': 'url(#arrow)',
+        'stroke-width': Math.min(3, 1 + Math.log2(link.count) * 0.35).toFixed(2), d: path}, lines);
+      el('title', {}, link.el).textContent = from.label + ' → ' + to.label + ' · ' + link.count;
+    }
+    if (box.captionY !== null || !graph.links.length) {
+      el('text', {x: PAD, y: (box.captionY ?? PAD + 4), class: 'caption'}, svg).textContent = graph.links.length ? text.tIsolated : text.tNone;
+    }
+    for (const node of graph.nodes) {
+      const group = el('g', {class: 'node ' + node.kind, transform: 'translate(' + node.x + ' ' + node.y + ')', tabindex: 0, role: node.kind === 'file' ? 'link' : 'button', 'aria-label': node.title}, svg);
+      el('title', {}, group).textContent = node.title;
+      el('rect', {width: W, height: H, rx: 8}, group);
+      const room = node.badge ? 20 : 24;
+      el('text', {x: 12, y: 21.5}, group).textContent = node.kind === 'file' && node.label.length > room ? '…' + node.label.slice(1 - room) : shorten(node.label, room);
+      if (node.badge) el('text', {x: W - 10, y: 21.5, 'text-anchor': 'end', class: 'badge'}, group).textContent = node.badge;
+      node.el = group;
+      const light = on => {
+        svg.classList.toggle('hl', on);
+        for (const other of graph.nodes) other.el.classList.toggle('on', on && (other === node || node.near.includes(other)));
+        for (const link of graph.links) link.el.classList.toggle('on', on && (link.from === node.id || link.to === node.id));
+      };
+      const act = () => {
+        if (node.kind === 'dir') { open.add(node.dir.path); draw(); }
+        else if (node.kind === 'file') { location.hash = 'file-' + node.index; revealTarget(); }
+        else { selectModule(null); search.value = node.dir.path ? node.dir.path + '/' : ''; filter(); document.getElementById('files').scrollIntoView({block: 'start'}); }
+      };
+      group.addEventListener('mouseenter', () => light(true));
+      group.addEventListener('mouseleave', () => light(false));
+      group.addEventListener('focus', () => light(true));
+      group.addEventListener('blur', () => light(false));
+      group.addEventListener('click', act);
+      group.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); act(); } });
+    }
+  }
+  // Open the largest folders until the first view shows enough structure to read.
+  for (let round = 0; round < 12; round += 1) {
+    const shown = visible().nodes;
+    if (shown.length >= 8) break;
+    const next = shown.filter(node => node.kind === 'dir' && shown.length - 1 + Math.min(node.dir.files.length, LIMIT + 1) + node.dir.dirs.size <= 24)
+      .sort((a, b) => b.dir.count - a.dir.count)[0];
+    if (!next) break;
+    open.add(next.dir.path);
+  }
+  const start = new Set(open);
+  mapRoot.querySelector('[data-map-reset]').addEventListener('click', () => { open = new Set(start); draw(); });
+  mapRoot.hidden = false;
+  draw();
+}
 </script>
+</body>
 </html>

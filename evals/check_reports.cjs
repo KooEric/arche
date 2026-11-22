@@ -12,7 +12,8 @@ async function check(browser, file, checkScreens) {
     await page.locator('#files details[data-file]').first().waitFor({ state: 'attached' });
     if (checkScreens) {
       await page.locator('nav a[href="#screens"]').click();
-      await page.locator('#screens summary').first().click();
+      const screen = page.locator('#screens details').first();
+      if (!(await screen.getAttribute('open') !== null)) await screen.locator('summary').click();
       await page.locator('#screens details[open] a[href^="#file-"]').first().click();
       await page.locator('#files details:target').waitFor({ state: 'visible' });
     }

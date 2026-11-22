@@ -29,8 +29,8 @@ test ! -e "$skill_home/arche" && test ! -L "$skill_home/arche" && cp -R "$arche_
 | Claude Code | `/arche 레포 분석` |
 | Cursor | `arche 스킬을 사용해 이 레포를 읽기 전용으로 분석해 줘` |
 
-스킬이 반환한 절대 `report.html` 경로를 로컬 브라우저에서 열어 Module map과
-Evidence tour를 확인한다. 설치 경로, 활성화 방식 및 결과 열기는 각 클라이언트
+스킬이 반환한 절대 `report.html` 경로를 로컬 브라우저에서 열어 핵심 파일, 의존성 맵,
+근거 투어를 확인한다. 설치 경로, 활성화 방식 및 결과 열기는 각 클라이언트
 버전에서 실제로 검증해야 한다. 명시적 파일 경로를 지정하는 일회성 호출도
 가능하다. 설치만으로 대상이 쓰기 방지되는 것은 아니므로 클라이언트의 도구
 권한도 제한한다.
@@ -39,7 +39,9 @@ Evidence tour를 확인한다. 설치 경로, 활성화 방식 및 결과 열기
 
 다음은 클라이언트와 독립적인 실행 예다. `repo`와 `tour`는 절대 경로로
 지정하고, 투어는 해당 레포와 정확히 일치하는 것을 사용한다. 아래 예는
-Arche 자체를 대상으로 한다. 세 명령은 같은 출력 폴더를 사용한다.
+Arche 자체를 대상으로 한다. 세 명령은 같은 출력 폴더를 사용한다. 투어 없이
+리포트만 만들 때는 `python3 -B "$scripts/arche.py" "$repo" --lang ko` 한 줄로
+세 단계를 실행한다. `--out`을 생략하면 `~/.arche/runs/<이름>-<커밋>`에 쓴다.
 
 ```sh
 repo=/absolute/path/to/Arche
@@ -48,7 +50,7 @@ tour="$repo/evals/tours/arche-report.json"
 out="$(mktemp -d "${TMPDIR:-/tmp}/arche-run.XXXXXX")"
 python3 -B "$scripts/scan.py" "$repo" --out "$out"
 python3 -B "$scripts/imports.py" --out "$out"
-python3 -B "$scripts/render.py" --out "$out" --tour "$tour"
+python3 -B "$scripts/render.py" --out "$out" --tour "$tour" --lang ko
 printf 'Report: %s/report.html\n' "$out"
 ```
 
