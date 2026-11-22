@@ -17,6 +17,9 @@ from arche_lib.errors import UsageError
 from arche_lib.jsonio import read_json, write_json, write_text
 
 
+PRIORITY = 40  # in a large repository, the files worth describing before any others
+
+
 def _slug(part_id):
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", part_id) or "part"
 
@@ -50,6 +53,10 @@ def main(argv):
     (out / "worksheets").mkdir(exist_ok=True)
     (out / "descriptions").mkdir(exist_ok=True)
     empty = []
+    # Files other code leans on, files that start things, and files that answer requests come first.
+    weight = {item["path"]: len(used_by[item["path"]]) * 2 + len(uses[item["path"]]) + len(routes[item["path"]]) * 3 for item in atlas["files"]}
+    for part_id in sorted(by_part):
+        by_part[part_id].sort(key=lambda item: (-weight[item["path"]], item["path"]))
     for part_id in sorted(by_part):
         target = out / "descriptions" / f"{_slug(part_id)}.json"
         filled = read_json(target) if target.exists() else {}
@@ -72,8 +79,11 @@ def main(argv):
                     empty.append(key)
         write_text(out / "worksheets" / f"{_slug(part_id)}.md", "\n".join(sheet))
         write_json(target, filled)
+    paths = {item["path"] for item in atlas["files"]}
+    ranked = sorted((key for key in empty if key in paths), key=lambda key: (-weight[key], key))
     return {"step": "describe", "worksheets": str((out / "worksheets").resolve()),
-            "descriptions": str((out / "descriptions").resolve()), "empty": len(empty), "first_empty": empty[:20]}
+            "descriptions": str((out / "descriptions").resolve()), "empty": len(empty), "first_empty": empty[:20],
+            "describe_first": ranked[:PRIORITY]}
 
 
 if __name__ == "__main__":

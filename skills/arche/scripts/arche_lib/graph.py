@@ -1,6 +1,7 @@
 """Build graph.json content: file and symbol nodes plus IMPORTS edges."""
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -126,6 +127,7 @@ def _skipped(inventory: dict, failures: List[str]) -> List[dict]:
     return sorted(from_scan + from_parse, key=lambda item: item["path"])
 
 
+_TEST_FILE = re.compile(r"(^|/)(tests?|__tests__|specs?|e2e)(/|$)|\.(test|spec)\.[^/.]+$|(^|/)test_[^/]*$|_test\.[^/.]+$")
 _UNKNOWN = None  # an effective prefix that could not be read
 _MOUNT_PASSES = 8  # nested mounts: app -> api -> users, with room to spare
 
@@ -258,7 +260,14 @@ def _http(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[List[dict], Li
     requests.sort(key=lambda request: (request["file"], request["line"]))
     routes = _mounted_routes(extracted, edges)
     listed = sorted(routes, key=lambda route: (route["file"], route["line"], route["method"], route["path"]))
-    return connect(requests, routes), listed
+    # A route set up inside a test stands in for the real one; application requests are matched
+    # against application routes, and only requests made by tests may reach test routes.
+    live = [route for route in routes if not _TEST_FILE.search(route["file"])]
+    by_tests = [request for request in requests if _TEST_FILE.search(request["file"])]
+    by_app = [request for request in requests if not _TEST_FILE.search(request["file"])]
+    connections = connect(by_app, live) + connect(by_tests, routes)
+    connections.sort(key=lambda item: (item["request"]["file"], item["request"]["line"]))
+    return connections, listed
 
 
 def build_graph(inventory: dict, read_path: ReadPath) -> dict:

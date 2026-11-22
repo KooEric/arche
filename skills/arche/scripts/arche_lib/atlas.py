@@ -164,6 +164,38 @@ def _assign(parts: list, paths: list) -> dict:
     return owner
 
 
+def _fold_large_parts(parts: list, owner: dict) -> None:
+    """Give a part with too many files of its own one card per folder, so every level stays readable.
+
+    The folders are plain containers, not parts someone named: the viewer shows them as folders.
+    """
+    queue = [part["id"] for part in parts]
+    while queue:
+        part_id = queue.pop()
+        own = sorted(path for path, holder in owner.items() if holder == part_id)
+        if len(own) <= LARGE_PART_FILES:
+            continue
+        split = [path.split("/") for path in own]
+        depth = 0
+        while all(len(bits) > depth + 1 for bits in split) and len({bits[depth] for bits in split}) == 1:
+            depth += 1
+        groups = defaultdict(list)
+        for path, bits in zip(own, split):
+            if len(bits) > depth + 1:
+                groups["/".join(bits[:depth + 1])].append(path)
+        if len(groups) < 2 and not (groups and len(next(iter(groups.values()))) < len(own)):
+            continue  # one flat folder: nothing to fold
+        parent = next(part for part in parts if part["id"] == part_id)
+        for folder, members in sorted(groups.items()):
+            child = {"id": f"{part_id}:{folder}", "label": folder.rsplit("/", 1)[-1] + "/", "kind": parent["kind"], "summary": "",
+                     "parent": part_id, "paths": [], "packages": [], "hosts": [], "evidence": None,
+                     "depth": parent.get("depth", 1) + 1, "folder": True}
+            parts.append(child)
+            for path in members:
+                owner[path] = child["id"]
+            queue.append(child["id"])
+
+
 def _ancestors(part_id, by_id):
     chain = []
     while part_id is not None:
@@ -202,6 +234,8 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
     by_id = {part["id"]: part for part in parts}
 
     owner = _assign(parts, paths)
+    _fold_large_parts(parts, owner)
+    by_id = {part["id"]: part for part in parts}
     unassigned = [path for path in paths if path not in owner]
     if paths and len(unassigned) / len(paths) > UNASSIGNED_WARNING:
         folders = Counter(path.rsplit("/", 1)[0] if "/" in path else "." for path in unassigned)
@@ -293,7 +327,12 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
                 link[ends[0] + "_file"] = index_of[path]
     links += cited
 
-    connected = {(link["from"], link["to"]) for link in links} | {(link["to"], link["from"]) for link in links}
+    # A link between two folders also connects the parts that hold them.
+    connected = set()
+    for link in links:
+        for a in _ancestors(link["from"], by_id):
+            for b in _ancestors(link["to"], by_id):
+                connected.update(((a, b), (b, a)))
     for flow in flows:
         for before, after in zip(flow["steps"], flow["steps"][1:]):
             if before["part"] != after["part"] and (before["part"], after["part"]) not in connected:
@@ -303,14 +342,12 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
     children = Counter(part["parent"] for part in parts if part["parent"])
     out_parts = []
     for part in parts:
-        if document is not None and not part["summary"]:
+        if document is not None and not part["summary"] and not part.get("folder"):
             warnings.append(f"part {part['id']} has no summary")
-        if members[part["id"]] > LARGE_PART_FILES and not children[part["id"]] and document is not None:
-            warnings.append(f"part {part['id']} holds {members[part['id']]} files and no sub-parts; consider splitting it")
-        if part["kind"] != "external" and not members[part["id"]] and not children[part["id"]]:
+        if part["kind"] != "external" and not part.get("folder") and not members[part["id"]] and not children[part["id"]]:
             warnings.append(f"part {part['id']} matches no scanned file")
         out_parts.append({key: part[key] for key in ("id", "label", "kind", "summary", "parent", "evidence")}
-                         | {"unnamed": bool(part.get("unnamed")), "changed": 0, "findings": 0})
+                         | {"unnamed": bool(part.get("unnamed")), "folder": bool(part.get("folder")), "changed": 0, "findings": 0})
 
     symbols = Counter(node["id"][4:].rsplit("#", 1)[0] for node in graph["nodes"] if node["type"] == "symbol")
     out_files = []

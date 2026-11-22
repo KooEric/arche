@@ -2,7 +2,7 @@
 
 A part is something a newcomer would name when asked "what is this system made of": the mobile app, the API, the job runner, the database. Read `brief.txt`, the README, the manifests and the entry points before you write `map.json`.
 
-- Aim for 3 to 9 parts at the top level and at most 3 levels. Split a part with `parent` when it holds more than about 24 files.
+- Aim for 3 to 9 parts at the top level and at most 3 levels. Split a part with `parent` where its pieces do different jobs. Size alone is no reason: a part with many files is shown folder by folder.
 - Follow how the code runs and deploys, then how the folders are laid out. Two folders that ship as one service are one part.
 - Give every part a `label` in the reader's words and a one-sentence `summary` of what it does today. With `"audience": "everyone"`, use everyday words: "login" rather than "auth middleware".
 - `paths` are folders or globs. A file goes to the deepest part that claims it. Run `map.py` and fix the list until fewer than 10% of files are unassigned.

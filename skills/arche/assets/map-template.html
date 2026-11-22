@@ -91,6 +91,8 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 .card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .card[data-type="part"] { border-left: 3px solid var(--accent); }
 .card[data-kind="external"] { border-style: dashed; border-left-style: dashed; }
+.card[data-folder="true"] { border-left-color: var(--line-strong); }
+.card[data-folder="true"] strong { font: 600 .84rem var(--mono); }
 .card[data-type="ghost"] { background: transparent; border-style: dashed; }
 .card[data-type="more"] { background: transparent; border-style: dashed; color: var(--muted); }
 .badge { display: inline-block; padding: 0 .4rem; border-radius: 5px; background: var(--sunken); font: 500 .68rem/1.6 var(--mono); color: var(--muted); }
@@ -233,7 +235,7 @@ function level() {
   const at = state.at, nodes = new Map();
   const inside = new Set(chain(at));
   const add = node => { if (!nodes.has(node.id)) nodes.set(node.id, node); return node.id; };
-  const partNode = (part, ghost) => add({id: 'p:' + part.id, type: ghost ? 'ghost' : 'part', part, label: part.label, sub: part.summary || (part.unnamed ? T.unnamed : ''), path: ''});
+  const partNode = (part, ghost) => add({id: 'p:' + part.id, type: ghost ? 'ghost' : 'part', part, label: part.label, sub: part.summary || (part.unnamed ? T.unnamed : part.folder ? within(part.id).length + ' ' + T.files : ''), path: ''});
   for (const part of kids.get(at) || []) partNode(part, false);
   const own = [...(filesOf.get(at) || [])].sort((a, b) => weight[b.index] - weight[a.index] || a.index - b.index);
   const shown = new Set((own.length > LIMIT ? own.slice(0, LIMIT - 1) : own).map(file => file.index));
@@ -247,7 +249,8 @@ function level() {
     if (position === 0) return null;
     if (position > 0) return 'p:' + up[position - 1];
     const outer = up.filter(item => !inside.has(item));
-    return partNode(parts.get(outer[outer.length - 1]), true);
+    // A file that belongs to an enclosing part itself is shown as that part.
+    return partNode(parts.get(outer.length ? outer[outer.length - 1] : up[0]), true);
   };
   const repFile = index => {
     const file = D.files[index];
@@ -268,7 +271,11 @@ function level() {
   for (const item of D.file_links) link(repFile(item[0]), repFile(item[1]), item[2], item[3]);
   const end = (item, side) => item[side + '_file'] !== undefined ? repFile(item[side + '_file']) : repPart(item[side]);
   for (const item of D.links) if (item.kind !== 'import') link(end(item, 'from'), end(item, 'to'), item.status, item.count, item.label);
-  return {nodes: [...nodes.values()], edges: [...edges.values()].filter(edge => nodes.has(edge.from) && nodes.has(edge.to))};
+  // Inside a part, keep only the links that touch it and the neighbours those links reach.
+  const inner = id => nodes.has(id) && nodes.get(id).type !== 'ghost';
+  const kept = [...edges.values()].filter(edge => nodes.has(edge.from) && nodes.has(edge.to) && (inner(edge.from) || inner(edge.to)));
+  const reached = new Set(kept.flatMap(edge => [edge.from, edge.to]));
+  return {nodes: [...nodes.values()].filter(node => node.type !== 'ghost' || reached.has(node.id)), edges: kept};
 }
 
 function layout(nodes, edges, room) {
@@ -426,7 +433,7 @@ function drawMap() {
     if (edge.label) s('text', {x: lx, y: ly, 'text-anchor': 'middle', class: 'edge-label'}, svg).textContent = edge.label;
   }
   for (const node of graph.nodes) {
-    const card = h('button', {type: 'button', class: 'card', 'data-type': node.type, 'data-kind': node.part ? node.part.kind : null, 'aria-pressed': String(state.sel === node.id), title: node.path || node.label}, [
+    const card = h('button', {type: 'button', class: 'card', 'data-type': node.type, 'data-kind': node.part ? node.part.kind : null, 'data-folder': node.part && node.part.folder ? 'true' : null, 'aria-pressed': String(state.sel === node.id), title: node.path || node.label}, [
       h('strong', {text: node.label}), node.sub ? h('span', {text: node.sub}) : null, node.path ? h('span', {class: 'mono', text: node.path}) : null]);
     card.style.left = node.x + 'px';
     card.style.top = node.y + 'px';
@@ -469,7 +476,7 @@ function drawPanel(graph) {
     out.push(...list(T.routes, D.routes.filter(route => route.file === file.path).map(route => h('span', {}, [h('code', {text: route.method + ' ' + route.path}), document.createTextNode(route.description ? ' — ' + route.description : '')]))));
   } else if (part) {
     const all = within(part.id);
-    out.push(h('h2', {text: part.label}), h('p', {text: part.summary || (part.unnamed ? T.unnamed : T.nosummary)}),
+    out.push(h('h2', {text: part.label}), h('p', {text: part.summary || (part.unnamed ? T.unnamed : part.folder ? '' : T.nosummary)}),
       h('div', {class: 'row'}, [h('span', {class: 'badge', text: T['kind_' + part.kind] || part.kind}), h('span', {class: 'badge', text: all.length + ' ' + T.files}),
         h('span', {class: 'badge', text: all.reduce((sum, file) => sum + file.lines, 0) + ' ' + T.lines}),
         part.changed ? h('span', {class: 'badge', 'data-tone': 'warn', text: T.changed + ' ' + part.changed}) : null,
@@ -481,7 +488,7 @@ function drawPanel(graph) {
     out.push(...list(T.files_title, all.slice(0, 40).map(file => h('a', {href: D.report + '#file-' + file.index, class: 'mono', text: file.path}))));
   } else {
     out.push(h('h2', {text: D.project.name}), h('p', {text: D.project.summary || T.nosummary}),
-      h('div', {class: 'row'}, [h('span', {class: 'badge', text: D.parts.length + ' ' + T.parts}), h('span', {class: 'badge', text: D.stats.files + ' ' + T.files}),
+      h('div', {class: 'row'}, [h('span', {class: 'badge', text: D.parts.filter(part => !part.folder).length + ' ' + T.parts}), h('span', {class: 'badge', text: D.stats.files + ' ' + T.files}),
         h('span', {class: 'badge', text: T.described + ' ' + D.stats.described_files + '/' + D.stats.files})]),
       h('p', {}, [h('a', {href: D.report, text: T.report})]));
     if (D.generated_from === 'folders') out.push(h('p', {class: 'muted', text: T.auto}));
