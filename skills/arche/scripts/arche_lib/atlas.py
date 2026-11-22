@@ -84,12 +84,14 @@ def _auto_parts(paths: list) -> list:
     groups = defaultdict(list)
     for path in paths:
         groups[path.split("/", 1)[0] if "/" in path else "."].append(path)
+    settled = set()  # folders already split: what stays under their name is their own files
     while len(groups) < MIN_TOP:
         splittable = [name for name, members in groups.items()
-                      if name != "." and len({member[len(name) + 1:].split("/", 1)[0] for member in members}) > 1]
+                      if name != "." and name not in settled and any("/" in member[len(name) + 1:] for member in members)]
         if not splittable:
             break
         name = max(splittable, key=lambda item: (len(groups[item]), item))
+        settled.add(name)
         for member in groups.pop(name):
             rest = member[len(name) + 1:]
             groups[name + "/" + rest.split("/", 1)[0] if "/" in rest else name].append(member)
