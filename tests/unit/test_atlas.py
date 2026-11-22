@@ -148,3 +148,21 @@ def test_brief_counts_route_like_lines_that_were_not_read(make_repo, run_script,
 def test_folder_split_always_terminates(paths, expected):
     from arche_lib.atlas import _auto_parts
     assert {part["label"] for part in _auto_parts(paths)} == expected
+
+
+def test_a_large_part_is_folded_by_folder_and_flows_still_connect():
+    sources = {f"app/ui/screen_{n}.py": "import app.core.api\n" for n in range(30)}
+    sources.update({f"app/core/util_{n}.py": "pass\n" for n in range(5)})
+    sources.update({"app/core/api.py": "pass\n", "app/main.py": "pass\n"})
+    graph = _graph(sources)
+    inventory = {"files": [{"path": n["id"][5:], "status": "analyzed", "lines": n["lines"], "sha256": n["sha256"]}
+                           for n in graph["nodes"] if n["type"] == "file"]}
+    document = {"version": 1, "project": {"name": "d", "summary": "s"}, "parts": [
+        {"id": "app", "label": "App", "kind": "ui", "summary": "all of it", "paths": ["app"]}]}
+    atlas = build_atlas(inventory, graph, document)
+    folders = {part["id"]: part for part in atlas["parts"] if part["folder"]}
+    assert set(folders) == {"app:app/ui", "app:app/core"} and folders["app:app/ui"]["parent"] == "app"
+    owner = {item["path"]: item["part"] for item in atlas["files"]}
+    assert owner["app/ui/screen_3.py"] == "app:app/ui" and owner["app/main.py"] == "app"
+    assert atlas["warnings"] == []
+    assert any(link["from"] == "app:app/ui" and link["to"] == "app:app/core" for link in atlas["links"])

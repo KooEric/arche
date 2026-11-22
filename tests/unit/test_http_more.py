@@ -44,3 +44,14 @@ def test_call_on_an_imported_axios_instance_is_a_request_and_other_imports_are_n
     })
     assert [(c["request"]["method"], c["request"]["path"], c["request"]["line"]) for c in graph["http_connections"]] == [
         ("GET", "/orders", 4), ("POST", "/events", 5)]
+
+
+def test_a_route_declared_in_a_test_does_not_compete_with_the_real_one():
+    graph = _graph({
+        "api/src/worker.ts": 'import { Hono } from "hono";\nconst app = new Hono();\napp.get("/items", c => c.json([]));\nexport default app;\n',
+        "api/test/limit.test.ts": 'import { Hono } from "hono";\nconst app = new Hono();\napp.get("/items", c => c.text("x"));\nfetch("/items");\n',
+        "web/app.ts": 'export const load = () => fetch("/items");\n',
+    })
+    by_file = {c["request"]["file"]: c for c in graph["http_connections"]}
+    assert by_file["web/app.ts"]["status"] == "inferred" and by_file["web/app.ts"]["candidates"][0]["file"] == "api/src/worker.ts"
+    assert by_file["api/test/limit.test.ts"]["reason"] == "multiple_handlers"

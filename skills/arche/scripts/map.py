@@ -36,7 +36,7 @@ def main(argv):
     stats = atlas["stats"]
     return {
         "step": "map", "atlas": str((out / "atlas.json").resolve()), "source": atlas["generated_from"],
-        "parts": len(atlas["parts"]), "files_assigned": f"{stats['assigned']}/{stats['files']}",
+        "parts": sum(1 for part in atlas["parts"] if not part["folder"]), "folders": sum(1 for part in atlas["parts"] if part["folder"]), "files_assigned": f"{stats['assigned']}/{stats['files']}",
         "descriptions": f"files {stats['described_files']}/{stats['files']} · routes {stats['described_routes']}/{stats['routes']}",
         "warnings": atlas["warnings"],
     }

@@ -68,7 +68,7 @@ def build(graph, read_path=None):
             continue
         fan_out[source] += 1
         fan_in[target] += 1
-        a, b = ("/".join(p.split("/")[:2]) if "/" in p else "." for p in (source, target))
+        a, b = ("/".join(p.split("/")[:-1][:2]) or "." for p in (source, target))
         if a != b:
             between[a, b] += 1
     entries = sorted((p for p in files if fan_out[p] and not fan_in[p] and not _TEST.search(p)), key=lambda p: (-fan_out[p], p))
@@ -90,8 +90,10 @@ def build(graph, read_path=None):
     lines += ["", f"ROUTE-LIKE LINES NOT READ ({len(unread)}; check these by hand, the map will not show them)"]
     lines += ["  " + ", ".join(unread[:TOP])] if unread else ["  none"]
     hosts = sorted({item["request"]["host"] for item in connections if item["request"].get("host")})
-    packages = Counter(item["package"] for item in graph["externals"])
-    lines += ["", "EXTERNAL HOSTS", "  " + (", ".join(hosts) or "none"), "", "EXTERNAL PACKAGES (files using each)"]
+    builtin = getattr(sys, "stdlib_module_names", frozenset())
+    packages = Counter(item["package"] for item in graph["externals"]
+                       if item["package"].split(".")[0] not in builtin and not item["package"].startswith(("dart:", "node:")))
+    lines += ["", "EXTERNAL HOSTS", "  " + (", ".join(hosts) or "none"), "", "EXTERNAL PACKAGES (files using each; standard libraries left out)"]
     lines += [f"  {name}  {count}" for name, count in sorted(packages.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]
     skipped = Counter(item["reason"] for item in graph["skipped"])
     lines += ["", "NOT PARSED", "  " + (", ".join(f"{reason} {count}" for reason, count in sorted(skipped.items())) or "none")]
