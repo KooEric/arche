@@ -99,3 +99,41 @@ def test_brief_map_describe_and_render_write_the_map(make_repo, run_script, tmp_
     (out / "map.json").write_text(json.dumps(bad))
     done = run_script("map.py", "--out", out)
     assert done.returncode != 0 and "parts[0].kind" in done.stderr
+
+
+def test_screens_review_lists_and_editor_links():
+    from arche_lib.atlas import attach_review
+    inventory, graph = _inputs()
+    document = _document()
+    document["screens"] = [{"title": "Home", "part": "app", "items": [
+        {"label": "Open", "behavior": "Shows the list.", "evidence": {"path": "app/view.py", "start_line": 1}}]}]
+    atlas = build_atlas(inventory, graph, document)
+    assert atlas["screens"][0]["items"][0]["evidence"]["sha256"]
+    atlas = attach_review(atlas, {"files": [{"path": "api/server.py", "status": "modified"}]},
+                          [{"rule": "unused-private-symbol", "path": "app/main.py", "line": 3, "name": "_x"}])
+    counts = {part["id"]: (part["changed"], part["findings"]) for part in atlas["parts"]}
+    assert counts["api"] == (1, 0) and counts["app"] == (0, 1)
+    assert atlas["findings"][0]["part"] == "app" and atlas["changes"][0]["part"] == "api"
+    template = "<style></style><script></script>$csp $lang $title $noscript $data"
+    assert "vscode://" not in render_map(template, atlas) and "/abs/repo" not in render_map(template, atlas)
+    html = render_map(template, atlas, editor={"name": "vscode", "root": "/abs/repo/"})
+    assert '"editor":{"url":"vscode://file/{path}:{line}","root":"/abs/repo"}' in html
+
+    document["screens"][0]["part"] = "nope"
+    with pytest.raises(IntegrityError) as error:
+        build_atlas(inventory, graph, document)
+    assert "screens[0].part" in str(error.value)
+
+
+def test_brief_counts_route_like_lines_that_were_not_read(make_repo, run_script, tmp_path):
+    repo = make_repo({"app/server.ts": 'import { Hono } from "hono";\nconst app = new Hono();\napp.get("/ok", c => c.text("ok"));\n'
+                                       'const other = make();\nother.post("/missed", handler);\nexport default app;\n'})
+    out = tmp_path / "out"
+    assert run_script("arche.py", repo, "--out", out).returncode == 0
+    assert run_script("brief.py", "--out", out).returncode == 0
+    brief = (out / "brief.txt").read_text()
+    assert "ROUTE-LIKE LINES NOT READ (1;" in brief and "app/server.ts:5" in brief
+    done = run_script("render.py", "--out", out, "--editor", "zed")
+    assert done.returncode == 0, done.stderr
+    assert "zed://file/" in (out / "map.html").read_text(encoding="utf-8")
+    assert str(repo) not in (out / "report.html").read_text(encoding="utf-8")

@@ -40,6 +40,8 @@ Pass `--lang ko` when the user writes Korean and `--lang en` otherwise. The same
 4. Run `python3 -B "$scripts/describe.py" --out "$out"`, read the files it lists, and fill `descriptions/*.json` following `references/writing-descriptions.md`. Leave unread files empty.
 5. Run `map.py` and then `render.py --out "$out" --lang "$lang"` again. Give the user the `map` path first, then the report.
 
+`brief.txt` lists route-like lines the scan could not read; check those files by hand before you describe the API. Add `--editor vscode` (or `cursor`, `zed`, `idea`) to `render.py` only when the user asks for editor links: it writes the repository's absolute path into `map.html`.
+
 A solid line is a static import the scan resolved, a dashed line is inferred, and a cited line is your claim with a checked location. Say so when you describe a connection.
 
 Open the report with a tour whenever you explain the repository. After reading the source, write a tour JSON in the output directory and run `render.py --out "$out" --tour "$tour" --lang "$lang"`. The tour's optional `title` and `summary`, and each step's optional `title` and `note`, appear in the report as written, so put the walkthrough's main points there in the user's language. Keep them to plain text without source excerpts or credentials.

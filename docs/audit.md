@@ -20,3 +20,5 @@ Two rules run on Java and Kotlin files. Both report a name only when it appears 
 | `unused-nonpublic-type` | A package-private Java type or an `internal` Kotlin type at the top level | Every Java and Kotlin file |
 
 Annotated declarations, serialization hooks such as `serialVersionUID` and `readObject`, and paths under `test`, `androidTest`, `generated`, `fixtures`, `examples` or `samples` are left out. Overloaded names are never reported, because each declaration counts as a mention of the other. Reflection and generated code can still use a reported name; read the callers before removing it.
+
+On five published source archives (OkHttp 4.12, Gson 2.10.1, Commons Lang 3.14, Guava 33.0 and kotlinx-coroutines-core 1.7.3; 1,239 files) the two rules reported two candidates, both in Guava. Each name appears once in that archive, so both are unused there. This shows the rules stay quiet on maintained code; it does not measure how much dead code they miss.

@@ -8,5 +8,6 @@ def test_synthetic_audit_metrics_cover_every_rule():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     result = module.score()
-    assert len(result['rules']) == 4
-    assert all(m == {'tp': 1, 'fp': 0, 'fn': 0, 'precision': 1.0, 'recall': 1.0} for m in result['rules'].values())
+    assert len(result['rules']) == 6
+    assert all(m['fp'] == 0 and m['fn'] == 0 and m['precision'] == 1.0 and m['recall'] == 1.0 for m in result['rules'].values())
+    assert result['rules']['unused-private-member']['tp'] == 3 and result['rules']['unused-nonpublic-type']['tp'] == 2

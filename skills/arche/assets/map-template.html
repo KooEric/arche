@@ -60,7 +60,16 @@ header { display: flex; align-items: center; gap: .6rem 1rem; flex-wrap: wrap; p
 .icon svg { width: 1rem; height: 1rem; }
 main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 21rem; }
 .stage { min-width: 0; min-height: 0; overflow: auto; background: var(--sunken); position: relative; display: flex; flex-direction: column; }
-.canvas { position: relative; flex: none; margin: 0 auto auto 0; }
+.viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; }
+.viewport.dragging { cursor: grabbing; }
+.canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.zoom { position: absolute; right: .7rem; bottom: .7rem; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg); box-shadow: 0 0 0 1px var(--line); }
+.zoom button { border: 0; background: transparent; min-width: 1.9rem; padding: .15rem .5rem; border-radius: 6px; cursor: pointer; color: var(--muted); font: .82rem var(--mono); }
+.zoom button:hover { background: var(--sunken); color: var(--ink); }
+.group { margin-top: 1.4rem; }
+.group h3 { font: 600 .9rem var(--sans); margin-bottom: .3rem; }
+.group li { padding: .35rem 0; border-bottom: 1px solid var(--line); font-size: .88rem; }
+.tabs { flex-wrap: wrap; }
 .page { width: 100%; }
 .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; opacity: .85; }
@@ -87,7 +96,7 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 .badge { display: inline-block; padding: 0 .4rem; border-radius: 5px; background: var(--sunken); font: 500 .68rem/1.6 var(--mono); color: var(--muted); }
 .badge[data-tone="warn"] { background: var(--warn-soft); color: var(--warn); }
 .badge[data-tone="bad"] { background: var(--bad-soft); color: var(--bad); }
-.legend { position: sticky; left: 0; bottom: 0; margin-top: auto; display: flex; flex-wrap: wrap; gap: .2rem 1.1rem; padding: .45rem 1rem; font-size: .76rem; color: var(--muted); background: var(--bg); border-top: 1px solid var(--line); }
+.legend { flex: none; display: flex; flex-wrap: wrap; gap: .2rem 1.1rem; padding: .45rem 1rem; font-size: .76rem; color: var(--muted); background: var(--bg); border-top: 1px solid var(--line); }
 .legend i { display: inline-block; width: 1.6rem; border-top: 2px solid var(--accent); vertical-align: middle; margin-right: .4rem; }
 .legend i[data-status="inferred"] { border-top: 2px dashed var(--warn); }
 .legend i[data-status="cited"] { border-top-color: var(--c2); }
@@ -200,8 +209,19 @@ function evidenceLink(evidence) {
   if (!evidence) return null;
   const index = fileIndex.get(evidence.path);
   const label = evidence.path + ':' + evidence.start_line + (evidence.end_line > evidence.start_line ? '–' + evidence.end_line : '');
-  return index === undefined ? h('code', {text: label}) : h('a', {href: D.report + '#file-' + index, class: 'mono', text: label});
+  const link = index === undefined ? h('code', {text: label}) : h('a', {href: D.report + '#file-' + index, class: 'mono', text: label});
+  const edit = editorLink(evidence.path, evidence.start_line);
+  return edit ? h('span', {}, [link, document.createTextNode(' · '), edit]) : link;
 }
+function editorLink(path, line) {
+  if (!D.editor) return null;
+  const full = (D.editor.root + '/' + path).split('/').map(encodeURIComponent).join('/');
+  return h('a', {href: D.editor.url.replace('{path}', full).replace('{line}', String(line || 1)), text: T.edit});
+}
+const partLabel = id => parts.has(id) ? parts.get(id).label : T.nopart;
+const partButton = id => parts.has(id) ? h('button', {type: 'button', class: 'link', text: partLabel(id), on: {click: () => go({view: 'map', at: parts.get(id).parent || '', sel: 'p:' + id})}}) : h('span', {text: T.nopart});
+const VIEWS = ['map', 'flows'].concat(D.screens.length ? ['screens'] : [], D.changes.length ? ['changes'] : [], D.findings.length ? ['findings'] : [], ['list']);
+const camera = {at: null, k: 1, x: 0, y: 0};
 
 const state = {view: 'map', at: '', sel: null, flow: 0, step: 0};
 const stage = document.getElementById('stage');
@@ -318,7 +338,7 @@ function layout(nodes, edges, room) {
 function go(change) {
   Object.assign(state, change);
   const hash = state.view === 'map' ? 'map/' + encodeURIComponent(state.at) + (state.sel ? '/' + encodeURIComponent(state.sel) : '')
-    : state.view === 'flows' ? 'flows/' + state.flow + '/' + state.step : 'list';
+    : state.view === 'flows' ? 'flows/' + state.flow + '/' + state.step : state.view;
   history.replaceState(null, '', '#' + hash);
   render();
 }
@@ -334,8 +354,45 @@ function drawMap() {
   if (!graph.nodes.length) { stage.append(h('p', {class: 'note', text: T.empty})); return graph; }
   const box = layout(graph.nodes, graph.edges, stage.clientWidth);
   const canvas = h('div', {class: 'canvas'});
+  const viewport = h('div', {class: 'viewport'}, [canvas]);
   canvas.style.width = box.width + 'px';
   canvas.style.height = box.height + 'px';
+  const apply = () => { canvas.style.transform = 'translate(' + camera.x + 'px,' + camera.y + 'px) scale(' + camera.k + ')'; };
+  const fit = () => {
+    const k = Math.max(0.35, Math.min(1, viewport.clientWidth / box.width, viewport.clientHeight / box.height));
+    Object.assign(camera, {k, x: Math.max(0, (viewport.clientWidth - box.width * k) / 2) * (box.width * k < viewport.clientWidth * 0.6 ? 0 : 1), y: 0});
+    apply();
+  };
+  const zoomAt = (factor, cx, cy) => {
+    const k = Math.max(0.3, Math.min(2, camera.k * factor));
+    camera.x = cx - (cx - camera.x) * (k / camera.k);
+    camera.y = cy - (cy - camera.y) * (k / camera.k);
+    camera.k = k;
+    apply();
+  };
+  viewport.addEventListener('wheel', event => {
+    event.preventDefault();
+    const area = viewport.getBoundingClientRect();
+    if (event.shiftKey) { camera.x -= event.deltaY; apply(); }
+    else zoomAt(Math.exp(-event.deltaY * 0.0015), event.clientX - area.left, event.clientY - area.top);
+  }, {passive: false});
+  let drag = null;
+  viewport.addEventListener('pointerdown', event => {
+    if (event.target.closest('.card, .zoom')) return;
+    drag = {x: event.clientX - camera.x, y: event.clientY - camera.y};
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add('dragging');
+  });
+  viewport.addEventListener('pointermove', event => { if (drag) { camera.x = event.clientX - drag.x; camera.y = event.clientY - drag.y; apply(); } });
+  const release = () => { drag = null; viewport.classList.remove('dragging'); };
+  viewport.addEventListener('pointerup', release);
+  viewport.addEventListener('pointercancel', release);
+  const center = () => [viewport.clientWidth / 2, viewport.clientHeight / 2];
+  mapKeys = {'+': () => zoomAt(1.25, ...center()), '=': () => zoomAt(1.25, ...center()), '-': () => zoomAt(0.8, ...center()), '0': fit};
+  viewport.append(h('div', {class: 'zoom'}, [
+    h('button', {type: 'button', 'aria-label': T.zoomout, title: T.zoomout, text: '−', on: {click: () => mapKeys['-']()}}),
+    h('button', {type: 'button', 'aria-label': T.zoomin, title: T.zoomin, text: '+', on: {click: () => mapKeys['+']()}}),
+    h('button', {type: 'button', title: T.fit, text: T.fit, on: {click: fit}})]));
   const svg = s('svg', {width: box.width, height: box.height}, canvas);
   for (const status of ['verified', 'inferred', 'cited']) {
     const marker = s('marker', {id: 'a-' + status, viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 8, markerHeight: 8, markerUnits: 'userSpaceOnUse', orient: 'auto'}, svg);
@@ -373,14 +430,16 @@ function drawMap() {
     node.el = card;
     canvas.append(card);
   }
-  stage.append(canvas, h('div', {class: 'legend'}, [
+  stage.append(viewport, h('div', {class: 'legend'}, [
     h('span', {}, [h('i', {'data-status': 'verified'}), document.createTextNode(T.verified)]),
     h('span', {}, [h('i', {'data-status': 'inferred'}), document.createTextNode(T.inferred)]),
     h('span', {}, [h('i', {'data-status': 'cited'}), document.createTextNode(T.cited)]),
     h('span', {text: T.hint})]));
+  if (camera.at !== state.at) { camera.at = state.at; fit(); } else apply();
   return graph;
 }
 
+let mapKeys = {};
 function list(title, items) {
   return items.length ? [h('h3', {text: title + ' ' + items.length}), h('ul', {}, items.map(item => h('li', {}, [item])))] : [];
 }
@@ -394,7 +453,7 @@ function drawPanel(graph) {
     out.push(h('h2', {text: file.name || file.path.slice(file.path.lastIndexOf('/') + 1)}), h('p', {class: 'mono muted', text: file.path}),
       h('p', {text: file.description || T.undescribed}),
       h('div', {class: 'row'}, [h('span', {class: 'badge', text: file.lang}), h('span', {class: 'badge', text: file.lines + ' ' + T.lines}), h('span', {class: 'badge', text: file.symbols + ' ' + T.symbols})]),
-      h('a', {class: 'enter', href: D.report + '#file-' + file.index, text: T.open}));
+      h('a', {class: 'enter', href: D.report + '#file-' + file.index, text: T.open}), D.editor ? h('p', {}, [editorLink(file.path, 1)]) : null);
     out.push(...list(T.routes, D.routes.filter(route => route.file === file.path).map(route => h('span', {}, [h('code', {text: route.method + ' ' + route.path}), document.createTextNode(route.description ? ' — ' + route.description : '')]))));
   } else if (part) {
     const all = within(part.id);
@@ -454,15 +513,41 @@ function drawList() {
   panel.replaceChildren(h('h2', {text: T.list}), h('p', {class: 'muted', text: T.listhint}));
 }
 
+function drawScreens() {
+  stage.replaceChildren(h('div', {class: 'page'}, [h('h2', {text: T.screens})].concat(D.screens.map(screen => h('div', {class: 'group'}, [
+    h('h3', {text: screen.title}), screen.part ? h('p', {class: 'muted'}, [partButton(screen.part)]) : null,
+    h('ul', {}, screen.items.map(item => h('li', {}, [h('strong', {text: item.label}), h('p', {text: item.behavior}),
+      item.evidence ? h('p', {class: 'muted'}, [document.createTextNode(T.evidence + ' · '), evidenceLink(item.evidence)]) : null])))])))));
+  panel.replaceChildren(h('h2', {text: T.screens}), h('p', {class: 'muted', text: D.screens.length + ''}));
+}
+function drawReview(kind) {
+  const items = D[kind], groups = new Map();
+  for (const item of items) { const key = item.part || ''; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); }
+  const row = item => {
+    const index = fileIndex.get(item.path);
+    const where = item.path + (item.line ? ':' + item.line : '');
+    const link = index === undefined ? h('code', {text: where}) : h('a', {href: D.report + '#file-' + index, class: 'mono', text: where});
+    const edit = editorLink(item.path, item.line);
+    return h('li', {}, [h('span', {class: 'badge', 'data-tone': kind === 'findings' ? 'bad' : 'warn', text: kind === 'findings' ? (T['rule_' + item.rule] || item.rule) : item.status}),
+      document.createTextNode(' '), item.name ? h('code', {text: item.name}) : null, document.createTextNode(item.name ? ' · ' : ''), link,
+      edit ? document.createTextNode(' · ') : null, edit]);
+  };
+  stage.replaceChildren(h('div', {class: 'page'}, [h('h2', {text: T[kind] + ' ' + items.length}), h('p', {class: 'muted', text: T[kind + 'hint']})]
+    .concat([...groups.keys()].sort().map(key => h('div', {class: 'group'}, [h('h3', {}, [partButton(key), document.createTextNode(' ' + groups.get(key).length)]), h('ul', {}, groups.get(key).map(row))])))));
+  panel.replaceChildren(h('h2', {text: T[kind]}), h('p', {class: 'muted', text: T[kind + 'hint']}));
+}
+
 function render() {
   const crumbs = document.getElementById('crumbs');
   const trail = state.view === 'map' ? chain(state.at).reverse() : [];
   crumbs.replaceChildren(h('button', {type: 'button', text: D.project.name, on: {click: () => go({view: 'map', at: '', sel: null})}}),
     ...trail.flatMap(id => [h('span', {text: '/'}), h('button', {type: 'button', text: parts.get(id).label, on: {click: () => go({at: id, sel: null})}})]));
-  document.getElementById('tabs').replaceChildren(...['map', 'flows', 'list'].map(view =>
+  document.getElementById('tabs').replaceChildren(...VIEWS.map(view =>
     h('button', {type: 'button', 'aria-pressed': String(state.view === view), text: T[view], on: {click: () => go({view})}})));
   if (state.view === 'flows') drawFlows();
   else if (state.view === 'list') drawList();
+  else if (state.view === 'screens') drawScreens();
+  else if (state.view === 'changes' || state.view === 'findings') drawReview(state.view);
   else drawPanel(drawMap());
 }
 
@@ -483,6 +568,7 @@ q.addEventListener('input', () => {
 });
 addEventListener('keydown', event => {
   if (event.key === '/' && document.activeElement !== q) { event.preventDefault(); q.focus(); }
+  else if (state.view === 'map' && document.activeElement !== q && mapKeys[event.key]) { event.preventDefault(); mapKeys[event.key](); }
   else if (event.key === 'Escape') {
     if (!results.hidden) { results.hidden = true; q.blur(); }
     else if (state.view === 'map' && state.sel) go({sel: null});
@@ -492,7 +578,7 @@ addEventListener('keydown', event => {
 function fromHash() {
   const bits = location.hash.slice(1).split('/').map(decodeURIComponent);
   if (bits[0] === 'flows') Object.assign(state, {view: 'flows', flow: +bits[1] || 0, step: +bits[2] || 0});
-  else if (bits[0] === 'list') state.view = 'list';
+  else if (VIEWS.includes(bits[0]) && bits[0] !== 'map') state.view = bits[0];
   else if (bits[0] === 'map') Object.assign(state, {view: 'map', at: parts.has(bits[1]) ? bits[1] : '', sel: bits[2] || null});
   render();
 }
