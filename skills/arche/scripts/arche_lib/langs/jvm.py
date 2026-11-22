@@ -107,6 +107,8 @@ def extract(path, text):
         line = line_of(masked, offset)
         imports.append({"spec": name, "line": line, "quote": source_line(lines, line), "names": [name], "implicit": True})
     references = {match.group(0) for match in _TYPE_REFERENCE.finditer(masked.text, body_start)}
+    if kotlin:
+        references |= {match.group(1) for match in _CALL.finditer(masked.text, body_start)}
     return {"imports": imports, "symbols": symbols, "package": package, "references": references}
 
 
@@ -130,7 +132,8 @@ def build_context(parsed_paths, all_paths, read_path):
         package = result["package"]
         package_of[path] = package
         references[path] = result["references"]
-        type_names[path] = {symbol["name"] for symbol in result["symbols"] if symbol["kind"] in _TYPE_KINDS}
+        # Names a wildcard import can bring in: types, and Kotlin top-level functions.
+        type_names[path] = {symbol["name"] for symbol in result["symbols"] if symbol["kind"] in _TYPE_KINDS or symbol["kind"] == "function"}
         packages.setdefault(package, []).append(path)
         prefix = package + "." if package else ""
         for symbol in result["symbols"]:

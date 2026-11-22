@@ -518,7 +518,7 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
     has_tour = bool(tour and tour.get("steps"))
     # Past this many files the details are sent as data and drawn when a file is opened.
     lazy = len(files) > lazy_file_limit
-    file_list = (
+    file_list = ((f'<noscript><p class="callout" data-tone="warn">{T("This report draws file details with JavaScript. Render again with --full-details to read them without it.")}</p></noscript>' if lazy else "") +
         f'<div class="filter-bar"><label for="search" hidden>{T("Filter by file path")}</label>'
         f'<input type="search" id="search" placeholder="{T("Filter by file path…")}" hidden>'
         f'<p id="module-filter">{T("All modules")}</p><button type="button" id="clear-module" hidden>{T("Show all modules")}</button></div>'

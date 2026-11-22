@@ -86,3 +86,13 @@ def test_kotlin_bare_call_reaches_a_same_package_function_unless_defined_locally
     edges = [e for e in graph['edges'] if e['from'] == 'file:a/Page.kt']
     assert [(e['to'], e['names'], e['status'], e['rule'], e['evidence']['line']) for e in edges] == [
         ('file:a/Helpers.kt', ['slug'], 'inferred', 'jvm_same_package', 3)]
+
+
+def test_kotlin_wildcard_keeps_the_file_whose_function_is_called():
+    graph = _graph({
+        'a/util/Strings.kt': 'package a.util\nfun slug(text: String) = text\n',
+        'a/util/Numbers.kt': 'package a.util\nfun half(n: Int) = n / 2\n',
+        'a/Page.kt': 'package a\nimport a.util.*\nfun title() = slug("x")\n',
+    })
+    edges = [e for e in graph['edges'] if e['from'] == 'file:a/Page.kt']
+    assert [(e['to'], e['rule']) for e in edges] == [('file:a/util/Strings.kt', 'jvm_package_wildcard')]

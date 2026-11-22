@@ -12,6 +12,22 @@ from typing import Callable, Iterator, Optional
 from .tour import _lines, range_digest
 
 LOCK_VERSION = 1
+SKETCH_SIZE = 48
+RENAME_SIMILARITY = 0.6   # share of lines a renamed file must keep
+RENAME_MARGIN = 0.1       # and how far it must lead the next candidate
+
+
+def sketch(text: str) -> list:
+    """The smallest hashes of a file's distinct lines: enough to tell later how much of it survived."""
+    hashes = {int(hashlib.sha1(line.strip().encode("utf-8")).hexdigest()[:8], 16) for line in text.split("\n") if line.strip()}
+    return sorted(hashes)[:SKETCH_SIZE]
+
+
+def similarity(first: list, second: list) -> float:
+    if not first or not second:
+        return 0.0
+    both, smallest = set(first) & set(second), sorted(set(first) | set(second))[:SKETCH_SIZE]
+    return sum(1 for value in smallest if value in both) / len(smallest)
 
 
 def evidence_holders(document: dict) -> Iterator[tuple]:
@@ -32,7 +48,8 @@ def _key(evidence: dict) -> str:
     return f"{evidence['path']}:{evidence['start_line']}-{evidence.get('end_line', evidence['start_line'])}"
 
 
-def build_lock(document: Optional[dict], inventory: dict, graph: dict, read_path: Callable[[str], Optional[str]]) -> dict:
+def build_lock(document: Optional[dict], inventory: dict, graph: dict, read_path: Callable[[str], Optional[str]],
+               described: tuple = ()) -> dict:
     cited = {}
     for _, holder in evidence_holders(document or {}):
         evidence = holder.get("evidence") if isinstance(holder, dict) else None
@@ -41,9 +58,13 @@ def build_lock(document: Optional[dict], inventory: dict, graph: dict, read_path
             if text is not None:
                 cited[_key(evidence)] = range_digest(text, evidence["start_line"], evidence.get("end_line", evidence["start_line"]))
     parsed = {node["id"][5:] for node in graph["nodes"] if node["type"] == "file"}
+    # Sketch the files someone wrote about, so a rename that also edits the file can be followed.
+    worth = (set(described) | {key.rsplit(":", 1)[0] for key in cited}) & parsed
+    sketches = {path: sketch(read_path(path) or "") for path in sorted(worth)}
     return {
         "schema_version": LOCK_VERSION,
         "evidence": cited,
+        "sketches": sketches,
         "files": {entry["path"]: entry["sha256"] for entry in inventory["files"] if entry["path"] in parsed},
         "routes": sorted({f"{route['method']} {route['path']}" for route in graph.get("http_routes", ())}),
     }
@@ -72,10 +93,29 @@ def carry(document: Optional[dict], descriptions: dict, lock: dict, inventory: d
         targets = [target for target in by_hash.get(digest, ()) if target not in old_files]
         if path not in new_files and len(targets) == 1:
             moved[path] = targets[0]
+    # A file that was renamed and edited: the unclaimed new file of the same type that kept most of its lines.
+    edited = {}
+    unclaimed = [path for path in new_files if path not in old_files and path not in moved.values()]
+    fresh = {}
+    for path, lines in sorted(lock.get("sketches", {}).items()):
+        if path in new_files or path in moved or not lines:
+            continue
+        suffix = path[path.rfind("."):] if "." in path.rsplit("/", 1)[-1] else ""
+        scores = []
+        for candidate in unclaimed:
+            if candidate.endswith(suffix) and candidate not in edited.values():
+                if candidate not in fresh:
+                    fresh[candidate] = sketch(read_path(candidate) or "")
+                scores.append((similarity(lines, fresh[candidate]), candidate))
+        scores.sort(reverse=True)
+        if scores and scores[0][0] >= RENAME_SIMILARITY and (len(scores) == 1 or scores[0][0] - scores[1][0] >= RENAME_MARGIN):
+            edited[path] = scores[0][1]
+    moved.update(edited)
     report = {
         "files_new": sorted(path for path in new_files if path not in old_files and path not in moved.values()),
         "files_changed": sorted(path for path in new_files if path in old_files and old_files[path] != new_files[path]),
-        "files_moved": [{"from": source, "to": target} for source, target in sorted(moved.items())],
+        "files_moved": [{"from": source, "to": target, **({"edited": True} if source in edited else {})}
+                        for source, target in sorted(moved.items())],
         "files_removed": sorted(path for path in old_files if path not in new_files and path not in moved),
         "evidence_moved": [], "evidence_stale": [],
         "routes_new": [], "routes_removed": [],
@@ -115,5 +155,5 @@ def carry(document: Optional[dict], descriptions: dict, lock: dict, inventory: d
         carried[name] = kept
     described = {key for content in carried.values() for key, value in content.items()
                  if isinstance(value, dict) and value.get("description")}
-    report["review_descriptions"] = [path for path in report["files_changed"] if path in described]
+    report["review_descriptions"] = sorted(path for path in report["files_changed"] + list(edited.values()) if path in described)
     return document, carried, report

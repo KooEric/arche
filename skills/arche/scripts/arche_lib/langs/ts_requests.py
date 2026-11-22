@@ -89,10 +89,28 @@ def _fetch_method(masked, after_url: int) -> Optional[str]:
     return None
 
 
+_EXPORTED_CLIENT = re.compile(r"\bexport\s+(?:const|let|var)\s+(" + _IDENT + r")\s*=\s*axios\s*\.\s*create\s*\(")
+_DEFAULT_EXPORT = re.compile(r"\bexport\s+default\s+(" + _IDENT + r")\s*;?")
+
+
 def requests(path: str, text: str) -> list:
+    return requests_and_clients(path, text)[0]
+
+
+def requests_and_clients(path: str, text: str):
+    """(requests, clients this file exports, calls on names that may be an imported client).
+
+    A call such as `api.get("/x")` counts only when `api` is an axios instance. When
+    the name is not created here, the graph step checks the file it is imported from.
+    """
     masked = mask(text, JS)
-    clients = {"axios"} | {m.group(1) for m in _CLIENT.finditer(masked.text)}
-    found = []
+    local = {m.group(1) for m in _CLIENT.finditer(masked.text)}
+    clients = {"axios"} | local
+    default = _DEFAULT_EXPORT.search(masked.text)
+    exported = {name: {"default": False} for name in (m.group(1) for m in _EXPORTED_CLIENT.finditer(masked.text))}
+    if default and default.group(1) in local:
+        exported[default.group(1)] = {"default": True}
+    found, pending = [], []
 
     def add(match, method, url_at):
         value = request_path(masked.strings[url_at])
@@ -105,6 +123,13 @@ def requests(path: str, text: str) -> list:
         if method is not None:
             add(match, method, match.end())
     for match in _VERB.finditer(masked.text):
-        if match.group(1) in clients and _url_end(masked, match.end()) is not None:
+        if _url_end(masked, match.end()) is None:
+            continue
+        if match.group(1) in clients:
             add(match, match.group(2).upper(), match.end())
-    return sorted(found, key=lambda item: item["line"])
+        else:
+            value = request_path(masked.strings[match.end()])
+            if value is not None:
+                pending.append({"client": match.group(1),
+                                "request": request_record(path, line_of(masked, match.start()), match.group(2).upper(), value)})
+    return sorted(found, key=lambda item: item["line"]), exported, pending
