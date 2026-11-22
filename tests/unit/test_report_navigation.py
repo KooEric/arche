@@ -99,3 +99,19 @@ def test_korean_interface_and_tour_narrative():
     assert '설명 &lt;b&gt;' in html and 'Fix &lt;it&gt;' in html and 'c' * 40 in html
     assert '>Dependency map<' not in html
     assert '>Dependency map<' in render(TEMPLATE, linked(), [], 'match')
+
+
+def test_large_reports_send_file_details_as_data():
+    graph = linked()
+    graph['nodes'].append({'type': 'symbol', 'id': 'sym:pkg/a.py#secret<name', 'kind': 'function', 'line': 2})
+    eager = render(TEMPLATE, graph, [], 'match')
+    lazy = render(TEMPLATE, graph, [], 'match', lazy_file_limit=2)
+    assert '<script type="application/json" id="file-details">null</script>' in eager
+    assert '<code>secret&lt;name</code>' in eager and '<div class="detail">' in eager
+    # Every file keeps its row and anchor; the details move into the data block.
+    assert lazy.count('<details class="file"') == eager.count('<details class="file"') == 4
+    assert '<div class="detail">' not in lazy.split('<script type="application/json"')[0]
+    block = lazy.split('id="file-details">')[1].split('</script>')[0]
+    data = __import__('json').loads(block)
+    assert '<' not in block and data[0]['s'] == [['secret<name', 'function', 2]]
+    assert data[1]['o'][0][:4] == [0, '', 'verified', 1]
