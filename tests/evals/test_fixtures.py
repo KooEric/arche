@@ -3,10 +3,17 @@ import pytest
 import score
 from arche_lib import jsonio
 
-FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic"}
+FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic", "jvm-basic"}
 INFERRED_ONLY = {
     ("py-dynamic", "tools/run.py", "vendor_local/helper.py"),
     ("ts-alias", "src/main.ts", "packages/legacy/src/index.ts"),
+    ("jvm-basic", "app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt", "app/src/main/java/com/acme/shop/model/Order.java"),
+}
+# Same-package Java and Kotlin types have no import statement; they are inferred and stay out of recall.
+IMPLICIT = {
+    ("jvm-basic", "app/src/main/java/com/acme/shop/OrderService.java", "app/src/main/java/com/acme/shop/Receipt.java"),
+    ("jvm-basic", "app/src/main/kotlin/com/acme/shop/ui/Main.kt", "app/src/main/kotlin/com/acme/shop/ui/Screen.kt"),
+    ("jvm-basic", "app/src/test/kotlin/com/acme/shop/OrderServiceTest.kt", "app/src/main/java/com/acme/shop/OrderService.java"),
 }
 
 
@@ -35,7 +42,7 @@ def test_import_edges_meet_the_release_gates(results):
 
 
 def test_every_language_is_scored(results):
-    assert set(score.by_language(results)) == {"python", "typescript", "dart"}
+    assert set(score.by_language(results)) == {"python", "typescript", "dart", "java", "kotlin"}
 
 
 def test_edges_not_verified_are_exactly_the_ones_declared_as_inferred(results):
@@ -43,7 +50,7 @@ def test_edges_not_verified_are_exactly_the_ones_declared_as_inferred(results):
     inferred = {(r["fixture"],) + edge for r in results for edge in r["inferred_correct"]}
 
     assert missed == INFERRED_ONLY
-    assert inferred == INFERRED_ONLY
+    assert inferred == INFERRED_ONLY | IMPLICIT
     assert all(r["inferred_wrong"] == [] for r in results)
 
 
