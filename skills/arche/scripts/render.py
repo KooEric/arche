@@ -12,10 +12,10 @@ import time
 from pathlib import Path
 
 from arche_lib import cli, gitinfo
-from arche_lib.atlas import build_atlas, read_descriptions
+from arche_lib.atlas import attach_review, build_atlas, read_descriptions
 from arche_lib.audit import build_audit, delta
 from arche_lib.audit_jvm import build_jvm_audit
-from arche_lib.mapview import render_map
+from arche_lib.mapview import EDITORS, render_map
 from arche_lib.i18n import LANGUAGES
 from arche_lib.errors import IntegrityError, UsageError
 from arche_lib.jsonio import check_graph, inventory_digest, read_snapshot, read_json, write_json, write_text
@@ -47,6 +47,7 @@ def main(argv):
     parser.add_argument("--internal-exports", action="append", default=[], metavar="DIR", help="opt in a repository-relative internal directory for explicit Python export checks")
     parser.add_argument("--base-out", type=Path, help="clean base snapshot run directory for finding comparison")
     parser.add_argument("--tour", type=Path, help="optional tour JSON to validate and include")
+    parser.add_argument("--editor", choices=sorted(EDITORS), help="add links in map.html that open cited lines in this editor; writes the repository's absolute path into the map")
     parser.add_argument("--lang", choices=LANGUAGES, default="en", help="language of the report interface (default: en)")
     args = parser.parse_args(argv)
     out = args.out
@@ -110,7 +111,10 @@ def main(argv):
             raise IntegrityError("atlas.json describes a different snapshot; run map.py again")
         if atlas is None:
             atlas = build_atlas(inventory, graph, None, read_descriptions(out), changes, findings)
-        atlas_html = render_map(MAP_TEMPLATE.read_text(encoding="utf-8"), atlas, args.lang)
+        else:
+            atlas = attach_review(atlas, changes, findings)  # the audit runs here, after map.py
+        editor = {"name": args.editor, "root": str(root)} if args.editor else None
+        atlas_html = render_map(MAP_TEMPLATE.read_text(encoding="utf-8"), atlas, args.lang, editor=editor)
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise IntegrityError(f"invalid report inputs: {exc!r}") from None
 

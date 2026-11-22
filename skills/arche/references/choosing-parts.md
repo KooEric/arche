@@ -10,6 +10,8 @@ A part is something a newcomer would name when asked "what is this system made o
 - An `edges` entry is a claim you make. `map.py` checks that the cited lines exist, and the viewer draws the link as cited. Cite the line that shows the connection.
 - A `flows` entry walks one user task across parts. Each step names a part, says what happens in one sentence, and cites the line where it happens.
 
+- A `screens` entry lists what a user sees: a `title`, an optional `part`, and `items` with a `label`, a `behavior` sentence and `evidence`.
+
 `kind` is one of `ui`, `service`, `worker`, `library`, `data`, `test`, `script`, `config`, `external`.
 
 ```json

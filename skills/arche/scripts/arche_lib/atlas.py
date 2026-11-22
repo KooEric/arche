@@ -196,6 +196,7 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
             _bad("audience", f"{audience!r} is not one of {', '.join(AUDIENCES)}")
         parts = _read_parts(document, inventory_files)
         flows, cited = [], []
+    screens = []
     by_id = {part["id"]: part for part in parts}
 
     owner = _assign(parts, paths)
@@ -218,6 +219,22 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
                           "count": 1, "label": _text(raw.get("label"), f"{where}.label", required=False), "evidence": evidence})
             if cited[-1]["evidence"] is None:
                 warnings.append(f"{where} has no evidence; the viewer marks it as a claim without a source")
+        for index, raw in enumerate(_list(document.get("screens"), "screens")):
+            where = f"screens[{index}]"
+            if not isinstance(raw, dict):
+                _bad(where, "must be an object")
+            if raw.get("part") is not None and raw["part"] not in by_id:
+                _bad(f"{where}.part", f"unknown part {raw['part']!r}", _closest(str(raw["part"]), by_id))
+            items = []
+            for number, item in enumerate(_list(raw.get("items"), f"{where}.items")):
+                spot = f"{where}.items[{number}]"
+                if not isinstance(item, dict):
+                    _bad(spot, "must be an object")
+                items.append({"label": _text(item.get("label"), f"{spot}.label"), "behavior": _text(item.get("behavior"), f"{spot}.behavior"),
+                              "evidence": _evidence(item.get("evidence"), f"{spot}.evidence", inventory_files)})
+            if not items:
+                _bad(f"{where}.items", "needs at least one item")
+            screens.append({"title": _text(raw.get("title"), f"{where}.title"), "part": raw.get("part"), "items": items})
         for index, raw in enumerate(_list(document.get("flows"), "flows")):
             where = f"flows[{index}]"
             if not isinstance(raw, dict):
@@ -280,8 +297,6 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
             if before["part"] != after["part"] and (before["part"], after["part"]) not in connected:
                 warnings.append(f"flow {flow['id']}: no recorded connection between {before['part']} and {after['part']}")
 
-    changed = Counter(owner.get(item["path"]) for item in (changes or {}).get("files", ()))
-    audited = Counter(owner.get(item["path"]) for item in findings or ())
     members = Counter(owner.values())
     children = Counter(part["parent"] for part in parts if part["parent"])
     out_parts = []
@@ -293,7 +308,7 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
         if part["kind"] != "external" and not members[part["id"]] and not children[part["id"]]:
             warnings.append(f"part {part['id']} matches no scanned file")
         out_parts.append({key: part[key] for key in ("id", "label", "kind", "summary", "parent", "evidence")}
-                         | {"unnamed": bool(part.get("unnamed")), "changed": changed[part["id"]], "findings": audited[part["id"]]})
+                         | {"unnamed": bool(part.get("unnamed")), "changed": 0, "findings": 0})
 
     symbols = Counter(node["id"][4:].rsplit("#", 1)[0] for node in graph["nodes"] if node["type"] == "symbol")
     out_files = []
@@ -311,7 +326,7 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
 
     described_files = sum(1 for item in out_files if item["description"])
     described_routes = sum(1 for item in routes if item["description"])
-    return {
+    atlas = {
         "schema_version": ATLAS_VERSION,
         "repo": graph["repo"],
         "inventory_sha256": graph["inventory_sha256"],
@@ -324,10 +339,26 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
         "links": links,
         "routes": routes,
         "flows": flows,
+        "screens": screens,
         "warnings": warnings,
         "stats": {"files": len(paths), "assigned": len(paths) - len(unassigned), "unassigned": unassigned,
                   "described_files": described_files, "routes": len(routes), "described_routes": described_routes},
     }
+    return attach_review(atlas, changes, findings)
+
+
+def attach_review(atlas: dict, changes: Optional[dict], findings: Optional[list]) -> dict:
+    """Put the change comparison and the audit candidates on the map, per part and as lists."""
+    owner = {item["path"]: item["part"] for item in atlas["files"]}
+    atlas["changes"] = [{"path": item["path"], "status": item["status"], "part": owner.get(item["path"])}
+                        for item in (changes or {}).get("files", ())]
+    atlas["findings"] = [{"rule": item["rule"], "path": item["path"], "line": item["line"], "name": item.get("name", ""),
+                          "part": owner.get(item["path"])} for item in findings or ()]
+    changed = Counter(item["part"] for item in atlas["changes"])
+    audited = Counter(item["part"] for item in atlas["findings"])
+    for part in atlas["parts"]:
+        part["changed"], part["findings"] = changed[part["id"]], audited[part["id"]]
+    return atlas
 
 
 def read_descriptions(out_dir) -> dict:

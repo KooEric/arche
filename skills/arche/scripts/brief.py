@@ -14,13 +14,37 @@ from pathlib import Path
 from arche_lib import cli
 from arche_lib.atlas import load_inputs
 from arche_lib.jsonio import write_text
+from arche_lib.sources import make_reader
 
 TREE_DEPTH = 3
 TOP = 15
 _TEST = re.compile(r"(^|/)(tests?|__tests__|specs?|fixtures)(/|$)|(^|/)(test_[^/]*|[^/]*_test|[^/]*\.(test|spec))\.[^/.]+$")
 
 
-def build(graph):
+_ROUTE_LIKE = {
+    "python": re.compile(r"^\s*@\w[\w.]*\.(?:get|post|put|patch|delete|route|websocket)\("),
+    "typescript": re.compile(r"\.(?:get|post|put|patch|delete|all)\(\s*[\"'`]/"),
+}
+_ROUTE_LIKE["javascript"] = _ROUTE_LIKE["typescript"]
+
+
+def unread_routes(graph, read_path):
+    """Lines shaped like a route declaration that the extractors did not turn into a route."""
+    known = {(route["file"], route["line"]) for route in graph.get("http_routes", ())}
+    known |= {(c["request"]["file"], c["request"]["line"]) for c in graph.get("http_connections", ())}
+    found = []
+    for node in graph["nodes"]:
+        pattern = _ROUTE_LIKE.get(node.get("lang")) if node["type"] == "file" else None
+        if pattern is None:
+            continue
+        path = node["id"][5:]
+        for number, line in enumerate((read_path(path) or "").splitlines(), 1):
+            if pattern.search(line) and (path, number) not in known:
+                found.append(f"{path}:{number}")
+    return found
+
+
+def build(graph, read_path=None):
     files = {node["id"][5:]: node for node in graph["nodes"] if node["type"] == "file"}
     lines = [f"REPOSITORY {graph['repo']['name']} · {len(files)} parsed files · {sum(n['lines'] for n in files.values())} lines", ""]
 
@@ -62,6 +86,9 @@ def build(graph):
         target = item["candidates"][0]["file"] if item["status"] == "inferred" and item["candidates"] else item["reason"]
         host = f" host {request['host']}" if request.get("host") else ""
         lines.append(f"  {request['method']} {request['path']}{host}  {request['file']}:{request['line']} -> {target}")
+    unread = unread_routes(graph, read_path) if read_path else []
+    lines += ["", f"ROUTE-LIKE LINES NOT READ ({len(unread)}; check these by hand, the map will not show them)"]
+    lines += ["  " + ", ".join(unread[:TOP])] if unread else ["  none"]
     hosts = sorted({item["request"]["host"] for item in connections if item["request"].get("host")})
     packages = Counter(item["package"] for item in graph["externals"])
     lines += ["", "EXTERNAL HOSTS", "  " + (", ".join(hosts) or "none"), "", "EXTERNAL PACKAGES (files using each)"]
@@ -75,9 +102,9 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory holding inventory.json and graph.json")
     args = parser.parse_args(argv)
-    _, graph = load_inputs(args.out)
+    inventory, graph = load_inputs(args.out)
     path = args.out / "brief.txt"
-    write_text(path, build(graph))
+    write_text(path, build(graph, make_reader(inventory)))
     return {"step": "brief", "brief": str(path.resolve())}
 
 

@@ -24,15 +24,38 @@ _TEXT = {
     "auto": ("This map was drawn from folders. Write map.json to name the parts.", "폴더를 기준으로 자동으로 그린 지도입니다. map.json을 쓰면 부품에 이름이 붙습니다."),
     "empty": ("Nothing to show at this level.", "이 단계에 표시할 것이 없습니다."), "noflows": ("No flows in this map.", "이 지도에는 흐름이 없습니다."),
     "nohits": ("No matches.", "일치하는 항목이 없습니다."), "listhint": ("Every part and file as plain text.", "모든 부품과 파일을 글로 나열합니다."),
+    "screens": ("Screens", "화면"), "changes": ("Changes", "변경"), "findings": ("Audit", "감사"),
+    "edit": ("Open in editor", "편집기에서 열기"), "zoomin": ("Zoom in", "확대"), "zoomout": ("Zoom out", "축소"), "fit": ("Fit", "맞춤"),
+    "findingshint": ("Review candidates, not confirmed defects. Open the cited line before changing anything.",
+                     "확정된 결함이 아니라 검토 후보입니다. 수정 전에 인용된 줄을 열어 확인하세요."),
+    "changeshint": ("Files changed in the compared Git range, grouped by part.", "비교한 Git 범위에서 바뀐 파일을 부품별로 묶었습니다."),
+    "nopart": ("No part", "부품 없음"),
+    "rule_unused-private-symbol": ("Unused private symbol", "쓰이지 않는 비공개 심볼"),
+    "rule_unused-internal-export": ("Unused internal export", "쓰이지 않는 내부 export"),
+    "rule_duplicate-block": ("Identical function bodies", "본문이 같은 함수"),
+    "rule_isolated-module": ("Isolated module", "고립된 모듈"),
+    "rule_unused-private-member": ("Unused private member", "쓰이지 않는 private 멤버"),
+    "rule_unused-nonpublic-type": ("Unused non-public type", "쓰이지 않는 비공개 타입"),
     "kind_ui": ("screen", "화면"), "kind_service": ("service", "서비스"), "kind_worker": ("worker", "워커"), "kind_library": ("library", "라이브러리"),
     "kind_data": ("data", "데이터"), "kind_test": ("test", "테스트"), "kind_script": ("script", "스크립트"), "kind_config": ("config", "설정"),
     "kind_external": ("external", "외부"),
 }
 
 
-def render_map(template, atlas, lang="en", report="report.html"):
+# {path} is the absolute file path and {line} the first cited line.
+EDITORS = {
+    "vscode": "vscode://file/{path}:{line}",
+    "cursor": "cursor://file/{path}:{line}",
+    "zed": "zed://file/{path}:{line}",
+    "idea": "idea://open?file={path}&line={line}",
+}
+
+
+def render_map(template, atlas, lang="en", report="report.html", editor=None):
     pick = 1 if lang == "ko" else 0
     data = {**atlas, "report": report, "t": {key: pair[pick] for key, pair in _TEXT.items()}}
+    if editor:
+        data["editor"] = {"url": EDITORS[editor["name"]], "root": editor["root"].rstrip("/")}
     data["stats"] = {key: value for key, value in atlas["stats"].items() if key != "unassigned"}
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
     return Template(template).substitute(
