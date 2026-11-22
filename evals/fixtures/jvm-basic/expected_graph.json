@@ -1,0 +1,127 @@
+{
+  "analyzed": [
+    "app/build.gradle.kts",
+    "app/src/main/java/com/acme/shop/OrderService.java",
+    "app/src/main/java/com/acme/shop/Receipt.java",
+    "app/src/main/java/com/acme/shop/model/Order.java",
+    "app/src/main/java/com/acme/shop/model/Status.java",
+    "app/src/main/java/com/acme/shop/util/Money.java",
+    "app/src/main/kotlin/com/acme/shop/data/Cache.kt",
+    "app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt",
+    "app/src/main/kotlin/com/acme/shop/ui/Main.kt",
+    "app/src/main/kotlin/com/acme/shop/ui/Screen.kt",
+    "app/src/test/kotlin/com/acme/shop/OrderServiceTest.kt",
+    "settings.gradle.kts"
+  ],
+  "skipped": [],
+  "imports": [
+    {
+      "from": "app/src/main/java/com/acme/shop/OrderService.java",
+      "to": "app/src/main/java/com/acme/shop/model/Order.java"
+    },
+    {
+      "from": "app/src/main/java/com/acme/shop/OrderService.java",
+      "to": "app/src/main/java/com/acme/shop/util/Money.java"
+    },
+    {
+      "from": "app/src/main/java/com/acme/shop/OrderService.java",
+      "to": "app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt"
+    },
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/ui/Main.kt",
+      "to": "app/src/main/java/com/acme/shop/OrderService.java"
+    },
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/ui/Main.kt",
+      "to": "app/src/main/java/com/acme/shop/model/Status.java"
+    },
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/ui/Main.kt",
+      "to": "app/src/main/java/com/acme/shop/util/Money.java"
+    },
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/ui/Main.kt",
+      "to": "app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt"
+    },
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/ui/Screen.kt",
+      "to": "app/src/main/java/com/acme/shop/OrderService.java"
+    },
+    {
+      "from": "app/src/test/kotlin/com/acme/shop/OrderServiceTest.kt",
+      "to": "app/src/main/kotlin/com/acme/shop/data/Cache.kt"
+    }
+  ],
+  "inferred": [
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt",
+      "to": "app/src/main/java/com/acme/shop/model/Order.java"
+    }
+  ],
+  "unresolved": [
+    {
+      "from": "app/src/main/java/com/acme/shop/OrderService.java",
+      "spec": "com.acme.shop.model.Missing"
+    }
+  ],
+  "externals": [
+    {
+      "from": "app/build.gradle.kts",
+      "package": "org.jetbrains.kotlin.gradle.tasks"
+    },
+    {
+      "from": "app/src/main/java/com/acme/shop/OrderService.java",
+      "package": "org.slf4j"
+    },
+    {
+      "from": "app/src/main/java/com/acme/shop/model/Order.java",
+      "package": "java.util"
+    },
+    {
+      "from": "app/src/main/java/com/acme/shop/util/Money.java",
+      "package": "java.math"
+    },
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt",
+      "package": "kotlinx.coroutines.flow"
+    },
+    {
+      "from": "app/src/test/kotlin/com/acme/shop/OrderServiceTest.kt",
+      "package": "org.junit"
+    }
+  ],
+  "symbols": [
+    "sym:app/src/main/java/com/acme/shop/OrderService.java#OrderService",
+    "sym:app/src/main/java/com/acme/shop/Receipt.java#Receipt",
+    "sym:app/src/main/java/com/acme/shop/model/Order.java#Order",
+    "sym:app/src/main/java/com/acme/shop/model/Status.java#Status",
+    "sym:app/src/main/java/com/acme/shop/util/Money.java#Money",
+    "sym:app/src/main/java/com/acme/shop/util/Money.java#Rounding",
+    "sym:app/src/main/kotlin/com/acme/shop/data/Cache.kt#Cache",
+    "sym:app/src/main/kotlin/com/acme/shop/data/Cache.kt#LIMIT",
+    "sym:app/src/main/kotlin/com/acme/shop/data/Cache.kt#head",
+    "sym:app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt#MemoryOrders",
+    "sym:app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt#OrderRepository",
+    "sym:app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt#Orders",
+    "sym:app/src/main/kotlin/com/acme/shop/data/OrderRepository.kt#defaultRepository",
+    "sym:app/src/main/kotlin/com/acme/shop/ui/Main.kt#main",
+    "sym:app/src/main/kotlin/com/acme/shop/ui/Main.kt#shout",
+    "sym:app/src/main/kotlin/com/acme/shop/ui/Screen.kt#Mode",
+    "sym:app/src/main/kotlin/com/acme/shop/ui/Screen.kt#Screen",
+    "sym:app/src/test/kotlin/com/acme/shop/OrderServiceTest.kt#OrderServiceTest"
+  ],
+  "implicit": [
+    {
+      "from": "app/src/main/java/com/acme/shop/OrderService.java",
+      "to": "app/src/main/java/com/acme/shop/Receipt.java"
+    },
+    {
+      "from": "app/src/main/kotlin/com/acme/shop/ui/Main.kt",
+      "to": "app/src/main/kotlin/com/acme/shop/ui/Screen.kt"
+    },
+    {
+      "from": "app/src/test/kotlin/com/acme/shop/OrderServiceTest.kt",
+      "to": "app/src/main/java/com/acme/shop/OrderService.java"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ three CLI scripts are separately invoked programs.
 | --- | --- | --- |
 | `scan_artifacts` | `scan.py:53` builds `inventory`; `scan.py:59` writes `inventory.json`; `scan.py:60-66` records the `scan` run step. | Creates `inventory.json` and the run record that carries `status_before`. |
 | `imports_graph` | `imports.py:46` reads `inventory.json`; `imports.py:48` builds `graph`; `imports.py:51-52` writes `graph.json` and records the import step. | Consumes `inventory.json`; creates `graph.json` and updates the run record. |
-| `render_html` | `render.py:45-47` reads `inventory.json`, `graph.json`, and the run file; `render.py:73` renders the report; `render.py:77-79` writes `report.html` and records the render step. | Consumes all upstream artifacts; creates `report.html`. |
+| `render_html` | `render.py:47-49` reads `inventory.json`, `graph.json`, and the run file; `render.py:75` renders the report; `render.py:79-81` writes `report.html` and records the render step. | Consumes all upstream artifacts; creates `report.html`. |
 
 Thus `scan_artifacts → imports_graph` carries `inventory.json`,
 `scan_artifacts → render_html` carries `inventory.json` plus the scan-created

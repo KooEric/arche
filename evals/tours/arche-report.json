@@ -6,21 +6,27 @@
       "path": "skills/arche/scripts/scan.py",
       "start_line": 46,
       "end_line": 67,
-      "sha256": "4fc120ac34bd2ca755f2f2405581ad547867966677227cd54bb729313b196bff"
+      "sha256": "4fc120ac34bd2ca755f2f2405581ad547867966677227cd54bb729313b196bff",
+      "title": "Scan the repository",
+      "note": "Classifies every file and writes inventory.json and the run record."
     },
     {
       "id": "imports_graph",
       "path": "skills/arche/scripts/imports.py",
       "start_line": 42,
       "end_line": 53,
-      "sha256": "7d91b566233faa7b1192c2b32d25fb815bd596aa1a3ba57c85d21f4bdb00e0fb"
+      "sha256": "7d91b566233faa7b1192c2b32d25fb815bd596aa1a3ba57c85d21f4bdb00e0fb",
+      "title": "Resolve imports",
+      "note": "Reads the inventory, parses supported languages and writes graph.json."
     },
     {
       "id": "render_html",
       "path": "skills/arche/scripts/render.py",
-      "start_line": 38,
-      "end_line": 104,
-      "sha256": "f1efb9c318b9705f0de6ed30ede416ea21f6fdc6a61d21def9024cab66b97f89"
+      "start_line": 40,
+      "end_line": 106,
+      "sha256": "a57a8b78801c10b8a0c0af9bf52afcd76f787b37a56c6e0e7bc90e63b4009078",
+      "title": "Render the report",
+      "note": "Checks the snapshot, audits the graph and writes report.html."
     }
   ],
   "edges": [
@@ -39,5 +45,7 @@
       "to": "render_html",
       "kind": "artifact_transfer"
     }
-  ]
+  ],
+  "title": "Arche turns a repository into an offline report in three steps",
+  "summary": "scan.py lists and classifies files, imports.py resolves static imports into a graph, and render.py validates both artifacts and writes report.html. Each step hands files to the next through the shared output directory."
 }

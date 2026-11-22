@@ -70,3 +70,21 @@ def test_screen_items_reference_validated_evidence():
     item["step"] = "missing"
     with pytest.raises(IntegrityError, match="unknown step"):
         validate_tour(tour, inventory, sources.get)
+
+
+def test_optional_narrative_fields_must_be_text():
+    import hashlib
+    import pytest
+    from arche_lib.errors import IntegrityError
+    from arche_lib.tour import validate_tour
+    content = b"pass\n"
+    digest = hashlib.sha256(content).hexdigest()
+    inventory = {"files": [{"path": "a.py", "status": "analyzed", "sha256": digest}]}
+    step = {"id": "s", "path": "a.py", "start_line": 1, "end_line": 1, "sha256": digest, "title": "Start", "note": "Why"}
+    tour = {"version": 1, "title": "T", "summary": "S", "steps": [step], "edges": []}
+    validate_tour(tour, inventory, lambda path: content)
+    for holder, key in ((tour, "summary"), (step, "note")):
+        holder[key] = 3
+        with pytest.raises(IntegrityError):
+            validate_tour(tour, inventory, lambda path: content)
+        holder[key] = "ok"

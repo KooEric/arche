@@ -74,12 +74,19 @@ def validate_tour(
             _bad(f"duplicate inventory path: {path}")
         inventory_files[path] = entry
 
+    for key in ("title", "summary"):
+        if key in document:
+            _string(document[key], key)
+
     step_ids: set[str] = set()
     for index, raw_step in enumerate(steps_value):
         label = f"steps[{index}]"
         step = _mapping(raw_step, label)
         _required(step, ("id", "path", "start_line", "end_line", "sha256"), label)
         step_id = _string(step["id"], f"{label}.id")
+        for key in ("title", "note"):
+            if key in step:
+                _string(step[key], f"{label}.{key}")
         if step_id in step_ids:
             _bad(f"duplicate step id: {step_id}")
         step_ids.add(step_id)

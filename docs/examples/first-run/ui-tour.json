@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "title": "수령 확인 화면은 버튼 두 개로 상태를 오갑니다",
+  "summary": "창구 직원이 물품 수령 여부를 표시하는 한 화면짜리 앱입니다. index.html이 버튼과 상태 문구를 선언하고, app.js의 display 함수 하나가 모든 화면 전환을 담당합니다.\n\n서버 호출이나 저장소는 없습니다. 새로 고치면 '대기 중'으로 돌아갑니다.",
+  "steps": [
+    {
+      "id": "elements",
+      "title": "화면 요소 찾기",
+      "note": "수령 버튼, 취소 버튼, 상태 문구를 DOM에서 한 번씩 가져옵니다.",
+      "path": "app.js",
+      "start_line": 1,
+      "end_line": 3,
+      "sha256": "a740e937a881d90c3be392a43c18450f65a4c908c7db2a0a05cd3e67dfc093c2"
+    },
+    {
+      "id": "display",
+      "title": "상태에 따라 화면 바꾸기",
+      "note": "done 값 하나로 문구와 두 버튼의 표시 여부를 함께 정합니다.",
+      "path": "app.js",
+      "start_line": 4,
+      "end_line": 8,
+      "sha256": "a740e937a881d90c3be392a43c18450f65a4c908c7db2a0a05cd3e67dfc093c2"
+    },
+    {
+      "id": "handlers",
+      "title": "버튼에 동작 연결",
+      "note": "수령 처리는 display(true), 처리 취소는 display(false)를 호출합니다.",
+      "path": "app.js",
+      "start_line": 9,
+      "end_line": 10,
+      "sha256": "a740e937a881d90c3be392a43c18450f65a4c908c7db2a0a05cd3e67dfc093c2"
+    }
+  ],
+  "edges": [
+    {
+      "from": "elements",
+      "to": "display",
+      "kind": "reads"
+    },
+    {
+      "from": "handlers",
+      "to": "display",
+      "kind": "calls"
+    }
+  ],
+  "screens": [
+    {
+      "title": "수령 확인",
+      "items": [
+        {
+          "label": "대기 중 / 수령 처리",
+          "behavior": "대기 상태에서 수령 처리 버튼을 누르면 수령 완료로 바뀌고 취소 버튼이 나타납니다.",
+          "step": "handlers"
+        },
+        {
+          "label": "수령 완료 / 처리 취소",
+          "behavior": "처리 취소를 누르면 대기 상태로 돌아가고 수령 처리 버튼이 다시 나타납니다.",
+          "step": "display"
+        }
+      ]
+    }
+  ]
+}

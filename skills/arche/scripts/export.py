@@ -66,7 +66,9 @@ def render_export(document, fmt):
     if fmt == "markdown":
         lines = ["# Tour", "", f"Repository: {_text(repo['name'])}  ", f"Revision: {_text(repo['commit'])}  ", f"Dirty: {_text(repo['dirty'])}  ", f"Tour version: {tour['version']}", "", "## Steps", ""]
         for step in tour["steps"]:
-            lines += [f"### {_text(step['id'])}", "", f"Path: {_text(step['path'])}  ", f"Lines: {step['start_line']}–{step['end_line']}  ", f"SHA256: {step['sha256']}", ""]
+            lines += [f"### {_text(step['id'])}", ""]
+            lines += [f"{key.title()}: {_text(step[key])}  " for key in ("title", "note") if step.get(key)]
+            lines += [f"Path: {_text(step['path'])}  ", f"Lines: {step['start_line']}–{step['end_line']}  ", f"SHA256: {step['sha256']}", ""]
         lines += ["## Edges", ""]
         lines += [f"- {_text(e['from'])} → {_text(e['to'])} ({_text(e['kind'])})" for e in tour["edges"]]
         return "\n".join(lines) + "\n"

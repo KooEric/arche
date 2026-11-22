@@ -2,7 +2,9 @@
 """Score the deterministic layer against the hand-labelled fixtures.
 
 Precision and recall count `verified` IMPORTS edges only. A true edge the script
-can only infer counts as not verified, so it lowers recall.
+can only infer counts as not verified, so it lowers recall. `implicit` edges are
+true dependencies with no import statement behind them (Java and Kotlin types in
+the same package). They must be reported as inferred and stay out of recall.
 
 Usage: python3 evals/score.py [--min-precision 0.98] [--min-recall 0.95]
 Exits 1 when a gate fails or a fixture does not match its expected sets.
@@ -75,6 +77,7 @@ def expected_sets(expected):
         "skipped": {(s["path"], s["reason"]) for s in expected["skipped"]},
         "imports": {(e["from"], e["to"]) for e in expected["imports"]},
         "inferred": {(e["from"], e["to"]) for e in expected["inferred"]},
+        "implicit": {(e["from"], e["to"]) for e in expected.get("implicit", [])},
         "unresolved": {(u["from"], u["spec"]) for u in expected["unresolved"]},
         "externals": {(x["from"], x["package"]) for x in expected["externals"]},
         "symbols": set(expected["symbols"]),
@@ -87,6 +90,8 @@ def score_fixture(fixture_dir):
     raw = json.loads((fixture_dir / EXPECTED_FILE).read_text(encoding="utf-8"))
     expected = expected_sets(raw)
     observed = observed_sets(run_pipeline(fixture_dir / "repo"))
+    implicit = expected.pop("implicit")
+    expected["inferred"] |= implicit
     mismatches = {
         name: {
             "missing": sorted(expected[name] - observed[name]),
@@ -95,14 +100,15 @@ def score_fixture(fixture_dir):
         for name in EXACT_SETS
         if expected[name] != observed[name]
     }
-    true_edges = expected["imports"] | expected["inferred"]
+    known_edges = expected["imports"] | expected["inferred"]
+    true_edges = known_edges - implicit
     return {
         "fixture": fixture_dir.name,
         "true_positive": sorted(observed["imports"] & true_edges),
-        "false_positive": sorted(observed["imports"] - true_edges),
+        "false_positive": sorted(observed["imports"] - known_edges),
         "false_negative": sorted(true_edges - observed["imports"]),
-        "inferred_correct": sorted(observed["inferred"] & true_edges),
-        "inferred_wrong": sorted(observed["inferred"] - true_edges),
+        "inferred_correct": sorted(observed["inferred"] & known_edges),
+        "inferred_wrong": sorted(observed["inferred"] - known_edges),
         "mismatches": mismatches,
     }
 

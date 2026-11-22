@@ -57,3 +57,45 @@ def test_http_rows_show_an_escaped_host_and_no_missing_route_note_for_outside_ho
                            "status": "unresolved"}], {})
     assert "&lt;cdn&gt;.example.com" in html and "<cdn>" not in html
     assert "No matching literal route identified." not in html
+
+
+def linked():
+    graph = sample()
+    graph['nodes'].append({'type': 'file', 'id': 'file:tests/test_a.py', 'lang': 'python', 'lines': 9})
+    graph['nodes'].append({'type': 'file', 'id': 'file:x<y.py', 'lang': 'python', 'lines': 3})
+    evidence = {'path': 'main.py', 'line': 1}
+    graph['edges'] = [
+        {'from': 'file:main.py', 'to': 'file:pkg/a.py', 'status': 'verified', 'evidence': evidence},
+        {'from': 'file:main.py', 'to': 'file:pkg/a.py', 'status': 'inferred', 'evidence': evidence},
+        {'from': 'file:tests/test_a.py', 'to': 'file:pkg/a.py', 'status': 'verified', 'evidence': evidence},
+    ]
+    return graph
+
+
+def test_key_files_rank_entries_and_hubs_without_tests():
+    html = render(TEMPLATE, linked(), [], 'match')
+    entries = html.split('Entry point candidates')[1].split('Most depended on')[0]
+    assert 'main.py' in entries and 'test_a.py' not in entries
+    hubs = html.split('Most depended on')[1].split('Largest files')[0]
+    assert 'pkg/a.py' in hubs and '2 importers' in hubs
+    assert '2 in · 0 out' in html
+
+
+def test_map_data_merges_edges_and_cannot_close_its_script_block():
+    html = render(TEMPLATE, linked(), [], 'match')
+    block = html.split('<script type="application/json" id="graph-data">')[1].split('</script>')[0]
+    assert '<' not in block
+    data = __import__('json').loads(block)
+    assert data['files'][3] == ['x<y.py', 3]
+    assert data['edges'] == [[1, 0, 2, 1], [2, 0, 1, 0]]
+
+
+def test_korean_interface_and_tour_narrative():
+    tour = {'title': '요약 <제목>', 'summary': '첫 문단\n\n둘째 문단', 'edges': [], 'steps': [
+        {'id': 'start', 'title': '시작', 'note': '설명 <b>', 'path': 'main.py', 'start_line': 1, 'end_line': 1, 'sha256': 'a' * 64}]}
+    html = render(TEMPLATE, sample(), [{'commit': 'c' * 40, 'date': '2026-01-02T03:04:05+00:00', 'subject': 'Fix <it>'}], 'match', tour=tour, lang='ko')
+    assert '<html lang="ko">' in html and '의존성 맵' in html and '핵심 파일' in html
+    assert '요약 &lt;제목&gt;' in html and '<p>첫 문단</p><p>둘째 문단</p>' in html
+    assert '설명 &lt;b&gt;' in html and 'Fix &lt;it&gt;' in html and 'c' * 40 in html
+    assert '>Dependency map<' not in html
+    assert '>Dependency map<' in render(TEMPLATE, linked(), [], 'match')

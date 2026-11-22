@@ -24,33 +24,27 @@ def build_audit(graph, read_path, internal_exports=()):
             continue
     # Any name reference anywhere suppresses a candidate, including dynamic and
     # framework conventions where the identifier is written as a string.
+    # Explicit __all__ names are not uses by themselves, so the opt-in export
+    # rule keeps a second set that leaves those assignments out.
     references = set()
-    for tree in trees.values():
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                references.add(node.id)
-            elif isinstance(node, ast.Attribute):
-                references.add(node.attr)
-            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                references.add(node.value)
-            elif isinstance(node, ast.alias):
-                references.add(node.name.split('.')[-1])
-    # Explicit __all__ names are not uses by themselves. Keep a separate
-    # reference set for the opt-in export rule, including all other strings.
     export_references = set()
     for tree in trees.values():
         for stmt in tree.body:
-            if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '__all__' for t in stmt.targets):
-                continue
+            names = set()
             for node in ast.walk(stmt):
-                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                    export_references.add(node.id)
+                if isinstance(node, ast.Name):
+                    if isinstance(node.ctx, ast.Load):
+                        names.add(node.id)
                 elif isinstance(node, ast.Attribute):
-                    export_references.add(node.attr)
-                elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    export_references.add(node.value)
+                    names.add(node.attr)
+                elif isinstance(node, ast.Constant):
+                    if isinstance(node.value, str):
+                        names.add(node.value)
                 elif isinstance(node, ast.alias):
-                    export_references.add(node.name.split('.')[-1])
+                    names.add(node.name.split('.')[-1])
+            references |= names
+            if not (isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '__all__' for t in stmt.targets)):
+                export_references |= names
     findings = []
     blocks = defaultdict(list)
     connected = set()
