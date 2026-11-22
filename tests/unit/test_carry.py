@@ -65,3 +65,32 @@ def test_map_and_descriptions_follow_the_code_to_a_new_scan(make_repo, run_scrip
     done = run_script("arche.py", repo, "--out", third, "--from", shared)
     assert done.returncode == 0 and json.loads(done.stdout)["carried"]["files_changed"] == 0
     assert run_script("carry.py", "--out", third, "--from", tmp_path / "missing").returncode != 0
+
+
+def test_a_file_renamed_and_edited_keeps_its_description_for_review(make_repo, run_script, tmp_path):
+    body = "".join(f"def step_{n}(x):\n    return x + {n}\n\n" for n in range(12))
+    repo = make_repo({"lib/report.py": body, "lib/other.py": "".join(f"VALUE_{n} = {n}\n" for n in range(20)), "app/main.py": "pass\n"})
+    first = tmp_path / "first"
+    assert run_script("arche.py", repo, "--out", first).returncode == 0
+    (first / "map.json").write_text(json.dumps({"version": 1, "project": {"name": "d", "summary": "s"}, "parts": [
+        {"id": "lib", "label": "Lib", "kind": "library", "summary": "x", "paths": ["lib"],
+         "evidence": {"path": "lib/report.py", "start_line": 4, "end_line": 5}},
+        {"id": "app", "label": "App", "kind": "ui", "summary": "y", "paths": ["app"]}]}))
+    assert run_script("map.py", "--out", first).returncode == 0 and run_script("describe.py", "--out", first).returncode == 0
+    content = json.loads((first / "descriptions" / "lib.json").read_text())
+    content["lib/report.py"] = {"name": "Report", "description": "Builds the report."}
+    (first / "descriptions" / "lib.json").write_text(json.dumps(content))
+    assert run_script("map.py", "--out", first).returncode == 0
+    assert "lib/report.py" in json.loads((first / "map.lock.json").read_text())["sketches"]
+
+    (repo / "lib/report.py").unlink()
+    (repo / "lib/summary.py").write_text("import os\n\n" + body.replace("return x + 11", "return x + 110"))
+    (repo / "lib/unrelated.py").write_text("".join(f"def other_{n}():\n    return {n}\n" for n in range(12)))
+    second = tmp_path / "second"
+    done = run_script("arche.py", repo, "--out", second, "--from", first)
+    assert done.returncode == 0, done.stderr
+    report = json.loads((second / "carry.json").read_text())
+    assert report["files_moved"] == [{"from": "lib/report.py", "to": "lib/summary.py", "edited": True}]
+    assert report["files_new"] == ["lib/unrelated.py"] and report["review_descriptions"] == ["lib/summary.py"]
+    assert json.loads((second / "descriptions" / "lib.json").read_text())["lib/summary.py"]["description"] == "Builds the report."
+    assert json.loads((second / "map.json").read_text())["parts"][0]["evidence"] == {"path": "lib/summary.py", "start_line": 6, "end_line": 7}

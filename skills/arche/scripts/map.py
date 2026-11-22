@@ -27,10 +27,12 @@ def main(argv):
     document = read_json(source) if args.map or source.exists() else None
     changes = read_snapshot(out / "changes.json") if (out / "changes.json").exists() else None
     audit = read_json(out / "audit.json") if (out / "audit.json").exists() else {}
-    atlas = build_atlas(inventory, graph, document, read_descriptions(out), changes, audit.get("findings"))
+    descriptions = read_descriptions(out)
+    atlas = build_atlas(inventory, graph, document, descriptions, changes, audit.get("findings"))
     write_json(out / "atlas.json", atlas)
     # The lock lets carry.py move this map onto a later scan.
-    write_json(out / "map.lock.json", build_lock(document, inventory, graph, make_reader(inventory)))
+    write_json(out / "map.lock.json", build_lock(document, inventory, graph, make_reader(inventory),
+                                                   tuple(key for key, value in descriptions.items() if isinstance(value, dict) and value.get("description"))))
     stats = atlas["stats"]
     return {
         "step": "map", "atlas": str((out / "atlas.json").resolve()), "source": atlas["generated_from"],

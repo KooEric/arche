@@ -115,3 +115,10 @@ def test_large_reports_send_file_details_as_data():
     data = __import__('json').loads(block)
     assert '<' not in block and data[0]['s'] == [['secret<name', 'function', 2]]
     assert data[1]['o'][0][:4] == [0, '', 'verified', 1]
+
+
+def test_lazy_report_tells_readers_without_javascript_what_to_do():
+    lazy = render(TEMPLATE, linked(), [], 'match', lazy_file_limit=2)
+    assert '<noscript>' in lazy and '--full-details' in lazy
+    full = render(TEMPLATE, linked(), [], 'match', lazy_file_limit=float('inf'))
+    assert '--full-details' not in full and '<div class="detail">' in full

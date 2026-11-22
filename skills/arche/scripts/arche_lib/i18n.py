@@ -102,6 +102,8 @@ _KO = {
     "Module: ": "모듈: ",
     "Show all modules": "모든 모듈 보기",
     "Filter by file path": "파일 경로로 필터",
+    "This report draws file details with JavaScript. Render again with --full-details to read them without it.":
+        "이 리포트는 파일 상세를 JavaScript로 그립니다. JavaScript 없이 보려면 --full-details로 다시 렌더링하세요.",
     "Filter by file path…": "파일 경로로 필터…",
     "No matching files.": "일치하는 파일이 없습니다.",
     "No files parsed by the installed adapters.": "설치된 어댑터로 분석한 파일이 없습니다.",

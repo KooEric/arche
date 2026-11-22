@@ -47,6 +47,7 @@ def main(argv):
     parser.add_argument("--internal-exports", action="append", default=[], metavar="DIR", help="opt in a repository-relative internal directory for explicit Python export checks")
     parser.add_argument("--base-out", type=Path, help="clean base snapshot run directory for finding comparison")
     parser.add_argument("--tour", type=Path, help="optional tour JSON to validate and include")
+    parser.add_argument("--full-details", action="store_true", help="write every file's details into report.html even for large repositories, so it reads without JavaScript")
     parser.add_argument("--editor", choices=sorted(EDITORS), help="add links in map.html that open cited lines in this editor; writes the repository's absolute path into the map")
     parser.add_argument("--lang", choices=LANGUAGES, default="en", help="language of the report interface (default: en)")
     args = parser.parse_args(argv)
@@ -104,7 +105,8 @@ def main(argv):
                 raise IntegrityError("base audit and graph snapshots do not match")
             base_findings = base_audit["findings"]
             finding_delta = delta(base_findings, findings)
-        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang)
+        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang,
+                        **({"lazy_file_limit": float("inf")} if args.full_details else {}))
         atlas_path = out / "atlas.json"
         atlas = read_json(atlas_path) if atlas_path.exists() else None
         if atlas is not None and atlas.get("inventory_sha256") != graph["inventory_sha256"]:

@@ -66,7 +66,62 @@ def extract(path, text):
         if depth_at(masked, m.start()) == 0:
             name = m.group(1)
             symbols.append({'name': name, 'kind': 'function', 'line': line_of(masked, m.start(1)), 'exported': name[0].isupper()})
-    return {'imports': imports, 'symbols': symbols, 'build_constraints': conditions(path, text)}
+    return {'imports': imports, 'symbols': symbols, 'build_constraints': conditions(path, text),
+            'http_routes': routes(path, text, masked)}
+
+
+_ROOTS = re.compile(r"\b([A-Za-z_]\w*)\s*:?=\s*(?:gin\.(?:Default|New)|echo\.New|chi\.NewRouter|chi\.NewMux|http\.NewServeMux|mux\.NewRouter|fiber\.New)\s*\(")
+_GROUP = re.compile(r"\b([A-Za-z_]\w*)\s*:?=\s*([A-Za-z_]\w*)\.Group\(\s*([\"`])")
+_VERB_ROUTE = re.compile(r"\b([A-Za-z_]\w*)\.(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|Get|Post|Put|Patch|Delete|Head|Options|Any|All)\(\s*([\"`])")
+_HANDLE = re.compile(r"\b([A-Za-z_]\w*)\.(?:HandleFunc|Handle)\(\s*([\"`])")
+_AFTER_STRING = re.compile(r"\s*,")
+
+
+def routes(path, text, masked=None):
+    """Routes declared on gin, echo, chi, fiber, gorilla and net/http routers.
+
+    A route on a router this file neither creates nor derives from one it creates
+    (a function parameter, say) carries `prefix_unknown`.
+    """
+    masked = masked or mask(text, _RULES)
+    prefixes = {name: "" for name in _ROOTS.findall(masked.text)}
+    prefixes["http"] = ""  # http.HandleFunc registers on the default mux
+    pending = []
+    for match in _GROUP.finditer(masked.text):
+        body = masked.strings.get(match.start(3))
+        if body is not None:
+            pending.append((match.group(1), match.group(2), body))
+    for _ in range(len(pending) + 1):  # groups of groups, in any order
+        for name, parent, body in pending:
+            if parent in prefixes and name not in prefixes:
+                prefixes[name] = prefixes[parent].rstrip("/") + ("/" + body.strip("/") if body.strip("/") else "")
+
+    def record(match, quote_group, method, route):
+        after = match.start(quote_group) + len(masked.strings[match.start(quote_group)]) + 2
+        if not _AFTER_STRING.match(masked.text, after) or not (route == "" or route.startswith("/")):
+            return None  # one argument is a client call such as http.Get(url), not a route
+        receiver, line = match.group(1), line_of(masked, match.start())
+        known = receiver in prefixes
+        full = (prefixes.get(receiver, "").rstrip("/") + route) or "/"
+        return {"file": path, "line": line, "handler_line": line, "method": method, "path": full, "dynamic": False,
+                **({} if known else {"prefix_unknown": True})}
+
+    found = []
+    for match in _VERB_ROUTE.finditer(masked.text):
+        body = masked.strings.get(match.start(3))
+        method = "ALL" if match.group(2) in ("Any", "All") else match.group(2).upper()
+        item = record(match, 3, method, body) if body is not None else None
+        if item:
+            found.append(item)
+    for match in _HANDLE.finditer(masked.text):
+        body = masked.strings.get(match.start(2))
+        if body is None:
+            continue
+        method, _, route = body.rpartition(" ")  # Go 1.22 patterns: "GET /items/{id}"
+        item = record(match, 2, method.strip().upper() or "ALL", route)
+        if item:
+            found.append(item)
+    return sorted(found, key=lambda item: (item["line"], item["method"]))
 
 
 class Context(NamedTuple):

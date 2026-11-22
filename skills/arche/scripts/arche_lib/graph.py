@@ -244,6 +244,18 @@ def _mounted_routes(extracted: Dict[str, dict], edges: List[dict]) -> List[dict]
 def _http(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[List[dict], List[dict]]:
     """(request-to-route connections, every route that was read)."""
     requests = [request for result in extracted.values() for request in result.get("http_requests", [])]
+    # A call on an imported name is a request only when that name is an axios instance where it is exported.
+    imported = _imported_names(edges)
+    for path, result in extracted.items():
+        for pending in result.get("http_pending_requests", []):
+            found = imported[_file_id(path)].get(pending["client"])
+            if not found:
+                continue
+            clients = extracted.get(found[0], {}).get("http_clients", {})
+            defaults = [name for name, info in clients.items() if info.get("default")]
+            if found[1] in clients or (found[1] == "default" and len(defaults) == 1):
+                requests.append(pending["request"])
+    requests.sort(key=lambda request: (request["file"], request["line"]))
     routes = _mounted_routes(extracted, edges)
     listed = sorted(routes, key=lambda route: (route["file"], route["line"], route["method"], route["path"]))
     return connect(requests, routes), listed
