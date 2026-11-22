@@ -40,6 +40,53 @@ def _line_number(value: object, label: str) -> int:
     return value
 
 
+def _lines(text: str) -> list:
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def range_digest(text: str, start: int, end: int) -> str:
+    """SHA-256 of the cited lines alone, so a citation can outlive edits elsewhere in the file."""
+    return hashlib.sha256("\n".join(_lines(text)[start - 1:end]).encode("utf-8")).hexdigest()
+
+
+def refresh_tour(tour: object, inventory: object, read_path: Callable[[str], object]):
+    """Re-anchor steps whose file changed but whose cited lines still exist.
+
+    A step that carries ``range_sha256`` is moved to the nearest block of the same
+    size with that hash and takes the file's current hash. Steps without it, and
+    steps whose lines were edited, are returned unchanged for validation to reject.
+    Returns (tour, ids of the steps that were updated).
+    """
+    if not isinstance(tour, Mapping) or not isinstance(tour.get("steps"), list) or not isinstance(inventory, Mapping):
+        return tour, []
+    current = {entry.get("path"): entry.get("sha256") for entry in inventory.get("files", []) if isinstance(entry, Mapping)}
+    steps, moved = [], []
+    for step in tour["steps"]:
+        steps.append(step)
+        if not isinstance(step, Mapping):
+            continue
+        path, start, end, wanted = step.get("path"), step.get("start_line"), step.get("end_line"), step.get("range_sha256")
+        if (not isinstance(wanted, str) or not _SHA256.fullmatch(wanted) or type(start) is not int or type(end) is not int
+                or not 1 <= start <= end or not isinstance(current.get(path), str) or current[path] == step.get("sha256")):
+            continue
+        content = read_path(path)
+        if content is None:
+            continue
+        lines = _lines(content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content))
+        size = end - start + 1
+        matches = [first for first in range(1, len(lines) - size + 2)
+                   if hashlib.sha256("\n".join(lines[first - 1:first - 1 + size]).encode("utf-8")).hexdigest() == wanted]
+        if not matches:
+            continue
+        first = min(matches, key=lambda candidate: (abs(candidate - start), candidate))
+        steps[-1] = {**step, "start_line": first, "end_line": first + size - 1, "sha256": current[path]}
+        moved.append(step.get("id"))
+    return ({**tour, "steps": steps}, moved) if moved else (tour, [])
+
+
 def validate_tour(
     tour: object,
     inventory: object,
@@ -121,6 +168,12 @@ def validate_tour(
         line_count = text.count("\n") + (0 if not text or text.endswith("\n") else 1)
         if end > line_count:
             _bad(f"{label} line range exceeds {path} ({line_count} lines)")
+        if "range_sha256" in step:
+            cited = _string(step["range_sha256"], f"{label}.range_sha256")
+            if not _SHA256.fullmatch(cited):
+                _bad(f"{label}.range_sha256 must be a SHA256 hex digest")
+            if range_digest(text, start, end) != cited:
+                _bad(f"cited lines changed in {path} ({label})")
 
     for index, raw_edge in enumerate(edges_value):
         label = f"edges[{index}]"

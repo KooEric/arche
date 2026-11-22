@@ -20,7 +20,7 @@ from arche_lib.paths import is_within
 from arche_lib.report import render
 from arche_lib.runlog import RUN_FILE, record_step
 from arche_lib.sources import make_reader
-from arche_lib.tour import validate_tour
+from arche_lib.tour import refresh_tour, validate_tour
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "report-template.html"
 
@@ -68,7 +68,9 @@ def main(argv):
             check = "match" if before == after and commit == gitinfo.head_commit(root) else "changed"
         modules = module_summary(inventory, graph)
         tour = read_json(args.tour) if args.tour is not None else None
+        moved = []
         if args.tour is not None:
+            tour, moved = refresh_tour(tour, inventory, make_reader(inventory))
             validate_tour(tour, inventory, make_reader(inventory))
         changes_path = out / "changes.json"
         changes = read_snapshot(changes_path) if changes_path.exists() else None
@@ -103,7 +105,10 @@ def main(argv):
     write_json(out / "audit.json", {"schema_version": 1, "repo": graph["repo"], "inventory_sha256": inventory_digest(inventory), "internal_exports": internal_exports, "findings": findings, "delta": finding_delta})
     write_text(path, report)
     record_step(out, "render", started, extra={"status_after": after, "readonly_check": check})
-    return {"step": "render", "report": str(path.resolve()), "readonly_check": check}
+    summary = {"step": "render", "report": str(path.resolve()), "readonly_check": check}
+    if moved:
+        summary["tour_steps_reanchored"] = moved
+    return summary
 
 
 if __name__ == "__main__":

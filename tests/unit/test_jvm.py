@@ -76,3 +76,13 @@ def test_same_name_in_two_source_sets_stays_a_candidate():
     edges = [e for e in graph['edges'] if e['from'] == 'file:main/b/App.kt']
     assert sorted(e['to'] for e in edges) == ['file:debug/a/Config.kt', 'file:main/a/Config.kt']
     assert {e['status'] for e in edges} == {'inferred'}
+
+
+def test_kotlin_bare_call_reaches_a_same_package_function_unless_defined_locally():
+    graph = _graph({
+        'a/Helpers.kt': 'package a\nfun slug(text: String) = text.lowercase()\nfun trim(text: String) = text.trim()\n',
+        'a/Page.kt': 'package a\nclass Page {\n    fun title() = slug("Home")\n    fun trim(text: String) = text\n    fun body() = trim("x").also { it.slug() }\n}\n',
+    })
+    edges = [e for e in graph['edges'] if e['from'] == 'file:a/Page.kt']
+    assert [(e['to'], e['names'], e['status'], e['rule'], e['evidence']['line']) for e in edges] == [
+        ('file:a/Helpers.kt', ['slug'], 'inferred', 'jvm_same_package', 3)]
