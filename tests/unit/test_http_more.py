@@ -55,3 +55,56 @@ def test_a_route_declared_in_a_test_does_not_compete_with_the_real_one():
     by_file = {c["request"]["file"]: c for c in graph["http_connections"]}
     assert by_file["web/app.ts"]["status"] == "inferred" and by_file["web/app.ts"]["candidates"][0]["file"] == "api/src/worker.ts"
     assert by_file["api/test/limit.test.ts"]["reason"] == "multiple_handlers"
+
+
+def test_python_router_included_from_another_file_gets_its_prefix():
+    graph = _graph({
+        "app/__init__.py": "",
+        "app/main.py": "from fastapi import FastAPI\nfrom app.routers import users\nfrom app.routers.orders import router as orders_router\n"
+                       "from app.routers.admin import bp\n"
+                       "app = FastAPI()\napp.include_router(users.router, prefix='/users')\napp.include_router(orders_router, prefix='/v1')\n"
+                       "app.register_blueprint(bp, url_prefix='/admin')\n",
+        "app/routers/__init__.py": "",
+        "app/routers/users.py": "from fastapi import APIRouter\nrouter = APIRouter()\n@router.get('/{user_id}')\ndef show(user_id): ...\n",
+        "app/routers/orders.py": "from fastapi import APIRouter\nrouter = APIRouter(prefix='/orders')\n@router.post('/')\ndef create(): ...\n",
+        "app/routers/admin.py": "from flask import Blueprint\nbp = Blueprint('admin', __name__, url_prefix='/x')\n@bp.route('/stats')\ndef stats(): ...\n",
+        "app/routers/loose.py": "from fastapi import APIRouter\nrouter = APIRouter()\n@router.get('/loose')\ndef loose(): ...\n",
+    })
+    listed = {(r["method"], r["path"], r.get("prefix_unknown", False)) for r in graph["http_routes"]}
+    assert ("GET", "/users/{user_id}", False) in listed and ("POST", "/v1/orders", False) in listed
+    assert ("GET", "/loose", True) in listed                        # mounted nowhere: prefix unknown
+    assert any(path.endswith("/stats") and unknown for _, path, unknown in listed)  # Flask url_prefix replaces the blueprint's own
+
+
+def test_chi_nested_routes_take_the_enclosing_prefixes():
+    text = '''package main
+func main() {
+	r := chi.NewRouter()
+	r.Route("/api", func(r chi.Router) {
+		r.Get("/health", ok)
+		r.Route("/orders", func(o chi.Router) {
+			o.Post("/{id}", create)
+		})
+	})
+	r.Get("/root", ok)
+}
+func mount(x chi.Router) {
+	x.Route("/admin", func(a chi.Router) { a.Get("/stats", stats) })
+}
+'''
+    found = [(r["method"], r["path"], r.get("prefix_unknown", False)) for r in routes("main.go", text)]
+    assert found == [("GET", "/api/health", False), ("POST", "/api/orders/{id}", False), ("GET", "/root", False), ("GET", "/admin/stats", True)]
+
+
+def test_requests_through_a_class_field_and_a_url_constant():
+    graph = _graph({
+        "web/client.ts": 'import axios from "axios";\nexport const api = axios.create();\n',
+        "web/service.ts": 'import axios from "axios";\nimport { api } from "./client";\n'
+                          'const PUSH_URL = "https://push.example.com/v1/send";\nconst twice = "/a";\nconst twice = "/b";\n'
+                          'class Orders {\n  private http = axios.create();\n  constructor() { this.api = api;\n  }\n'
+                          '  list() { return this.http.get("/orders"); }\n  save() { return this.api.post("/orders"); }\n'
+                          '  other() { return this.cache.get("/not-a-request"); }\n}\n'
+                          'export const push = () => fetch(PUSH_URL, { method: "POST" });\nfetch(twice);\n',
+    })
+    seen = [(c["request"]["method"], c["request"]["path"], c["request"].get("host")) for c in graph["http_connections"]]
+    assert seen == [("GET", "/orders", None), ("POST", "/orders", None), ("POST", "/v1/send", "push.example.com")]

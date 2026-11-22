@@ -15,6 +15,7 @@ from arche_lib import cli, gitinfo
 from arche_lib.atlas import attach_review, build_atlas, read_descriptions
 from arche_lib.audit import build_audit, delta
 from arche_lib.audit_jvm import build_jvm_audit
+from arche_lib.audit_scripts import build_script_audit
 from arche_lib.mapview import EDITORS, render_map
 from arche_lib.i18n import LANGUAGES
 from arche_lib.errors import IntegrityError, UsageError
@@ -87,7 +88,8 @@ def main(argv):
                 raise UsageError("internal export directories must be relative paths without . or ..")
         internal_exports = sorted(set(args.internal_exports))
         findings = build_audit(graph, make_reader(inventory), internal_exports)
-        findings = sorted(findings + build_jvm_audit(graph, inventory, make_reader(inventory)),
+        findings = sorted(findings + build_jvm_audit(graph, inventory, make_reader(inventory))
+                          + build_script_audit(graph, make_reader(inventory)),
                           key=lambda finding: (finding["rule"], finding["path"], finding["line"]))
         finding_delta = None
         if args.base_out is not None:

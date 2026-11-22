@@ -148,12 +148,53 @@ def _methods(decorator) -> Optional[List[str]]:
     return sorted({name.upper() for name in names})
 
 
+def _mounts(path: str, tree, known, prefixes) -> list:
+    """Includes of a router this file imports: `app.include_router(users.router, prefix="/users")`.
+
+    The graph step follows the import to the file that owns the router. A Flask
+    `url_prefix` replaces the blueprint's own prefix, which only that file knows, so
+    such a mount is recorded as unreadable.
+    """
+    found = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _INCLUDES
+                and isinstance(node.func.value, ast.Name) and node.func.value.id in known):
+            continue
+        keyword = _INCLUDES[node.func.attr]
+        included = node.args[0] if node.args else next((k.value for k in node.keywords if k.arg == keyword), None)
+        if isinstance(included, ast.Name) and included.id not in known:
+            target = {"name": included.id}
+        elif isinstance(included, ast.Attribute) and isinstance(included.value, ast.Name) and included.value.id not in known:
+            target = {"name": included.value.id, "attr": included.attr}
+        else:
+            continue
+        receiver = node.func.value.id
+        prefix = _prefix(node)
+        own = known[receiver]["prefix"]
+        replaces = node.func.attr == "register_blueprint" and any(k.arg == "url_prefix" for k in node.keywords)
+        unreadable = prefix is _UNREADABLE or own is _UNREADABLE or replaces
+        found.append({"file": path, "router": receiver, **target,
+                      "prefix": "" if unreadable else (join_path(own, prefix) if prefix else own),
+                      **({"prefix_unknown": True} if unreadable else {})})
+    return found
+
+
 def routes(path: str, text: str) -> list:
+    """Routes as this file alone shows them: a router awaiting a mount elsewhere has an unknown prefix."""
+    return [{**{key: value for key, value in route.items() if key != "router"}, **({"prefix_unknown": True} if "router" in route else {})}
+            for route in routes_and_mounts(path, text)[0]]
+
+
+def routes_and_mounts(path: str, text: str):
+    """(routes, mounts of imported routers, routers declared here) in the shape the graph step joins."""
     try:
         tree = ast.parse(text)
         prefixes = _prefixes(tree)
     except (SyntaxError, ValueError, RecursionError):
-        return []
+        return [], [], {}
+    known = _bindings(tree)
+    included_here = _includes(tree, known)
+    routers = {name: {"sub": not info["root"]} for name, info in known.items()}
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -166,10 +207,14 @@ def routes(path: str, text: str) -> list:
             route, methods = _text(decorator.args[0]), _methods(decorator)
             if route is None or not route.startswith("/") or methods is None:
                 continue
-            prefix, known = prefixes[decorator.func.value.id]
-            flag = {} if known else {"prefix_unknown": True}
+            name = decorator.func.value.id
+            prefix, settled = prefixes[name]
+            flag = {} if settled else {"prefix_unknown": True}
+            # A sub-router no call in this file includes may be mounted from another file.
+            if not settled and not included_here.get(name) and known[name]["prefix"] is not _UNREADABLE:
+                flag = {"router": name}
             full = join_path(prefix, route)
             for method in methods:
                 found.append({"file": path, "line": decorator.lineno, "handler_line": node.lineno,
                               "method": method, "path": full, "dynamic": False, **flag})
-    return sorted(found, key=lambda item: (item["line"], item["method"]))
+    return sorted(found, key=lambda item: (item["line"], item["method"])), _mounts(path, tree, known, prefixes), routers

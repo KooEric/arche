@@ -74,11 +74,18 @@ def _walk(nodes: Iterable[ast.AST], lines, conditional: bool, type_only: bool) -
             continue
         if kind is ast.Import:
             for alias in node.names:
-                yield _record("import", alias.name, 0, [], node, lines, conditional, type_only)
+                record = _record("import", alias.name, 0, [], node, lines, conditional, type_only)
+                if alias.asname:
+                    record["attrs"] = {"aliases": {alias.asname: "*"}}  # the module itself under a local name
+                yield record
             continue
         if kind is ast.ImportFrom:
             names = [alias.name for alias in node.names]
-            yield _record("from", node.module or "", node.level, names, node, lines, conditional, type_only)
+            record = _record("from", node.module or "", node.level, names, node, lines, conditional, type_only)
+            renamed = {alias.asname: alias.name for alias in node.names if alias.asname}
+            if renamed:
+                record["attrs"] = {"aliases": renamed}
+            yield record
             continue
         if kind is ast.If and _is_type_checking(node.test):
             stack.extend((child, True, type_only) for child in reversed(node.orelse))

@@ -221,8 +221,15 @@ def write_report(out, rows):
                 if ref.get("file") == filename:
                     links.append(f'<a href="#{anchor}-line-{ref["line"]}">{cell(ref["claim"])}:{ref["line"]}</a>')
         trial_data = json.dumps({k: v for k, v in row.items() if k != "evidence"}, indent=2, ensure_ascii=False)
-        trials.append(f'<details><summary>{cell(row["case"])} · {cell(row["arm"])} · {cell(row["outcome"])}</summary>'
+        trials.append(f'<details><summary>{cell(row["case"])} · {cell(row["arm"])} · <span class="outcome" data-outcome="{escape(str(row["outcome"]), quote=True)}">{cell(row["outcome"])}</span></summary>'
                       + " · ".join(links) + f"<pre>{escape(trial_data)}</pre>" + "".join(sources) + "</details>")
+    passed, total = sum(s["passed"] for s in summary), sum(s["trials"] for s in summary)
+    rate = round(100 * passed / total) if total else 0
+    overview = ('<div class="tiles">'
+                f'<div><span>Configurations</span><strong>{len(summary)}</strong></div>'
+                f'<div><span>Trials</span><strong>{total}</strong></div>'
+                f'<div><span>Passed</span><strong>{passed}</strong></div>'
+                f'<div><span>Pass rate</span><strong>{rate}%</strong><span class="meter"><i style="width:{rate}%"></i></span></div></div>')
     html = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'">
 <title>Arche evaluation</title><style>:root{color-scheme:light dark;--ink:#111214;--muted:#6a6d75;--line:#e9e9ec;--sunken:#f5f5f6;--bg:#fff;--accent:#0e7a4f;
@@ -234,8 +241,13 @@ h1,h2{font-family:var(--mono);font-weight:600;letter-spacing:-.02em}h1{font-size
 a{color:var(--accent)}.table{overflow-x:auto}table{border-collapse:collapse;font-size:.86rem;width:100%}
 th{font:500 .76rem var(--mono);color:var(--muted);white-space:nowrap}td,th{text-align:left;padding:.5rem .8rem .5rem 0;border-bottom:1px solid var(--line)}
 details{padding:.6rem 0;border-bottom:1px solid var(--line)}summary{cursor:pointer}code,pre{font-family:var(--mono);font-size:.82rem}
-pre{overflow:auto;background:var(--sunken);padding:1rem;border-radius:8px}</style>
-<h1>Agent evaluation</h1><div class="table"><table><thead><tr>"""
+pre{overflow:auto;background:var(--sunken);padding:1rem;border-radius:8px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1.4rem 2rem;padding:1.2rem 0;margin:1rem 0 1.6rem;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.tiles span{display:block;font-size:.76rem;color:var(--muted)}.tiles strong{font:500 1.5rem var(--mono);letter-spacing:-.03em}
+.meter{display:block;height:4px;margin-top:.4rem;border-radius:99px;background:var(--sunken)}.meter i{display:block;height:4px;border-radius:99px;background:var(--accent)}
+.outcome{font:500 .76rem var(--mono);padding:.05rem .45rem;border-radius:5px;background:var(--sunken);color:var(--muted)}
+.outcome[data-outcome="passed"]{color:var(--accent)}.eyebrow{font:500 .72rem var(--mono);color:var(--muted)}</style>
+<span class="eyebrow">Arche · evaluation report</span><h1>Agent evaluation</h1>""" + overview + """<h2>Results by configuration</h2><div class="table"><table><thead><tr>"""
     headers = ["Task", "Model", "Configuration", "Passed", "Trials", "Execution errors", "Mean seconds",
                "Seconds range", "Mean input tokens", "Mean output tokens", "Mean cost", "Format errors", "Support errors"]
     html += "".join(f"<th>{h}</th>" for h in headers) + "</tr></thead><tbody>" + "".join(body)

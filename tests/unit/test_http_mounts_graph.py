@@ -50,15 +50,16 @@ def test_only_the_mounted_router_of_a_file_takes_the_prefix(make_repo):
     assert flags["candidates"][0]["prefix_unknown"] is True
 
 
-def test_a_fastapi_router_included_from_another_file_is_not_guessed(make_repo):
+def test_a_fastapi_router_included_from_another_file_takes_that_prefix(make_repo):
     files = {
         "main.py": "from fastapi import FastAPI\nimport users\napp = FastAPI()\n"
                    'app.include_router(users.router, prefix="/users")\n',
         "users.py": "from fastapi import APIRouter\nrouter = APIRouter()\n\n\n"
                     '@router.get("/{uid}")\ndef show(uid):\n    return {}\n',
-        "web/client.ts": 'export const health = () => fetch("/health");\n',
+        "web/client.ts": 'export const health = () => fetch("/health");\nexport const user = () => fetch("/users/7");\n',
     }
-    assert _outcomes(_connections(make_repo, files)) == [("/health", "unresolved", "route_prefix_unknown")]
+    assert _outcomes(_connections(make_repo, files)) == [
+        ("/health", "unresolved", "no_literal_handler"), ("/users/7", "inferred", "method_and_path_pattern")]
 
 
 def test_an_express_router_mounted_through_require_is_not_guessed(make_repo):
