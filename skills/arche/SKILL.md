@@ -40,6 +40,8 @@ Pass `--lang ko` when the user writes Korean and `--lang en` otherwise. The same
 4. Run `python3 -B "$scripts/describe.py" --out "$out"`, read the files it lists, and fill `descriptions/*.json` following `references/writing-descriptions.md`. Leave unread files empty.
 5. Run `map.py` and then `render.py --out "$out" --lang "$lang"` again. Give the user the `map` path first, then the report.
 
+When an earlier run of this repository has a map (a run directory or a saved folder holding `map.json`, `map.lock.json` and `descriptions/`), carry it forward instead of starting over: `python3 -B "$scripts/arche.py" "$repo" --out "$out" --from "$previous" --lang "$lang"`. Then read `"$out/carry.json"` and do only what it lists: re-cite each `evidence_stale` entry, describe `files_new` and `routes_new`, and reread the files under `review_descriptions` before keeping their descriptions. Run `map.py` and `render.py` again. To let a team reuse the map, and only when the user asks, save it with `carry.py --out "$out" --save DIRECTORY`; the user decides whether that directory is committed.
+
 `brief.txt` lists route-like lines the scan could not read; check those files by hand before you describe the API. Add `--editor vscode` (or `cursor`, `zed`, `idea`) to `render.py` only when the user asks for editor links: it writes the repository's absolute path into `map.html`.
 
 A solid line is a static import the scan resolved, a dashed line is inferred, and a cited line is your claim with a checked location. Say so when you describe a connection.

@@ -11,7 +11,9 @@ from pathlib import Path
 
 from arche_lib import cli
 from arche_lib.atlas import build_atlas, load_inputs, read_descriptions
+from arche_lib.carry import build_lock
 from arche_lib.jsonio import read_json, read_snapshot, write_json
+from arche_lib.sources import make_reader
 
 
 def main(argv):
@@ -27,6 +29,8 @@ def main(argv):
     audit = read_json(out / "audit.json") if (out / "audit.json").exists() else {}
     atlas = build_atlas(inventory, graph, document, read_descriptions(out), changes, audit.get("findings"))
     write_json(out / "atlas.json", atlas)
+    # The lock lets carry.py move this map onto a later scan.
+    write_json(out / "map.lock.json", build_lock(document, inventory, graph, make_reader(inventory)))
     stats = atlas["stats"]
     return {
         "step": "map", "atlas": str((out / "atlas.json").resolve()), "source": atlas["generated_from"],

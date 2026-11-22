@@ -10,6 +10,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
+import carry as carry_step
 import imports
 import map as atlas_map
 import render
@@ -32,6 +33,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", nargs="?", default=".", help="directory to analyze (default: current directory)")
     parser.add_argument("--out", help="output directory outside the repository (default: ~/.arche/runs/<name>-<commit>)")
+    parser.add_argument("--from", dest="source", help="earlier run or saved map directory to carry map.json and descriptions from")
     parser.add_argument("--tour", help="tour JSON to validate and include")
     parser.add_argument("--lang", choices=LANGUAGES, default="en", help="language of the report interface (default: en)")
     parser.add_argument("--internal-exports", action="append", default=[], metavar="DIR",
@@ -45,6 +47,7 @@ def main(argv):
     out = scanned["out"]
     resolved = imports.main(["--out", out])
     # Rebuild the atlas for this snapshot: from OUT/map.json when the agent wrote one, else from folders.
+    carried = carry_step.main(["--out", out, "--from", args.source]) if args.source else None
     mapped = atlas_map.main(["--out", out])
     options = ["--out", out, "--lang", args.lang]
     if args.tour:
@@ -64,6 +67,7 @@ def main(argv):
         "skipped": scanned["skipped"],
         "edges": resolved["edges"],
         "map_source": mapped["source"],
+        **({"carried": {key: value for key, value in carried.items() if key != "step"}} if carried else {}),
         "map_warnings": mapped["warnings"],
     }
 

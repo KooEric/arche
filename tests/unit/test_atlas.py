@@ -137,3 +137,14 @@ def test_brief_counts_route_like_lines_that_were_not_read(make_repo, run_script,
     assert done.returncode == 0, done.stderr
     assert "zed://file/" in (out / "map.html").read_text(encoding="utf-8")
     assert str(repo) not in (out / "report.html").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("paths, expected", [
+    (["lib/a.py", "lib/b.py", "app/main.py"], {"lib", "app"}),                       # nothing to split: files only
+    (["src/a.py", "src/x/b.py", "src/y/c.py"], {"src", "src/x", "src/y"}),           # own files stay under the folder
+    (["src/x/b.py", "src/x/deep/c.py", "src/x/deep/d.py"], {"src/x", "src/x/deep"}),  # stops when no folder is left
+    (["only.py"], {"."}),
+])
+def test_folder_split_always_terminates(paths, expected):
+    from arche_lib.atlas import _auto_parts
+    assert {part["label"] for part in _auto_parts(paths)} == expected
