@@ -88,9 +88,10 @@ _KO = {
     "inferred HTTP": "추론된 HTTP",
     "HTTP connections": "HTTP 연결",
     "HTTP": "HTTP",
-    "Mobile requests and Worker handlers": "모바일 요청과 Worker 핸들러",
-    "Static candidates use the HTTP method and path. The deployment host is unknown.":
-        "정적 후보는 HTTP 메서드와 경로로 찾습니다. 배포 호스트는 알 수 없습니다.",
+    "HTTP requests and route handlers": "HTTP 요청과 라우트 핸들러",
+    "Candidates share the HTTP method and path shape. A request to a named outside host is listed as external_host. The deployment host of this repository is unknown.":
+        "후보는 HTTP 메서드와 경로 형태가 같은 것입니다. 이름이 있는 외부 호스트로 가는 요청은 external_host로 표시합니다. 이 레포의 배포 호스트는 알 수 없습니다.",
+    "host": "호스트",
     "No matching literal route identified.": "일치하는 리터럴 라우트를 찾지 못했습니다.",
     "request line": "요청 줄",
     "route line": "라우트 줄",

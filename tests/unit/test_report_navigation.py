@@ -49,6 +49,16 @@ def test_empty_and_escaping():
     assert 'No matching files.' in html
 
 
+def test_http_rows_show_an_escaped_host_and_no_missing_route_note_for_outside_hosts():
+    from arche_lib.report import _http_section
+    request = {"file": "a.ts", "line": 1, "method": "GET", "path": "/x", "dynamic": False,
+               "host": "<cdn>.example.com"}
+    html = _http_section([{"request": request, "candidates": [], "reason": "external_host",
+                           "status": "unresolved"}], {})
+    assert "&lt;cdn&gt;.example.com" in html and "<cdn>" not in html
+    assert "No matching literal route identified." not in html
+
+
 def linked():
     graph = sample()
     graph['nodes'].append({'type': 'file', 'id': 'file:tests/test_a.py', 'lang': 'python', 'lines': 9})

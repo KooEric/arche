@@ -63,7 +63,7 @@ python3 -B skills/arche/scripts/arche.py /path/to/repo --lang ko
 
 ## 검증과 범위
 
-정적 분석 어댑터는 Python·TypeScript·JavaScript·Dart·Go·Java·Kotlin을 지원합니다. Java와 Kotlin은 서로의 클래스를 import할 수 있고, import 문 없이 쓰는 같은 패키지의 타입은 "추론됨"으로 표시합니다. 합성 레포 8개의 정답과 import 관계를 대조합니다. Dart의 HTTP 요청과 Worker의 OpenAPI 라우트가 발견되면 HTML의 **HTTP connections**에서 메서드·경로와 양쪽 소스 위치를 볼 수 있습니다. 유일하게 매칭된 후보도 배포 호스트와 런타임 호출은 별도 확인이 필요합니다.
+정적 분석 어댑터는 Python·TypeScript·JavaScript·Dart·Go·Java·Kotlin을 지원합니다. Java와 Kotlin은 서로의 클래스를 import할 수 있고, import 문 없이 쓰는 같은 패키지의 타입은 "추론됨"으로 표시합니다. 합성 레포 9개의 정답과 import 관계를 대조합니다. Dart·TypeScript·JavaScript의 HTTP 요청과 Hono·Express·Fastify·FastAPI·Flask 라우트가 발견되면 HTML의 **HTTP connections**에서 메서드·경로와 양쪽 소스 위치를 볼 수 있습니다. 유일하게 매칭된 후보도 배포 호스트와 런타임 호출은 별도 확인이 필요합니다.
 
 ```sh
 python3 evals/score.py
