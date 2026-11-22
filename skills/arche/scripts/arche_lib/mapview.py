@@ -18,6 +18,8 @@ _TEXT = {
     "inferred": ("Inferred: HTTP method and path match, or an inferred import", "추론: HTTP 메서드·경로 일치 또는 추론된 import"),
     "cited": ("Cited by the map author; the line exists, open it to judge the claim", "지도 작성자가 인용함. 줄의 존재만 확인했으니 열어서 판단하세요"),
     "hint": ("Select a card for details. Select it again to open it.", "카드를 선택하면 상세가 보이고, 다시 선택하면 안으로 들어갑니다."),
+    "densehint": ("Many links here are drawn faint. Point at or select a card to see its own.",
+                  "연결이 많아 흐리게 그렸습니다. 카드에 마우스를 올리거나 선택하면 그 카드의 연결만 보입니다."),
     "unnamed": ("Not named yet", "이름 미확정"), "undescribed": ("No description", "설명 없음"), "nosummary": ("No summary", "요약 없음"),
     "unassigned": ("Files in no part", "부품에 속하지 않은 파일"), "described": ("described", "설명됨"),
     "changed": ("changed", "변경됨"), "audit": ("audit", "감사 후보"),

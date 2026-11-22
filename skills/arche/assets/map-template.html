@@ -81,6 +81,10 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 .arrow[data-status="inferred"] { fill: var(--warn); }
 .arrow[data-status="cited"] { fill: var(--c2); }
 .dim .edge:not(.on) { opacity: .12; }
+.dense .edge { opacity: .22; stroke-width: 1; }
+.dense .edge.loop { display: none; }
+.dense.dim .edge:not(.on) { opacity: .05; }
+.dense .edge.on { display: inline; opacity: 1; stroke-width: 1.8; }
 .dim .card:not(.on) { opacity: .35; }
 .edge-label { font: 10.5px var(--mono); fill: var(--muted); }
 .card { position: absolute; width: 214px; height: 66px; padding: .5rem .7rem; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); text-align: left; cursor: pointer; display: flex; flex-direction: column; justify-content: center; gap: .05rem; transition: opacity .12s; }
@@ -443,17 +447,28 @@ function drawMap() {
       for (const edge of graph.edges) edge.el.classList.toggle('on', on && (edge.from === node.id || edge.to === node.id));
     };
     card.addEventListener('mouseenter', () => light(true));
-    card.addEventListener('mouseleave', () => light(false));
+    card.addEventListener('mouseleave', () => { light(false); const kept = graph.nodes.find(item => item.id === state.sel); if (kept && kept.el) kept.el.dispatchEvent(new Event('mouseenter')); });
     card.addEventListener('click', () => { if (node.type === 'more') return; if (state.sel === node.id) enter(node); else go({sel: node.id}); });
     card.addEventListener('dblclick', () => enter(node));
     node.el = card;
     canvas.append(card);
   }
+  // Many links at once: draw them faint, hide the loops inside a column, and bring out one card's links at a time.
+  const dense = graph.edges.length > 40 || graph.edges.length > graph.nodes.length * 2.5;
+  canvas.classList.toggle('dense', dense);
+  const chosen = graph.nodes.find(node => node.id === state.sel);
+  const mark = node => {
+    canvas.classList.toggle('dim', !!node);
+    for (const other of graph.nodes) other.el.classList.toggle('on', !!node && (other === node || node.near.includes(other)));
+    for (const edge of graph.edges) edge.el.classList.toggle('on', !!node && (edge.from === node.id || edge.to === node.id));
+  };
+  mark(chosen);
+  canvas.addEventListener('mouseleave', () => mark(chosen));
   stage.append(viewport, h('div', {class: 'legend'}, [
     h('span', {}, [h('i', {'data-status': 'verified'}), document.createTextNode(T.verified)]),
     h('span', {}, [h('i', {'data-status': 'inferred'}), document.createTextNode(T.inferred)]),
     h('span', {}, [h('i', {'data-status': 'cited'}), document.createTextNode(T.cited)]),
-    h('span', {text: T.hint})]));
+    h('span', {text: dense ? T.densehint : T.hint})]));
   if (camera.at !== state.at) { camera.at = state.at; fit(); } else apply();
   return graph;
 }

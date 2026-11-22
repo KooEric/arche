@@ -75,6 +75,7 @@ _GROUP = re.compile(r"\b([A-Za-z_]\w*)\s*:?=\s*([A-Za-z_]\w*)\.Group\(\s*([\"`])
 _VERB_ROUTE = re.compile(r"\b([A-Za-z_]\w*)\.(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|Get|Post|Put|Patch|Delete|Head|Options|Any|All)\(\s*([\"`])")
 _HANDLE = re.compile(r"\b([A-Za-z_]\w*)\.(?:HandleFunc|Handle)\(\s*([\"`])")
 _AFTER_STRING = re.compile(r"\s*,")
+_NESTED = re.compile(r"\b([A-Za-z_]\w*)\.Route\(\s*([\"`])[^\n]*?func\s*\(\s*([A-Za-z_]\w*)\b")
 
 
 def routes(path, text, masked=None):
@@ -96,13 +97,43 @@ def routes(path, text, masked=None):
             if parent in prefixes and name not in prefixes:
                 prefixes[name] = prefixes[parent].rstrip("/") + ("/" + body.strip("/") if body.strip("/") else "")
 
+    # chi: r.Route("/x", func(r chi.Router) { r.Get("/y", h) }) nests the inner routes under "/x".
+    scopes = []
+    for match in _NESTED.finditer(masked.text):
+        body = masked.strings.get(match.start(2))
+        opened = masked.text.find("{", match.end())
+        if body is None or opened < 0:
+            continue
+        depth, closed = 0, None
+        for index in range(opened, len(masked.text)):
+            if masked.text[index] == "{":
+                depth += 1
+            elif masked.text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    closed = index
+                    break
+        if closed is not None:
+            scopes.append((opened, closed, match.group(3), match.group(1), "/" + body.strip("/") if body.strip("/") else "", match.start()))
+
+    def nested(receiver, offset):
+        """(outermost receiver, prefix gathered from the Route blocks around `offset`)."""
+        prefix = ""
+        while True:
+            inside = [scope for scope in scopes if scope[0] < offset < scope[1] and scope[2] == receiver]
+            if not inside:
+                return receiver, prefix
+            opened, _, _, outer, part, at = max(inside, key=lambda scope: scope[0])
+            receiver, prefix, offset = outer, part + prefix, at
+
     def record(match, quote_group, method, route):
         after = match.start(quote_group) + len(masked.strings[match.start(quote_group)]) + 2
         if not _AFTER_STRING.match(masked.text, after) or not (route == "" or route.startswith("/")):
             return None  # one argument is a client call such as http.Get(url), not a route
-        receiver, line = match.group(1), line_of(masked, match.start())
+        line = line_of(masked, match.start())
+        receiver, inner = nested(match.group(1), match.start())
         known = receiver in prefixes
-        full = (prefixes.get(receiver, "").rstrip("/") + route) or "/"
+        full = (prefixes.get(receiver, "").rstrip("/") + inner + route) or "/"
         return {"file": path, "line": line, "handler_line": line, "method": method, "path": full, "dynamic": False,
                 **({} if known else {"prefix_unknown": True})}
 

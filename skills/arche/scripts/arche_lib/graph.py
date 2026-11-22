@@ -1,6 +1,7 @@
 """Build graph.json content: file and symbol nodes plus IMPORTS edges."""
 from __future__ import annotations
 
+import posixpath
 import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
@@ -163,16 +164,36 @@ def _mount_targets(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[Dict[
     export is not one of its routers leaves all of them unknown.
     """
     imported = _imported_names(edges)
+    modules: Dict[str, set] = defaultdict(set)
+    for edge in edges:
+        if edge["status"] in _RESOLVED and not edge.get("names"):
+            modules[edge["from"]].add(edge["to"][len("file:"):])
     targets: Dict[tuple, List[dict]] = defaultdict(list)
     ambiguous = set()
     for path, result in extracted.items():
         for mount in result.get("http_mounts", []):
             found = imported[_file_id(path)].get(mount["name"])
+            if found is None and "attr" in mount:
+                # A whole module imported under its own name (`from package import users`) leaves no imported name.
+                stems = {posixpath.dirname(target) if posixpath.basename(target) == "__init__.py" else target.rsplit(".", 1)[0]
+                         for target in modules[_file_id(path)]}
+                matches = [target for target in modules[_file_id(path)]
+                           if posixpath.basename(posixpath.dirname(target) if posixpath.basename(target) == "__init__.py"
+                                                 else target.rsplit(".", 1)[0]) == mount["name"]]
+                found = (matches[0], "*") if len(matches) == 1 and stems else None
             if found is None:
                 continue
             target, original = found
             owned = extracted.get(target, {}).get("http_routers", {})
-            if original in owned:
+            if "attr" in mount:  # `module.router`: the import names the module, the attribute names its router
+                if posixpath.basename(target) == "__init__.py" and mount["attr"] not in owned:
+                    # `from package import module` resolves to the package; the module is its neighbour.
+                    base = posixpath.join(posixpath.dirname(target), mount["name"])
+                    target = next((path for path in (base + ".py", base + "/__init__.py") if path in extracted), target)
+                    owned = extracted.get(target, {}).get("http_routers", {})
+                if mount["attr"] in owned:
+                    targets[(target, mount["attr"])].append(mount)
+            elif original in owned:
                 targets[(target, original)].append(mount)
             elif original == "default":
                 exported = [name for name, info in owned.items() if info.get("default")]

@@ -89,6 +89,11 @@ def _fetch_method(masked, after_url: int) -> Optional[str]:
     return None
 
 
+_THIS_VERB = re.compile(r"\bthis\s*\.\s*(" + _IDENT + r")\s*\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[^;=()\n]{0,200}>)?\s*\(\s*")
+_FIELD_CLIENT = re.compile(r"(?m)^\s*(?:(?:private|public|protected|readonly|static)\s+)*#?(" + _IDENT + r")\s*=\s*axios\s*\.\s*create\s*\(")
+_FIELD_FROM = re.compile(r"\bthis\s*\.\s*(" + _IDENT + r")\s*=\s*(" + _IDENT + r")\s*[;\n]")
+_FETCH_NAME = re.compile(r"(?<![\w$.])fetch\s*\(\s*(" + _IDENT + r")\s*(?=[,)])")
+_CONSTANT = re.compile(r"\bconst\s+(" + _IDENT + r")\s*(?::[^=\n]+)?=\s*")
 _EXPORTED_CLIENT = re.compile(r"\bexport\s+(?:const|let|var)\s+(" + _IDENT + r")\s*=\s*axios\s*\.\s*create\s*\(")
 _DEFAULT_EXPORT = re.compile(r"\bexport\s+default\s+(" + _IDENT + r")\s*;?")
 
@@ -122,6 +127,33 @@ def requests_and_clients(path: str, text: str):
         method = _fetch_method(masked, end) if end is not None else None
         if method is not None:
             add(match, method, match.end())
+    # fetch(url) where `url` is a constant string of this file, defined once.
+    constants = {}
+    for match in _CONSTANT.finditer(masked.text):
+        if match.end() in masked.strings:
+            constants[match.group(1)] = None if match.group(1) in constants else match.end()
+    for match in _FETCH_NAME.finditer(masked.text):
+        at = constants.get(match.group(1))
+        method = _fetch_method(masked, match.end()) if at is not None else None
+        value = request_path(masked.strings[at]) if method is not None else None
+        if value is not None:
+            found.append(request_record(path, line_of(masked, match.start()), method, value))
+    # this.api.get("/x"): `api` is a client when the class creates it or takes it from one.
+    fields = {m.group(1) for m in _FIELD_CLIENT.finditer(masked.text)}
+    taken = {m.group(1): m.group(2) for m in _FIELD_FROM.finditer(masked.text)}
+    for match in _THIS_VERB.finditer(masked.text):
+        if _url_end(masked, match.end()) is None:
+            continue
+        field = match.group(1)
+        source = taken.get(field, field)
+        value = request_path(masked.strings[match.end()])
+        if value is None:
+            continue
+        record = request_record(path, line_of(masked, match.start()), match.group(2).upper(), value)
+        if field in fields or source in clients:
+            found.append(record)
+        elif field in taken:
+            pending.append({"client": source, "request": record})
     for match in _VERB.finditer(masked.text):
         if _url_end(masked, match.end()) is None:
             continue
