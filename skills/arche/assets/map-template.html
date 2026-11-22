@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="$lang">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="$csp">
+<title>$title · Arche map</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #ffffff; --surface: #ffffff; --sunken: #f5f5f6; --ink: #111214; --muted: #6a6d75; --line: #e9e9ec; --line-strong: #d3d4d9;
+  --accent: #0e7a4f; --accent-ink: #ffffff; --accent-soft: #ebf6f0; --warn: #94590a; --warn-soft: #fdf4e3; --bad: #b4342c; --bad-soft: #fceceb;
+  --c0: #0e7a4f; --c1: #c27a1a; --c2: #3b6fb6; --c3: #a2466f; --c4: #6a6f2a; --c5: #7a6fbf;
+  --sans: "Pretendard Variable", "Pretendard", "SUIT", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
+  --mono: "JetBrains Mono", "D2Coding", "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, "Apple SD Gothic Neo", "Noto Sans KR", monospace;
+  --radius: 8px;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c0d0e; --surface: #0c0d0e; --sunken: #16181a; --ink: #ececee; --muted: #8f939b; --line: #202326; --line-strong: #33373c;
+  --accent: #5fd49b; --accent-ink: #06130c; --accent-soft: #12241b; --warn: #e6b45c; --warn-soft: #2a2211; --bad: #f08a80; --bad-soft: #2e1717;
+  --c0: #5fd49b; --c1: #e6b45c; --c2: #7fb0f0; --c3: #e08bb0; --c4: #b9c16a; --c5: #b0a6f2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0c0d0e; --surface: #0c0d0e; --sunken: #16181a; --ink: #ececee; --muted: #8f939b; --line: #202326; --line-strong: #33373c;
+    --accent: #5fd49b; --accent-ink: #06130c; --accent-soft: #12241b; --warn: #e6b45c; --warn-soft: #2a2211; --bad: #f08a80; --bad-soft: #2e1717;
+    --c0: #5fd49b; --c1: #e6b45c; --c2: #7fb0f0; --c3: #e08bb0; --c4: #b9c16a; --c5: #b0a6f2;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.6 var(--sans); -webkit-font-smoothing: antialiased; word-break: keep-all; overflow-wrap: anywhere; display: flex; flex-direction: column; }
+[hidden] { display: none !important; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+header { display: flex; align-items: center; gap: .6rem 1rem; flex-wrap: wrap; padding: .6rem 1rem; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: .45rem; font: 600 .74rem var(--mono); letter-spacing: .16em; }
+.brand svg { width: 1.2rem; height: 1.2rem; color: var(--accent); }
+.crumbs { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; font: 500 .86rem var(--mono); min-width: 0; }
+.crumbs button { border: 0; background: transparent; padding: .1rem .3rem; border-radius: 5px; cursor: pointer; color: var(--muted); }
+.crumbs button:last-child { color: var(--ink); font-weight: 600; }
+.crumbs button:hover { background: var(--sunken); }
+.crumbs span { color: var(--line-strong); }
+.tabs { display: flex; gap: 2px; margin-left: auto; padding: 2px; border-radius: 8px; background: var(--sunken); }
+.tabs button { border: 0; background: transparent; padding: .2rem .75rem; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: .84rem; }
+.tabs button[aria-pressed="true"] { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--line); }
+.search { position: relative; }
+.search input { width: 13rem; padding: .28rem .6rem; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); font: .82rem var(--mono); }
+.results { position: absolute; z-index: 9; top: 110%; right: 0; width: 22rem; max-height: 22rem; overflow: auto; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+.results button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: .4rem .7rem; cursor: pointer; }
+.results button:hover, .results button:focus { background: var(--sunken); }
+.results small, .muted { color: var(--muted); font-size: .78rem; }
+.icon { border: 0; background: transparent; cursor: pointer; color: var(--muted); padding: .2rem; display: grid; }
+.icon svg { width: 1rem; height: 1rem; }
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 21rem; }
+.stage { min-width: 0; min-height: 0; overflow: auto; background: var(--sunken); position: relative; display: flex; flex-direction: column; }
+.canvas { position: relative; flex: none; margin: 0 auto auto 0; }
+.page { width: 100%; }
+.canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; opacity: .85; }
+.edge[data-status="verified"] { stroke: var(--accent); }
+.edge[data-status="inferred"] { stroke: var(--warn); stroke-dasharray: 7 5; }
+.edge[data-status="cited"] { stroke: var(--c2); }
+.edge.loop { opacity: .6; }
+.arrow { fill: var(--accent); }
+.arrow[data-status="inferred"] { fill: var(--warn); }
+.arrow[data-status="cited"] { fill: var(--c2); }
+.dim .edge:not(.on) { opacity: .12; }
+.dim .card:not(.on) { opacity: .35; }
+.edge-label { font: 10.5px var(--mono); fill: var(--muted); }
+.card { position: absolute; width: 214px; height: 66px; padding: .5rem .7rem; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); text-align: left; cursor: pointer; display: flex; flex-direction: column; justify-content: center; gap: .05rem; transition: opacity .12s; }
+.card strong { font-size: .88rem; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card span { font-size: .74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .mono { font-size: .68rem; }
+.card:hover { border-color: var(--accent); }
+.card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.card[data-type="part"] { border-left: 3px solid var(--accent); }
+.card[data-kind="external"] { border-style: dashed; border-left-style: dashed; }
+.card[data-type="ghost"] { background: transparent; border-style: dashed; }
+.card[data-type="more"] { background: transparent; border-style: dashed; color: var(--muted); }
+.badge { display: inline-block; padding: 0 .4rem; border-radius: 5px; background: var(--sunken); font: 500 .68rem/1.6 var(--mono); color: var(--muted); }
+.badge[data-tone="warn"] { background: var(--warn-soft); color: var(--warn); }
+.badge[data-tone="bad"] { background: var(--bad-soft); color: var(--bad); }
+.legend { position: sticky; left: 0; bottom: 0; margin-top: auto; display: flex; flex-wrap: wrap; gap: .2rem 1.1rem; padding: .45rem 1rem; font-size: .76rem; color: var(--muted); background: var(--bg); border-top: 1px solid var(--line); }
+.legend i { display: inline-block; width: 1.6rem; border-top: 2px solid var(--accent); vertical-align: middle; margin-right: .4rem; }
+.legend i[data-status="inferred"] { border-top: 2px dashed var(--warn); }
+.legend i[data-status="cited"] { border-top-color: var(--c2); }
+.note { padding: 2rem; color: var(--muted); }
+aside { border-left: 1px solid var(--line); overflow: auto; padding: 1.1rem 1.1rem 2rem; min-height: 0; }
+aside h2 { font: 600 1rem var(--mono); letter-spacing: -.01em; }
+aside h3 { font: 500 .74rem var(--mono); color: var(--muted); margin: 1.1rem 0 .3rem; }
+aside p { margin-top: .4rem; }
+aside li { padding: .14rem 0; font-size: .86rem; }
+aside .row { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .5rem; }
+.link { border: 0; background: transparent; padding: 0; color: var(--accent); cursor: pointer; text-align: left; }
+.link:hover { text-decoration: underline; }
+.enter { margin-top: .8rem; padding: .3rem .8rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: var(--accent-ink); cursor: pointer; font-size: .84rem; }
+.warnings { margin-top: 1rem; padding: .6rem .8rem; border-left: 2px solid var(--warn); color: var(--warn); font-size: .82rem; }
+.page { max-width: 54rem; margin: 0 auto; padding: 1.5rem 1.2rem 3rem; }
+.page h2 { font: 600 1.02rem var(--mono); padding-bottom: .6rem; border-bottom: 1px solid var(--line); margin-bottom: .8rem; }
+.steps li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: .6rem; padding: .8rem .6rem; border-bottom: 1px solid var(--line); border-radius: 8px; }
+.steps li[aria-current="true"] { background: var(--surface); box-shadow: 0 0 0 2px var(--accent); }
+.steps .n { font: 500 .8rem/1.9 var(--mono); color: var(--accent); }
+.bar { display: flex; gap: .5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+.bar button, .bar select { padding: .25rem .7rem; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.tree ul { margin-left: 1.1rem; border-left: 1px solid var(--line); padding-left: .8rem; }
+.tree li { padding: .25rem 0; }
+.tree details > summary { cursor: pointer; color: var(--muted); font-size: .82rem; }
+@media (max-width: 880px) {
+  main { grid-template-columns: 1fr; grid-template-rows: minmax(55vh, 1fr) auto; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+  .tabs { margin-left: 0; }
+  .search input { width: 9rem; } .results { width: 18rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<body>
+<header>
+  <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 20V12a9 9 0 0 1 18 0v8"/><path d="M8 20v-7a4 4 0 0 1 8 0v7"/></svg><span>ARCHE</span></div>
+  <nav class="crumbs" id="crumbs"></nav>
+  <div class="tabs" id="tabs"></div>
+  <div class="search"><input type="search" id="q" autocomplete="off"><div class="results" id="results" hidden></div></div>
+  <button type="button" class="icon" id="theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+</header>
+<main>
+  <div class="stage" id="stage"></div>
+  <aside id="panel"></aside>
+</main>
+<noscript><p class="note">$noscript</p></noscript>
+<script type="application/json" id="atlas">$data</script>
+<script>
+const D = JSON.parse(document.getElementById('atlas').textContent);
+const T = D.t;
+const root = document.documentElement;
+function stored(key, value) {
+  try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (error) { /* local files may have no storage */ }
+  return null;
+}
+if (stored('arche-theme')) root.dataset.theme = stored('arche-theme');
+const themeButton = document.getElementById('theme');
+themeButton.setAttribute('aria-label', T.theme);
+themeButton.addEventListener('click', () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  stored('arche-theme', root.dataset.theme);
+});
+function h(tag, props, children) {
+  const node = document.createElement(tag);
+  for (const key in props || {}) {
+    if (key === 'text') node.textContent = props[key];
+    else if (key === 'on') for (const name in props.on) node.addEventListener(name, props.on[name]);
+    else if (props[key] !== null && props[key] !== undefined) node.setAttribute(key, props[key]);
+  }
+  for (const child of children || []) if (child) node.append(child);
+  return node;
+}
+const SVG = 'http://www.w3.org/2000/svg';
+function s(tag, attrs, parent) {
+  const node = document.createElementNS(SVG, tag);
+  for (const key in attrs) node.setAttribute(key, attrs[key]);
+  if (parent) parent.append(node);
+  return node;
+}
+
+const parts = new Map(D.parts.map(part => [part.id, part]));
+const kids = new Map();
+for (const part of D.parts) {
+  const key = part.parent || '';
+  if (!kids.has(key)) kids.set(key, []);
+  kids.get(key).push(part);
+}
+const filesOf = new Map();
+D.files.forEach((file, index) => {
+  file.index = index;
+  const key = file.part || '';
+  if (!filesOf.has(key)) filesOf.set(key, []);
+  filesOf.get(key).push(file);
+});
+const fileIndex = new Map(D.files.map(file => [file.path, file.index]));
+const weight = D.files.map(() => 0);
+for (const link of D.file_links) { weight[link[0]] += link[3]; weight[link[1]] += link[3]; }
+function chain(id) {
+  const out = [];
+  for (let at = id; at; at = parts.get(at) ? parts.get(at).parent : null) out.push(at);
+  return out;
+}
+function within(id) {
+  const all = [];
+  const walk = part => { for (const file of filesOf.get(part) || []) all.push(file); for (const child of kids.get(part) || []) walk(child.id); };
+  walk(id);
+  return all;
+}
+function evidenceLink(evidence) {
+  if (!evidence) return null;
+  const index = fileIndex.get(evidence.path);
+  const label = evidence.path + ':' + evidence.start_line + (evidence.end_line > evidence.start_line ? '–' + evidence.end_line : '');
+  return index === undefined ? h('code', {text: label}) : h('a', {href: D.report + '#file-' + index, class: 'mono', text: label});
+}
+
+const state = {view: 'map', at: '', sel: null, flow: 0, step: 0};
+const stage = document.getElementById('stage');
+const panel = document.getElementById('panel');
+const LIMIT = 24, W = 214, H = 66, GX = 96, GY = 16, PAD = 28;
+
+function level() {
+  // The cards on screen: sub-parts and files of the current part, plus the neighbours outside it.
+  const at = state.at, nodes = new Map();
+  const inside = new Set(chain(at));
+  const add = node => { if (!nodes.has(node.id)) nodes.set(node.id, node); return node.id; };
+  const partNode = (part, ghost) => add({id: 'p:' + part.id, type: ghost ? 'ghost' : 'part', part, label: part.label, sub: part.summary || (part.unnamed ? T.unnamed : ''), path: ''});
+  for (const part of kids.get(at) || []) partNode(part, false);
+  const own = [...(filesOf.get(at) || [])].sort((a, b) => weight[b.index] - weight[a.index] || a.index - b.index);
+  const shown = new Set((own.length > LIMIT ? own.slice(0, LIMIT - 1) : own).map(file => file.index));
+  const more = own.length - shown.size;
+  for (const file of own) if (shown.has(file.index)) add({id: 'f:' + file.index, type: 'file', file, label: file.name || file.path.slice(file.path.lastIndexOf('/') + 1), sub: file.description || T.undescribed, path: file.path});
+  if (more > 0) add({id: 'more', type: 'more', label: '+' + more + ' ' + T.files, sub: at ? '' : T.unassigned, path: ''});
+  const repPart = id => {
+    const up = chain(id);
+    const position = up.indexOf(at);
+    if (at === '' ) return 'p:' + up[up.length - 1];
+    if (position === 0) return null;
+    if (position > 0) return 'p:' + up[position - 1];
+    const outer = up.filter(item => !inside.has(item));
+    return partNode(parts.get(outer[outer.length - 1]), true);
+  };
+  const repFile = index => {
+    const file = D.files[index];
+    if ((file.part || '') === at) return shown.has(index) ? 'f:' + index : 'more';
+    return file.part ? repPart(file.part) : null;
+  };
+  const edges = new Map();
+  const rank = {verified: 3, cited: 2, inferred: 1};
+  const link = (from, to, status, count, label) => {
+    if (!from || !to || from === to) return;
+    const key = from + '>' + to;
+    const edge = edges.get(key) || {from, to, status, count: 0, label: ''};
+    if (rank[status] > rank[edge.status]) edge.status = status;
+    edge.count += count;
+    edge.label = edge.label || label || '';
+    edges.set(key, edge);
+  };
+  for (const item of D.file_links) link(repFile(item[0]), repFile(item[1]), item[2], item[3]);
+  const end = (item, side) => item[side + '_file'] !== undefined ? repFile(item[side + '_file']) : repPart(item[side]);
+  for (const item of D.links) if (item.kind !== 'import') link(end(item, 'from'), end(item, 'to'), item.status, item.count, item.label);
+  return {nodes: [...nodes.values()], edges: [...edges.values()].filter(edge => nodes.has(edge.from) && nodes.has(edge.to))};
+}
+
+function layout(nodes, edges, room) {
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  for (const node of nodes) { node.out = []; node.near = []; node.state = 0; node.group = -1; }
+  for (const edge of edges) { byId.get(edge.from).out.push(edge.to); byId.get(edge.from).near.push(byId.get(edge.to)); byId.get(edge.to).near.push(byId.get(edge.from)); }
+  let counter = 0, groups = 0;
+  const trail = [];
+  for (const start of nodes) {
+    if (start.state) continue;
+    const stack = [[start, 0]];
+    start.state = start.low = counter += 1; trail.push(start); start.onTrail = true;
+    while (stack.length) {
+      const frame = stack[stack.length - 1], node = frame[0], next = byId.get(node.out[frame[1]]);
+      frame[1] += 1;
+      if (next) {
+        if (!next.state) { next.state = next.low = counter += 1; trail.push(next); next.onTrail = true; stack.push([next, 0]); }
+        else if (next.onTrail) node.low = Math.min(node.low, next.state);
+        continue;
+      }
+      stack.pop();
+      if (stack.length) stack[stack.length - 1][0].low = Math.min(stack[stack.length - 1][0].low, node.low);
+      if (node.low !== node.state) continue;
+      for (let member = null; member !== node;) { member = trail.pop(); member.onTrail = false; member.group = groups; }
+      groups += 1;
+    }
+  }
+  const depth = new Array(groups).fill(0);
+  for (let pass = 0, moved = true; moved && pass <= groups; pass += 1) {
+    moved = false;
+    for (const edge of edges) {
+      const a = byId.get(edge.from).group, b = byId.get(edge.to).group;
+      if (a !== b && depth[b] < depth[a] + 1) { depth[b] = depth[a] + 1; moved = true; }
+    }
+  }
+  const linked = nodes.filter(node => node.near.length), alone = nodes.filter(node => !node.near.length);
+  const columns = [];
+  for (const node of linked) (columns[depth[node.group]] ||= []).push(node);
+  const cols = columns.filter(Boolean);
+  const place = () => cols.forEach(col => col.forEach((node, row) => { node.row = (row + 0.5) / col.length; }));
+  place();
+  for (let sweep = 0; sweep < 6; sweep += 1) {
+    for (const col of sweep % 2 ? [...cols].reverse() : cols) {
+      for (const node of col) node.pull = node.near.reduce((sum, other) => sum + other.row, 0) / node.near.length;
+      col.sort((a, b) => a.pull - b.pull || (a.label < b.label ? -1 : 1));
+      place();
+    }
+  }
+  const tallest = Math.max(0, ...cols.map(col => col.length));
+  const height = tallest * (H + GY) - GY;
+  cols.forEach((col, x) => col.forEach((node, row) => {
+    node.x = PAD + x * (W + GX);
+    node.y = PAD + (height - (col.length * (H + GY) - GY)) / 2 + row * (H + GY);
+  }));
+  let width = PAD * 2 + Math.max(0, cols.length * (W + GX) - GX) + (cols.length ? 40 : 0);
+  let bottom = cols.length ? PAD + height : 0;
+  if (alone.length) {
+    const per = Math.max(1, Math.floor((Math.max(width, room) - PAD * 2 + GY) / (W + GY)));
+    const top = bottom + (cols.length ? 36 : PAD);
+    alone.forEach((node, i) => { node.x = PAD + (i % per) * (W + GY); node.y = top + Math.floor(i / per) * (H + GY); });
+    width = Math.max(width, PAD * 2 + Math.min(alone.length, per) * (W + GY) - GY);
+    bottom = top + Math.ceil(alone.length / per) * (H + GY) - GY;
+  }
+  return {width, height: bottom + PAD, byId};
+}
+
+function go(change) {
+  Object.assign(state, change);
+  const hash = state.view === 'map' ? 'map/' + encodeURIComponent(state.at) + (state.sel ? '/' + encodeURIComponent(state.sel) : '')
+    : state.view === 'flows' ? 'flows/' + state.flow + '/' + state.step : 'list';
+  history.replaceState(null, '', '#' + hash);
+  render();
+}
+function enter(node) {
+  if (node.type === 'part' || node.type === 'ghost') go({view: 'map', at: node.part.id, sel: null});
+  else if (node.type === 'file') location.href = D.report + '#file-' + node.file.index;
+}
+function hasInside(part) { return (kids.get(part.id) || []).length || (filesOf.get(part.id) || []).length; }
+
+function drawMap() {
+  const graph = level();
+  stage.replaceChildren();
+  if (!graph.nodes.length) { stage.append(h('p', {class: 'note', text: T.empty})); return graph; }
+  const box = layout(graph.nodes, graph.edges, stage.clientWidth);
+  const canvas = h('div', {class: 'canvas'});
+  canvas.style.width = box.width + 'px';
+  canvas.style.height = box.height + 'px';
+  const svg = s('svg', {width: box.width, height: box.height}, canvas);
+  for (const status of ['verified', 'inferred', 'cited']) {
+    const marker = s('marker', {id: 'a-' + status, viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 8, markerHeight: 8, markerUnits: 'userSpaceOnUse', orient: 'auto'}, svg);
+    s('path', {d: 'M0 0L8 4L0 8z', class: 'arrow', 'data-status': status}, marker);
+  }
+  for (const edge of graph.edges) {
+    const from = box.byId.get(edge.from), to = box.byId.get(edge.to);
+    let d, lx, ly;
+    if (to.x === from.x) {
+      const x = from.x + W, y1 = from.y + H / 2 + 8, y2 = to.y + H / 2 - 8, bulge = Math.min(GX - 20, 26 + Math.abs(y2 - y1) * 0.12);
+      d = 'M' + x + ' ' + y1 + 'C' + (x + bulge) + ' ' + y1 + ' ' + (x + bulge) + ' ' + y2 + ' ' + (x + 2) + ' ' + y2;
+      lx = x + bulge; ly = (y1 + y2) / 2;
+    } else {
+      const x1 = from.x + W, y1 = from.y + H / 2, x2 = to.x - 2, y2 = to.y + H / 2, bend = Math.max(36, (x2 - x1) / 2);
+      d = 'M' + x1 + ' ' + y1 + 'C' + (x1 + bend) + ' ' + y1 + ' ' + (x2 - bend) + ' ' + y2 + ' ' + x2 + ' ' + y2;
+      lx = (x1 + x2) / 2; ly = (y1 + y2) / 2 - 5;
+    }
+    edge.el = s('path', {class: 'edge' + (to.x === from.x ? ' loop' : ''), 'data-status': edge.status, d, 'marker-end': 'url(#a-' + edge.status + ')'}, svg);
+    if (edge.label) s('text', {x: lx, y: ly, 'text-anchor': 'middle', class: 'edge-label'}, svg).textContent = edge.label;
+  }
+  for (const node of graph.nodes) {
+    const card = h('button', {type: 'button', class: 'card', 'data-type': node.type, 'data-kind': node.part ? node.part.kind : null, 'aria-pressed': String(state.sel === node.id), title: node.path || node.label}, [
+      h('strong', {text: node.label}), node.sub ? h('span', {text: node.sub}) : null, node.path ? h('span', {class: 'mono', text: node.path}) : null]);
+    card.style.left = node.x + 'px';
+    card.style.top = node.y + 'px';
+    const light = on => {
+      canvas.classList.toggle('dim', on);
+      for (const other of graph.nodes) other.el.classList.toggle('on', on && (other === node || node.near.includes(other)));
+      for (const edge of graph.edges) edge.el.classList.toggle('on', on && (edge.from === node.id || edge.to === node.id));
+    };
+    card.addEventListener('mouseenter', () => light(true));
+    card.addEventListener('mouseleave', () => light(false));
+    card.addEventListener('click', () => { if (node.type === 'more') return; if (state.sel === node.id) enter(node); else go({sel: node.id}); });
+    card.addEventListener('dblclick', () => enter(node));
+    node.el = card;
+    canvas.append(card);
+  }
+  stage.append(canvas, h('div', {class: 'legend'}, [
+    h('span', {}, [h('i', {'data-status': 'verified'}), document.createTextNode(T.verified)]),
+    h('span', {}, [h('i', {'data-status': 'inferred'}), document.createTextNode(T.inferred)]),
+    h('span', {}, [h('i', {'data-status': 'cited'}), document.createTextNode(T.cited)]),
+    h('span', {text: T.hint})]));
+  return graph;
+}
+
+function list(title, items) {
+  return items.length ? [h('h3', {text: title + ' ' + items.length}), h('ul', {}, items.map(item => h('li', {}, [item])))] : [];
+}
+function drawPanel(graph) {
+  panel.replaceChildren();
+  const node = graph && graph.nodes.find(item => item.id === state.sel);
+  const part = node ? node.part : parts.get(state.at);
+  const out = [];
+  if (node && node.type === 'file') {
+    const file = node.file;
+    out.push(h('h2', {text: file.name || file.path.slice(file.path.lastIndexOf('/') + 1)}), h('p', {class: 'mono muted', text: file.path}),
+      h('p', {text: file.description || T.undescribed}),
+      h('div', {class: 'row'}, [h('span', {class: 'badge', text: file.lang}), h('span', {class: 'badge', text: file.lines + ' ' + T.lines}), h('span', {class: 'badge', text: file.symbols + ' ' + T.symbols})]),
+      h('a', {class: 'enter', href: D.report + '#file-' + file.index, text: T.open}));
+    out.push(...list(T.routes, D.routes.filter(route => route.file === file.path).map(route => h('span', {}, [h('code', {text: route.method + ' ' + route.path}), document.createTextNode(route.description ? ' — ' + route.description : '')]))));
+  } else if (part) {
+    const all = within(part.id);
+    out.push(h('h2', {text: part.label}), h('p', {text: part.summary || (part.unnamed ? T.unnamed : T.nosummary)}),
+      h('div', {class: 'row'}, [h('span', {class: 'badge', text: T['kind_' + part.kind] || part.kind}), h('span', {class: 'badge', text: all.length + ' ' + T.files}),
+        h('span', {class: 'badge', text: all.reduce((sum, file) => sum + file.lines, 0) + ' ' + T.lines}),
+        part.changed ? h('span', {class: 'badge', 'data-tone': 'warn', text: T.changed + ' ' + part.changed}) : null,
+        part.findings ? h('span', {class: 'badge', 'data-tone': 'bad', text: T.audit + ' ' + part.findings}) : null]));
+    if (part.evidence) out.push(h('p', {}, [document.createTextNode(T.evidence + ' · '), evidenceLink(part.evidence)]));
+    if (node && hasInside(part)) out.push(h('button', {type: 'button', class: 'enter', text: T.enter, on: {click: () => enter(node)}}));
+    const routes = D.routes.filter(route => all.some(file => file.path === route.file));
+    out.push(...list(T.routes, routes.slice(0, 40).map(route => h('span', {}, [h('code', {text: route.method + ' ' + route.path}), document.createTextNode(route.description ? ' — ' + route.description : '')]))));
+    out.push(...list(T.files_title, all.slice(0, 40).map(file => h('a', {href: D.report + '#file-' + file.index, class: 'mono', text: file.path}))));
+  } else {
+    out.push(h('h2', {text: D.project.name}), h('p', {text: D.project.summary || T.nosummary}),
+      h('div', {class: 'row'}, [h('span', {class: 'badge', text: D.parts.length + ' ' + T.parts}), h('span', {class: 'badge', text: D.stats.files + ' ' + T.files}),
+        h('span', {class: 'badge', text: T.described + ' ' + D.stats.described_files + '/' + D.stats.files})]),
+      h('p', {}, [h('a', {href: D.report, text: T.report})]));
+    if (D.generated_from === 'folders') out.push(h('p', {class: 'muted', text: T.auto}));
+    if (D.warnings.length) out.push(h('ul', {class: 'warnings'}, D.warnings.map(text => h('li', {text}))));
+  }
+  if (node && graph) {
+    const name = id => { const other = graph.nodes.find(item => item.id === id); return h('button', {type: 'button', class: 'link', text: other.label, on: {click: () => go({sel: id})}}); };
+    out.push(...list(T.uses, graph.edges.filter(edge => edge.from === node.id).map(edge => name(edge.to))));
+    out.push(...list(T.usedby, graph.edges.filter(edge => edge.to === node.id).map(edge => name(edge.from))));
+  }
+  panel.append(...out.filter(Boolean));
+}
+
+function drawFlows() {
+  stage.replaceChildren();
+  if (!D.flows.length) { stage.append(h('p', {class: 'note', text: T.noflows})); panel.replaceChildren(); return; }
+  const flow = D.flows[Math.min(state.flow, D.flows.length - 1)];
+  const step = Math.min(state.step, flow.steps.length - 1);
+  const choose = h('select', {'aria-label': T.flows, on: {change: event => go({flow: +event.target.value, step: 0})}}, D.flows.map((item, i) => h('option', {value: i, text: item.title})));
+  choose.value = String(D.flows.indexOf(flow));
+  stage.append(h('div', {class: 'page'}, [h('h2', {text: flow.title}),
+    h('div', {class: 'bar'}, [choose, h('button', {type: 'button', text: '← ' + T.prev, on: {click: () => go({step: Math.max(0, step - 1)})}}),
+      h('button', {type: 'button', text: T.next + ' →', on: {click: () => go({step: Math.min(flow.steps.length - 1, step + 1)})}}),
+      h('span', {class: 'muted', text: (step + 1) + ' / ' + flow.steps.length})]),
+    h('ol', {class: 'steps'}, flow.steps.map((item, i) => h('li', {'aria-current': String(i === step), on: {click: () => go({step: i})}}, [
+      h('span', {class: 'n', text: String(i + 1).padStart(2, '0')}),
+      h('div', {}, [h('strong', {text: parts.get(item.part).label}), h('p', {text: item.note}), item.evidence ? h('p', {class: 'muted'}, [document.createTextNode(T.evidence + ' · '), evidenceLink(item.evidence)]) : null])])))]));
+  const part = parts.get(flow.steps[step].part);
+  panel.replaceChildren(h('h2', {text: part.label}), h('p', {text: part.summary || T.nosummary}),
+    h('button', {type: 'button', class: 'enter', text: T.onmap, on: {click: () => go({view: 'map', at: part.parent || '', sel: 'p:' + part.id})}}));
+}
+
+function drawList() {
+  const branch = id => h('ul', {}, (kids.get(id) || []).map(part => h('li', {}, [
+    h('button', {type: 'button', class: 'link', text: part.label, on: {click: () => go({view: 'map', at: part.parent || '', sel: 'p:' + part.id})}}),
+    document.createTextNode(part.summary ? ' — ' + part.summary : ''),
+    (filesOf.get(part.id) || []).length ? h('details', {}, [h('summary', {text: (filesOf.get(part.id) || []).length + ' ' + T.files}),
+      h('ul', {}, (filesOf.get(part.id) || []).map(file => h('li', {}, [h('a', {href: D.report + '#file-' + file.index, class: 'mono', text: file.path}), document.createTextNode(file.description ? ' — ' + file.description : '')])))]) : null,
+    branch(part.id)])));
+  stage.replaceChildren(h('div', {class: 'page tree'}, [h('h2', {text: D.project.name}), D.project.summary ? h('p', {text: D.project.summary}) : null, branch('')]));
+  panel.replaceChildren(h('h2', {text: T.list}), h('p', {class: 'muted', text: T.listhint}));
+}
+
+function render() {
+  const crumbs = document.getElementById('crumbs');
+  const trail = state.view === 'map' ? chain(state.at).reverse() : [];
+  crumbs.replaceChildren(h('button', {type: 'button', text: D.project.name, on: {click: () => go({view: 'map', at: '', sel: null})}}),
+    ...trail.flatMap(id => [h('span', {text: '/'}), h('button', {type: 'button', text: parts.get(id).label, on: {click: () => go({at: id, sel: null})}})]));
+  document.getElementById('tabs').replaceChildren(...['map', 'flows', 'list'].map(view =>
+    h('button', {type: 'button', 'aria-pressed': String(state.view === view), text: T[view], on: {click: () => go({view})}})));
+  if (state.view === 'flows') drawFlows();
+  else if (state.view === 'list') drawList();
+  else drawPanel(drawMap());
+}
+
+const q = document.getElementById('q'), results = document.getElementById('results');
+q.placeholder = T.search;
+q.setAttribute('aria-label', T.search);
+q.addEventListener('input', () => {
+  const text = q.value.trim().toLowerCase();
+  results.replaceChildren();
+  if (!text) { results.hidden = true; return; }
+  const hits = [];
+  for (const part of D.parts) if ((part.label + ' ' + part.summary + ' ' + part.id).toLowerCase().includes(text)) hits.push([part.label, T.part, () => go({view: 'map', at: part.parent || '', sel: 'p:' + part.id})]);
+  for (const file of D.files) if ((file.path + ' ' + file.name + ' ' + file.description).toLowerCase().includes(text)) hits.push([file.path, file.description || T.file, () => go({view: 'map', at: file.part || '', sel: 'f:' + file.index})]);
+  for (const route of D.routes) if ((route.method + ' ' + route.path + ' ' + route.description).toLowerCase().includes(text)) hits.push([route.method + ' ' + route.path, route.file, () => go({view: 'map', at: D.files[fileIndex.get(route.file)].part || '', sel: 'f:' + fileIndex.get(route.file)})]);
+  for (const hit of hits.slice(0, 30)) results.append(h('button', {type: 'button', on: {click: () => { results.hidden = true; q.value = ''; hit[2](); }}}, [h('span', {class: 'mono', text: hit[0]}), h('br'), h('small', {text: hit[1]})]));
+  if (!hits.length) results.append(h('p', {class: 'note', text: T.nohits}));
+  results.hidden = false;
+});
+addEventListener('keydown', event => {
+  if (event.key === '/' && document.activeElement !== q) { event.preventDefault(); q.focus(); }
+  else if (event.key === 'Escape') {
+    if (!results.hidden) { results.hidden = true; q.blur(); }
+    else if (state.view === 'map' && state.sel) go({sel: null});
+    else if (state.view === 'map' && state.at) go({at: parts.get(state.at).parent || '', sel: 'p:' + state.at});
+  }
+});
+function fromHash() {
+  const bits = location.hash.slice(1).split('/').map(decodeURIComponent);
+  if (bits[0] === 'flows') Object.assign(state, {view: 'flows', flow: +bits[1] || 0, step: +bits[2] || 0});
+  else if (bits[0] === 'list') state.view = 'list';
+  else if (bits[0] === 'map') Object.assign(state, {view: 'map', at: parts.has(bits[1]) ? bits[1] : '', sel: bits[2] || null});
+  render();
+}
+addEventListener('hashchange', fromHash);
+let resizing = 0;
+addEventListener('resize', () => { clearTimeout(resizing); resizing = setTimeout(() => { if (state.view === 'map') render(); }, 150); });
+fromHash();
+</script>
+</body>
+</html>
