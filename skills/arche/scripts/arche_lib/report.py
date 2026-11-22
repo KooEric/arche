@@ -222,14 +222,16 @@ def _http_section(connections, anchors):
         for route in item["candidates"]:
             target = _file_link("file:" + route["file"], anchors)
             candidates.append(f"{target} · {T('route line')} {route['line']:d}, {T('handler line')} {route['handler_line']:d}")
+        host = f" · {T('host')} {_code(request['host'])}" if request.get("host") else ""
+        empty = "" if item["reason"] == "external_host" else T("No matching literal route identified.")
         rows.append(
-            f"<p><span class=\"method\">{_code(request['method'])}</span> {_code(request['path'])} · {_status(item['status'])}"
+            f"<p><span class=\"method\">{_code(request['method'])}</span> {_code(request['path'])}{host} · {_status(item['status'])}"
             f" ({escape(item['reason'])})</p><p>{source} · {T('request line')} {request['line']:d}</p>"
-            + _items(candidates, T("No matching literal route identified."))
+            + (_items(candidates, empty) if candidates or empty else "")
         )
     return (
-        f'<section id="http"><h2>{T("Mobile requests and Worker handlers")}</h2>'
-        f'<p class="lead">{T("Static candidates use the HTTP method and path. The deployment host is unknown.")}</p>'
+        f'<section id="http"><h2>{T("HTTP requests and route handlers")}</h2>'
+        f'<p class="lead">{T("Candidates share the HTTP method and path shape. A request to a named outside host is listed as external_host. The deployment host of this repository is unknown.")}</p>'
         + _items(rows, "", "cards") + "</section>"
     )
 

@@ -3,7 +3,7 @@ import pytest
 import score
 from arche_lib import jsonio
 
-FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic", "jvm-basic"}
+FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic", "hono-mobile", "jvm-basic"}
 INFERRED_ONLY = {
     ("py-dynamic", "tools/run.py", "vendor_local/helper.py"),
     ("ts-alias", "src/main.ts", "packages/legacy/src/index.ts"),
