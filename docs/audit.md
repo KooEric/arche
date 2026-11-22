@@ -9,3 +9,14 @@ To compare findings across revisions, use clean snapshots of the same repository
 The local regression cases cover a private unused symbol, a duplicate pair, an isolated module, public API, decorator registration, string reference, tests, generated files, entry points, skipped files, line movement, and a real two-commit comparison. These are rule examples, not a measured production precision or high-severity benchmark.
 
 Run `python3 evals/audit_score.py` for a deterministic synthetic fixture with one expected candidate for each rule and false-positive controls. It reports per-rule true positives, false positives, false negatives, precision and recall. The fixture is small and its numbers are not production accuracy or high-severity precision. Supply identical internal-directory flags to both base and head renders; differing assumptions cannot be compared.
+
+## Java and Kotlin candidates
+
+Two rules run on Java and Kotlin files. Both report a name only when it appears once in code and never in a string literal or in a configuration file (`.xml`, `.properties`, `.yml`, `.json`, Gradle scripts).
+
+| Rule | Candidate | Scope of the search |
+|---|---|---|
+| `unused-private-member` | A `private` method, field, property, function or nested type | The declaring file |
+| `unused-nonpublic-type` | A package-private Java type or an `internal` Kotlin type at the top level | Every Java and Kotlin file |
+
+Annotated declarations, serialization hooks such as `serialVersionUID` and `readObject`, and paths under `test`, `androidTest`, `generated`, `fixtures`, `examples` or `samples` are left out. Overloaded names are never reported, because each declaration counts as a mention of the other. Reflection and generated code can still use a reported name; read the callers before removing it.

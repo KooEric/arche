@@ -140,8 +140,8 @@ _KO = {
         "같은 대상을 여러 위치에서 import하면 중복일 수 있습니다. 별칭이나 용도 분리는 의도된 것일 수 있으니 수정 전에 각 위치를 검토하세요.",
     "No repeated verified unconditional imports at distinct locations.": "서로 다른 위치에서 반복된 검증된 무조건 import가 없습니다.",
     "Source-backed candidates": "소스 근거 후보",
-    "Review candidates, not confirmed defects. Python only; public exports are protected by default; explicitly opted-in internal directories are checked against declared Python exports. External consumers cannot be ruled out. Tests, fixtures, generated and vendor paths, package entry points, decorated definitions and referenced names are excluded. Dynamic loading and unscanned code can hide uses. Compare the cited source and callers before editing.":
-        "확정된 결함이 아니라 검토 후보입니다. Python만 지원합니다. 공개 export는 기본적으로 보호하며, 명시적으로 지정한 내부 디렉터리만 선언된 Python export와 대조합니다. 외부 사용자를 배제할 수 없습니다. 테스트, fixture, 생성·vendor 경로, 패키지 진입점, 데코레이터가 붙은 정의, 참조된 이름은 제외합니다. 동적 로딩과 스캔하지 않은 코드에 사용처가 숨어 있을 수 있습니다. 수정 전에 인용된 소스와 호출부를 비교하세요.",
+    "Review candidates, not confirmed defects. For Python, public exports are protected by default; explicitly opted-in internal directories are checked against declared Python exports. External consumers cannot be ruled out. Tests, fixtures, generated and vendor paths, package entry points, decorated definitions and referenced names are excluded. Dynamic loading and unscanned code can hide uses. Compare the cited source and callers before editing. For Java and Kotlin, the candidates are private members and non-public top-level types whose name appears nowhere else, including strings and configuration files; annotated declarations are left out, and reflection or generated code can still use them.":
+        "확정된 결함이 아니라 검토 후보입니다. Python에서는 공개 export를 기본적으로 보호하고, 명시적으로 지정한 내부 디렉터리만 선언된 Python export와 대조합니다. 외부 사용자를 배제할 수 없습니다. 테스트, fixture, 생성·vendor 경로, 패키지 진입점, 데코레이터가 붙은 정의, 참조된 이름은 제외합니다. 동적 로딩과 스캔하지 않은 코드에 사용처가 숨어 있을 수 있습니다. 수정 전에 인용된 소스와 호출부를 비교하세요. Java와 Kotlin에서는 이름이 다른 어디에도(문자열과 설정 파일 포함) 나오지 않는 private 멤버와 비공개 최상위 타입이 후보입니다. 어노테이션이 붙은 선언은 제외하며, 리플렉션이나 생성 코드가 쓰고 있을 수 있습니다.",
     "No candidates identified within these controls.": "이 기준 안에서 후보를 찾지 못했습니다.",
     "Finding changes": "감사 후보 변화",
     "Static candidate changes between clean snapshots; line movement alone does not introduce a finding. Renames may appear as resolved and introduced.":
@@ -154,6 +154,8 @@ _KO = {
     "Opted-in internal export with no observed name reference": "이름 참조가 관찰되지 않은 내부 export",
     "Identical Python function bodies": "본문이 동일한 Python 함수",
     "Module without observed import connections": "import 연결이 관찰되지 않은 모듈",
+    "Private Java or Kotlin member mentioned nowhere else in its file": "파일 안 다른 곳에서 언급되지 않는 Java·Kotlin private 멤버",
+    "Non-public Java or Kotlin type named nowhere else": "다른 곳에서 이름이 나오지 않는 Java·Kotlin 비공개 타입",
     "Recent Git history": "최근 Git 이력",
     "History": "이력",
     "Git history unavailable for this snapshot.": "이 스냅샷에서는 Git 이력을 볼 수 없습니다.",

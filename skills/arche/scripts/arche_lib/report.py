@@ -12,6 +12,7 @@ from .focus import select_steps
 from .i18n import translator
 
 KEY_FILE_LIMIT = 8
+LAZY_FILE_LIMIT = 500
 _TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|specs?|testdata|fixtures)(/|$)|(^|/)(test_[^/]*|[^/]*_test|[^/]*\.(test|spec))\.[^/.]+$")
 _SKIP_REASONS = {
     "unsupported_lang": "Unsupported language",
@@ -84,8 +85,28 @@ def _degrees(graph, anchors):
     return fan_in, fan_out
 
 
-def _files(graph, files, anchors, fan_in=None, fan_out=None):
+def _file_details(graph, files):
+    """Per-file detail as data, for reports that draw a file only when it is opened."""
+    index = {file["id"]: position for position, file in enumerate(files)}
+    details = [{"s": [], "o": [], "x": []} for _ in files]
+    for node in graph["nodes"]:
+        if node["type"] == "symbol":
+            path, symbol = node["id"].removeprefix("sym:").rsplit("#", 1)
+            details[index[f"file:{path}"]]["s"].append([symbol, node["kind"], node["line"]])
+    for edge in graph["edges"]:
+        target = index.get(edge["to"], -1)
+        details[index[edge["from"]]]["o"].append(
+            [target, "" if target >= 0 else (edge["to"] or edge.get("spec", "")).removeprefix("file:"), edge["status"],
+             edge["evidence"]["line"], edge.get("reason", "")])
+    for item in graph["externals"]:
+        details[index[item["from"]]]["x"].append([item["package"], item["line"]])
+    return json.dumps(details, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
+
+
+def _files(graph, files, anchors, fan_in=None, fan_out=None, lazy=False):
     incoming, outgoing, symbols, externals = (defaultdict(list) for _ in range(4))
+    if lazy:
+        graph = {"edges": [], "nodes": [], "externals": []}
     for edge in graph["edges"]:
         outgoing[edge["from"]].append(_relation(edge, edge["to"], anchors))
         if edge["to"] in anchors:
@@ -108,12 +129,13 @@ def _files(graph, files, anchors, fan_in=None, fan_out=None):
             f'<details class="file" id="{anchors[node_id]}" data-file="{path}" data-module="{escape(_module_of(raw), quote=True)}">'
             f'<summary><span class="path">{path}</span> <span class="label">· {escape(file["lang"])} · {file["lines"]:d} lines</span>'
             f'<span class="degree" title="{T("Imported by")} / {T("Imports")}">{fan_in[node_id]} {T("in")} · {fan_out[node_id]} {T("out")}</span></summary>'
+            + ('</details>' if lazy else
             '<div class="detail">'
             f'<div><h3>{T("Symbols")} <span class="count">{len(symbols[node_id])}</span></h3>{_items(symbols[node_id], T("No extracted symbols."))}</div>'
             f'<div><h3>{T("Imports")} <span class="count">{len(outgoing[node_id])}</span></h3>{_items(outgoing[node_id], T("No recorded imports."))}'
             f'<h3>{T("Imported by")} <span class="count">{len(incoming[node_id])}</span></h3>{_items(incoming[node_id], T("No recorded importers."))}'
             f'<h3>{T("External packages")} <span class="count">{len(externals[node_id])}</span></h3>{_items(externals[node_id], T("No recorded external packages."))}</div>'
-            '</div></details>'
+            '</div></details>')
         )
     return "".join(rows) or f'<p class="empty">{T("No files parsed by the installed adapters.")}</p>'
 
@@ -329,6 +351,8 @@ def _audit_findings(findings, anchors, comparison=None):
         "unused-internal-export": "Opted-in internal export with no observed name reference",
         "duplicate-block": "Identical Python function bodies",
         "isolated-module": "Module without observed import connections",
+        "unused-private-member": "Private Java or Kotlin member mentioned nowhere else in its file",
+        "unused-nonpublic-type": "Non-public Java or Kotlin type named nowhere else",
     }
     def row(item):
         location = _file_link("file:" + item["path"], anchors) + ":" + str(item["line"])
@@ -336,7 +360,7 @@ def _audit_findings(findings, anchors, comparison=None):
         locations = "".join(" · " + _file_link("file:" + loc["path"], anchors) + ":" + str(loc["line"]) + " " + _code(loc["name"]) for loc in item.get("locations", []))
         return T(descriptions[item["rule"]]) + " · " + location + name + locations
     content = (f'<h3>{T("Source-backed candidates")} <span class="count">{len(findings)}</span></h3><p class="lead">'
-               + T("Review candidates, not confirmed defects. Python only; public exports are protected by default; explicitly opted-in internal directories are checked against declared Python exports. External consumers cannot be ruled out. Tests, fixtures, generated and vendor paths, package entry points, decorated definitions and referenced names are excluded. Dynamic loading and unscanned code can hide uses. Compare the cited source and callers before editing.") + '</p>'
+               + T("Review candidates, not confirmed defects. For Python, public exports are protected by default; explicitly opted-in internal directories are checked against declared Python exports. External consumers cannot be ruled out. Tests, fixtures, generated and vendor paths, package entry points, decorated definitions and referenced names are excluded. Dynamic loading and unscanned code can hide uses. Compare the cited source and callers before editing. For Java and Kotlin, the candidates are private members and non-public top-level types whose name appears nowhere else, including strings and configuration files; annotated declarations are left out, and reflection or generated code can still use them.") + '</p>'
                + _items((row(item) for item in findings), T("No candidates identified within these controls.")))
     if comparison is not None:
         content += f'<h3>{T("Finding changes")}</h3><p class="lead">' + T("Static candidate changes between clean snapshots; line movement alone does not introduce a finding. Renames may appear as resolved and introduced.") + '</p>'
@@ -462,16 +486,17 @@ def _section(section_id, title, body, lead=""):
     return f'<section id="{section_id}"><h2>{title}</h2>{lead}{body}</section>'
 
 
-def render(template, graph, commits, readonly_check, *, modules=None, tour=None, changes=None, findings=None, finding_delta=None, lang="en"):
+def render(template, graph, commits, readonly_check, *, modules=None, tour=None, changes=None, findings=None, finding_delta=None, lang="en",
+           lazy_file_limit=LAZY_FILE_LIMIT):
     global _translate
     previous, _translate = _translate, translator(lang)
     try:
-        return _render(template, graph, commits, readonly_check, modules, tour, changes, findings or [], finding_delta, lang)
+        return _render(template, graph, commits, readonly_check, modules, tour, changes, findings or [], finding_delta, lang, lazy_file_limit)
     finally:
         _translate = previous
 
 
-def _render(template, graph, commits, readonly_check, modules, tour, changes, findings, finding_delta, lang):
+def _render(template, graph, commits, readonly_check, modules, tour, changes, findings, finding_delta, lang, lazy_file_limit):
     repo = graph["repo"]
     files = [node for node in graph["nodes"] if node["type"] == "file"]
     anchors = {file["id"]: f"file-{index}" for index, file in enumerate(files)}
@@ -491,12 +516,14 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
         summary = _section("summary", heading, f'<div class="prose">{_prose(tour.get("summary", ""))}</div>')
     screens = _screens(tour, anchors)
     has_tour = bool(tour and tour.get("steps"))
+    # Past this many files the details are sent as data and drawn when a file is opened.
+    lazy = len(files) > lazy_file_limit
     file_list = (
         f'<div class="filter-bar"><label for="search" hidden>{T("Filter by file path")}</label>'
         f'<input type="search" id="search" placeholder="{T("Filter by file path…")}" hidden>'
         f'<p id="module-filter">{T("All modules")}</p><button type="button" id="clear-module" hidden>{T("Show all modules")}</button></div>'
         f'<p id="empty" class="empty" role="status" hidden>{T("No matching files.")}</p>'
-        f'<div class="file-list">{_files(graph, files, anchors, fan_in, fan_out)}</div>')
+        f'<div class="file-list">{_files(graph, files, anchors, fan_in, fan_out, lazy)}</div>')
     dependency_map = (
         f'<div id="map" class="map" hidden><div class="map-bar"><div class="map-crumbs" data-map-crumbs></div>'
         f'<button type="button" data-map-reset>{T("Reset")}</button></div>'
@@ -529,7 +556,10 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
     nav = "".join(
         f'<a href="#{section_id}">{label}' + (f' <span class="count">{count:,}</span>' if count else "") + '</a>'
         for section_id, label, count, body in sections if body is None or body)
-    ui = {"all": "All modules", "module": "Module: ", "close": "Close", "more": "more files", "files": "files",
+    ui = {"symbols": "Symbols", "imports": "Imports", "importedby": "Imported by", "packages": "External packages", "line": "line",
+          "nosymbols": "No extracted symbols.", "noimports": "No recorded imports.", "noimporters": "No recorded importers.",
+          "nopackages": "No recorded external packages.",
+          "all": "All modules", "module": "Module: ", "close": "Close", "more": "more files", "files": "files",
           "isolated": "No connections", "none": "No resolved imports between these files."}
     return Template(template).substitute(
         csp=_csp(template),
@@ -546,4 +576,5 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
         sections="".join(body for _, _, _, body in sections if body),
         ui=" ".join(f'data-t-{key}="{T(text)}"' for key, text in ui.items()),
         graph_data=_graph_data(graph, files, anchors),
+        file_details=_file_details(graph, files) if lazy else "null",
     )

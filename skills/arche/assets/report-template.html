@@ -238,6 +238,7 @@ footer { margin-top: 4rem; color: var(--muted); font-size: .78rem; }
   </main>
 </div>
 <script type="application/json" id="graph-data">$graph_data</script>
+<script type="application/json" id="file-details">$file_details</script>
 <script>
 const root = document.documentElement;
 const shell = document.querySelector('.shell');
@@ -318,6 +319,42 @@ for (const button of moduleButtons) {
   });
 }
 clearModule.addEventListener('click', () => selectModule(null));
+// Large reports carry file details as data and draw them the first time a file is opened.
+const fileDetails = JSON.parse(document.getElementById('file-details').textContent);
+if (fileDetails) {
+  const incoming = fileDetails.map(() => []);
+  fileDetails.forEach((detail, from) => { for (const edge of detail.o) if (edge[0] >= 0) incoming[edge[0]].push([from, '', edge[2], edge[3], edge[4]]); });
+  const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
+  const block = (parent, title, items, empty) => {
+    const heading = make('h3', title + ' ');
+    heading.append(make('span', String(items.length), 'count'));
+    parent.append(heading);
+    if (!items.length) { parent.append(make('p', empty, 'empty')); return; }
+    const list = make('ul');
+    for (const item of items) { const row = make('li'); row.append(...item); list.append(row); }
+    parent.append(list);
+  };
+  const relation = (edge, evidenceFile) => {
+    const parts = [];
+    if (edge[0] >= 0) { const link = make('a'); link.href = '#file-' + edge[0]; link.append(make('code', rows[edge[0]].dataset.file)); parts.push(link); }
+    else parts.push(make('code', edge[1]));
+    const status = make('span', edge[2], 'status');
+    status.dataset.state = edge[2];
+    parts.push(' · ', status, ' · ', make('code', rows[evidenceFile].dataset.file + ':' + edge[3]));
+    if (edge[4]) parts.push(' · ' + edge[4]);
+    return parts;
+  };
+  rows.forEach((row, index) => row.addEventListener('toggle', () => {
+    if (!row.open || row.querySelector('.detail')) return;
+    const detail = fileDetails[index], box = make('div', undefined, 'detail'), left = make('div'), right = make('div');
+    block(left, text.tSymbols, detail.s.map(item => [make('code', item[0]), ' · ' + item[1] + ' · ' + text.tLine + ' ' + item[2]]), text.tNosymbols);
+    block(right, text.tImports, detail.o.map(edge => relation(edge, index)), text.tNoimports);
+    block(right, text.tImportedby, incoming[index].map(edge => relation(edge, edge[0])), text.tNoimporters);
+    block(right, text.tPackages, detail.x.map(item => [make('code', item[0]), ' · ' + text.tLine + ' ' + item[1]]), text.tNopackages);
+    box.append(left, right);
+    row.append(box);
+  }));
+}
 function revealTarget() {
   const row = document.getElementById(location.hash.slice(1));
   if (!row?.matches('[data-file]')) return;

@@ -24,12 +24,12 @@
     {
       "id": "render_html",
       "path": "skills/arche/scripts/render.py",
-      "start_line": 43,
-      "end_line": 122,
-      "sha256": "dd4a0f998db152a195cb207e294471bddc3bd1a9eb8adef0e5b48d912281ff28",
+      "start_line": 44,
+      "end_line": 125,
+      "sha256": "5b5023c5dcf590e34ba1d3846ad9ed547b848a17e7ccc2b08095b3bde5bdde43",
       "title": "Render the report",
       "note": "Checks the snapshot, audits the graph and writes report.html.",
-      "range_sha256": "dadc35a048db6336a90cba3a65465e37648a1bf67c2b1784bae4401fb0dcdc65"
+      "range_sha256": "7fd6cbe1f6f538e8b4e96d3370c6c0e20174ec526aed362e7dc835be0f5c4be3"
     }
   ],
   "edges": [
