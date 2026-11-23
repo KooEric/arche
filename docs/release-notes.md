@@ -2,6 +2,7 @@
 
 ## 1.0 출시 후보
 
+- 테이블 lineage: SQL·HQL 파일에서 `FROM`·`JOIN`으로 읽는 테이블과 `INSERT`·`CREATE`·`MERGE`·`DELETE`로 쓰는 테이블을 읽어, 읽는 파일에서 쓰는 파일로 가는 `READS` 연결을 기록합니다. 스키마가 변수인 이름은 테이블 이름으로 맞춰 "추론됨"으로 표시하고, 이름 자체가 실행 시점에 정해지면 따라가지 않습니다. 리포트의 **테이블**에서 외부 테이블을 스키마별로 볼 수 있고, SQL 파일을 바꾸면 그 테이블을 읽는 SQL과 이를 가리키는 DAG 파일이 영향 범위에 듭니다. 컬럼 단위 lineage, Python 안의 SQL, `USE`로 정하는 기본 스키마는 읽지 않습니다.
 - SQL 참조: `.sql`·`.hql` 파일을 노드로 스캔하고, Python 파일에 문자열로 적힌 SQL 경로를 `REFERENCES` 연결로 기록합니다. `os.path.join`과 `Path /`로 이은 경로도 읽습니다. 리포트의 **SQL 파일 참조**에서 정적 참조가 없는 SQL 파일과 따라가지 못한 경로를 볼 수 있습니다. SQL 내용, `task >> task`, `template_searchpath`는 읽지 않습니다.
 - SQL·HQL 파일이 분석 대상에 들어가면서 SQL이 있는 레포는 분석한 파일 수와 줄 수가 늘고 `inventory_sha256`이 달라집니다. 기존 `map.json`이 SQL 폴더를 부품에 넣지 않았다면 "부품에 속하지 않은 파일" 경고가 나올 수 있습니다.
 - HTTP 인식: Python에서 다른 파일이 `include_router(..., prefix=...)`로 붙인 접두사를 라우트에 적용합니다. chi의 중첩 `Route`, `this.api.get(...)` 형태의 axios 호출, 같은 파일의 상수 문자열을 넘기는 `fetch(URL)`도 읽습니다.
