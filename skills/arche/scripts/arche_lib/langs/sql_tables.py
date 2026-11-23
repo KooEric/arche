@@ -17,7 +17,14 @@ _KEYWORDS = frozenset("""
     INTERSECT INTO JOIN LATERAL LEFT LIMIT LOCAL MERGE NATURAL OFFSET ON ORDER OUTER PARTITION PIVOT QUALIFY
     RIGHT SELECT SEMI SET SORT TABLE TABLESAMPLE UNION UNNEST UNPIVOT USING VALUES WHEN WHERE WINDOW WITH
 """.split())
+_IDENTIFIER_BODY = re.compile(r"[\w$.]*")
 _CLOSERS = {"/*": "*/", "{%": "%}", "{#": "#}"}
+
+
+def _span_end(text: str, start: int) -> int:
+    """Index of the quote closing the backtick or double-quoted span at `start` on its line, or -1."""
+    limit = text.find("\n", start)
+    return text.find(text[start], start + 1, len(text) if limit < 0 else limit)
 
 
 def mask(text: str) -> Tuple[str, bool]:
@@ -36,9 +43,16 @@ def mask(text: str) -> Tuple[str, bool]:
         elif text[i] == "'":
             end = i + 1
             while end < size and (text[end] != "'" or text[end:end + 2] == "''"):
-                end += 2 if text[end] == "'" else 1
+                end += 2 if text[end] in "\\'" else 1
             unterminated = unterminated or end >= size
             end = min(end + 1, size)
+        elif text[i] in "`\"" and _span_end(text, i) > 0:
+            close = _span_end(text, i)
+            body = text[i + 1:close]
+            keep = text[i] == "`" or _IDENTIFIER_BODY.fullmatch(body)
+            out.append(text[i:close + 1] if keep else text[i] + re.sub(r"[^\n]", " ", body) + text[close])
+            i = close + 1
+            continue
         else:
             out.append(text[i])
             i += 1
@@ -77,7 +91,7 @@ def tables(path: str, text: str) -> dict:
 
     def record(index: int, access: str, temp: bool = False) -> None:
         name = _name(tokens[index][0])
-        if name is None:
+        if name is None or (access == "read" and name in ctes):
             return
         line = source.count("\n", 0, tokens[index][1]) + 1
         quote = lines[line - 1].strip()[:MAX_QUOTE_CHARS] if line <= len(lines) else ""
@@ -101,12 +115,13 @@ def tables(path: str, text: str) -> dict:
         if word == "(":
             selects.append(False)
             if index >= 2 and words[index - 1] == "AS" and words[index - 3:index - 2] in (["WITH"], ["RECURSIVE"], [","]):
-                ctes.add(tokens[index - 2][0].lower())
+                ctes.add(_name(tokens[index - 2][0]) or "")
         elif word == ")":
             if len(selects) > 1:
                 selects.pop()
         elif word == ";":
             merging = False
+            ctes.clear()
         elif word in ("SELECT", "DELETE"):
             selects[-1] = True
         elif word == "FROM":
@@ -135,6 +150,5 @@ def tables(path: str, text: str) -> dict:
                     cursor += 3
                 if is_name(cursor):
                     record(cursor, "write", temp)
-    records = [item for item in found.values() if not (item["access"] == "read" and item["table"] in ctes)]
-    return {"tables": sorted(records, key=lambda item: (item["line"], item["access"], item["table"])),
+    return {"tables": sorted(found.values(), key=lambda item: (item["line"], item["access"], item["table"])),
             "degraded": unterminated}

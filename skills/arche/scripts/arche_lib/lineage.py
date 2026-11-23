@@ -23,8 +23,9 @@ def resolve(table: str, dynamic: bool, writers: dict) -> List[dict]:
         return [{"status": "verified", "to": path, "rule": "name"} for path in writers["files"][table]]
     prefix, _, last = table.rpartition(".")
     same_name = writers["names"].get(last, [])
-    # A schema filled in at run time, on either side, can only be matched by the table name.
-    matches = same_name if not prefix or "{}" in prefix else [name for name in same_name if "{}" in name]
+    # A schema that is a run-time value or absent, on either side, can only be matched by the table name.
+    matches = same_name if not prefix or "{}" in prefix else [
+        name for name in same_name if "{}" in name or "." not in name]
     if len(matches) == 1:
         return [{"status": "inferred", "to": path, "rule": "table_name"} for path in writers["files"][matches[0]]]
     if matches:

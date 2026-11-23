@@ -107,3 +107,24 @@ def test_the_sql_adapter_reports_tables_and_degraded():
     assert [item["table"] for item in sql.extract("q.sql", "select * from a.b")["tables"]] == ["a.b"]
     assert "degraded" not in sql.extract("q.sql", "select * from a.b")
     assert sql.extract("q.sql", "select 'open")["degraded"] is True
+
+
+def test_a_cte_name_hides_reads_only_in_its_own_statement():
+    assert _found("INSERT INTO t SELECT * FROM s; WITH s AS (SELECT 1 FROM z) SELECT * FROM s") == [
+        ("read", "s"), ("read", "z"), ("write", "t")]
+    assert _found("WITH s AS (SELECT 1 FROM z) SELECT * FROM s; SELECT * FROM s") == [("read", "s"), ("read", "z")]
+    assert _found("WITH a AS (SELECT 1); SELECT * FROM a") == [("read", "a")]
+
+
+def test_backslash_escapes_and_quoted_spans_do_not_swallow_the_file():
+    for source in ("select * from a where x = 'it\\'s' ; select * from b",
+                   'select * from a where x = "don\'t" ; select * from b',
+                   "select regexp_replace(x, \"--\", '') from a ; select * from b",
+                   'select * from a where n = "from z.z" ; select * from b'):
+        result = tables("q.sql", source)
+        assert [(item["access"], item["table"]) for item in result["tables"]] == [("read", "a"), ("read", "b")], source
+        assert result["degraded"] is False, source
+
+
+def test_an_apostrophe_inside_a_backtick_name_is_part_of_the_name():
+    assert _found("select * from `it's` ; select * from b") == [("read", "b"), ("read", "it's")]

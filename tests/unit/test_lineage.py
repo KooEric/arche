@@ -44,3 +44,10 @@ def test_a_fixed_schema_never_matches_another_fixed_schema():
 
 def test_a_table_nothing_writes_is_external():
     assert lineage.resolve("none.t", False, WRITERS) == [{"status": "external", "table": "none.t"}]
+
+
+def test_a_fixed_schema_matches_a_writer_written_without_a_schema():
+    writers = lineage.index([("w.sql", "ledger"), ("x.sql", "other.ledger")])
+
+    assert lineage.resolve("acct.ledger", False, writers) == [{"status": "inferred", "to": "w.sql", "rule": "table_name"}]
+    assert lineage.resolve("ledger", False, writers) == [{"status": "verified", "to": "w.sql", "rule": "name"}]
