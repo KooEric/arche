@@ -60,3 +60,13 @@ def test_a_catalog_prefix_on_one_side_is_inferred():
     assert lineage.resolve("dw.fb", False, writers) == [{"status": "inferred", "to": "x.sql", "rule": "table_name"}]
     assert lineage.resolve("other.fa", False, writers) == [{"status": "external", "table": "other.fa"}]
     assert lineage.resolve("spark.other.fa", False, writers) == [{"status": "external", "table": "spark.other.fa"}]
+
+
+def test_catalog_matching_only_compares_writers_with_the_same_table_name(monkeypatch):
+    writers = lineage.index([("w.sql", "dw.fa")] + [(f"o{i}.sql", f"s{i}.other{i}") for i in range(50)])
+    calls = []
+    original = lineage._differs_by_catalog
+    monkeypatch.setattr(lineage, "_differs_by_catalog", lambda a, b: calls.append(b) or original(a, b))
+
+    assert lineage.resolve("hive.dw.fa", False, writers) == [{"status": "inferred", "to": "w.sql", "rule": "table_name"}]
+    assert calls == ["dw.fa"]
