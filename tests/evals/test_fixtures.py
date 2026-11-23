@@ -52,6 +52,15 @@ def test_file_references_stay_out_of_import_precision_and_recall(results):
     assert airflow["inferred_correct"] == [] and airflow["inferred_wrong"] == []
 
 
+def test_table_reads_are_scored_as_their_own_exact_sets():
+    observed = score.observed_sets(_graph("airflow-sql"))
+
+    assert ("dags/ledger/sql/close.sql", "dags/billing/sql/settle.hql", "billing.settled", "verified", "name") in observed["reads"]
+    assert observed["external_tables"] == {("dags/billing/sql/load_orders.sql", "staging.orders"),
+                                           ("dags/shared/sql/report.sql", "shared.calendar")}
+    assert "reads" in score.EXACT_SETS and "external_tables" in score.EXACT_SETS
+
+
 def test_edges_not_verified_are_exactly_the_ones_declared_as_inferred(results):
     missed = {(r["fixture"],) + edge for r in results for edge in r["false_negative"]}
     inferred = {(r["fixture"],) + edge for r in results for edge in r["inferred_correct"]}
