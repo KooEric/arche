@@ -10,6 +10,7 @@ LANG_BY_EXT = {
     ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript",
     ".dart": "dart", ".go": "go",
     ".java": "java", ".kt": "kotlin", ".kts": "kotlin",
+    ".sql": "sql", ".hql": "sql",
 }
 
 

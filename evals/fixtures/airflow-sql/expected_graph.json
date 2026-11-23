@@ -1,0 +1,41 @@
+{
+  "analyzed": [
+    "dags/billing/daily_dag.py",
+    "dags/billing/sql/load_orders.sql",
+    "dags/billing/sql/settle.hql",
+    "dags/billing/sql/unused.sql",
+    "dags/common/readers.py",
+    "dags/ledger/ledger_dag.py",
+    "dags/ledger/sql/close.sql",
+    "dags/ledger/sql/report.sql",
+    "dags/shared/sql/report.sql"
+  ],
+  "skipped": [],
+  "imports": [],
+  "inferred": [],
+  "unresolved": [],
+  "externals": [
+    {"from": "dags/billing/daily_dag.py", "package": "airflow"},
+    {"from": "dags/billing/daily_dag.py", "package": "common"},
+    {"from": "dags/billing/daily_dag.py", "package": "os"},
+    {"from": "dags/billing/daily_dag.py", "package": "pathlib"},
+    {"from": "dags/common/readers.py", "package": "os"},
+    {"from": "dags/ledger/ledger_dag.py", "package": "airflow"}
+  ],
+  "symbols": [
+    "sym:dags/billing/daily_dag.py#BASE",
+    "sym:dags/billing/daily_dag.py#TABLES",
+    "sym:dags/common/readers.py#ROOT",
+    "sym:dags/common/readers.py#read_sql"
+  ],
+  "references": [
+    {"from": "dags/billing/daily_dag.py", "target": "dags/billing/sql/load_orders.sql", "status": "verified", "how": "relative"},
+    {"from": "dags/billing/daily_dag.py", "target": "dags/billing/sql/settle.hql", "status": "verified", "how": "relative"},
+    {"from": "dags/billing/daily_dag.py", "target": "dags/ledger/sql/close.sql", "status": "verified", "how": "root"},
+    {"from": "dags/billing/daily_dag.py", "target": "sql/audit.sql", "status": "unresolved", "how": "not_found"},
+    {"from": "dags/billing/daily_dag.py", "target": "sql/stage_{}.sql", "status": "unresolved", "how": "dynamic"},
+    {"from": "dags/ledger/ledger_dag.py", "target": "dags/ledger/sql/close.sql", "status": "inferred", "how": "suffix"},
+    {"from": "dags/ledger/ledger_dag.py", "target": "report.sql", "status": "unresolved", "how": "ambiguous"},
+    {"from": "dags/ledger/ledger_dag.py", "target": "dags/billing/sql/settle.hql", "status": "inferred", "how": "suffix"}
+  ]
+}

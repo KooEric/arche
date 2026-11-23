@@ -5,6 +5,8 @@ Precision and recall count `verified` IMPORTS edges only. A true edge the script
 can only infer counts as not verified, so it lowers recall. `implicit` edges are
 true dependencies with no import statement behind them (Java and Kotlin types in
 the same package). They must be reported as inferred and stay out of recall.
+REFERENCES edges (a SQL file path written as text) are compared exactly through the
+`references` list and never count toward precision or recall.
 
 Usage: python3 evals/score.py [--min-precision 0.98] [--min-recall 0.95]
 Exits 1 when a gate fails or a fixture does not match its expected sets.
@@ -29,7 +31,7 @@ FIXTURES_DIR = EVALS_DIR / "fixtures"
 EXPECTED_FILE = "expected_graph.json"
 DEFAULT_MIN_PRECISION = 0.98
 DEFAULT_MIN_RECALL = 0.95
-EXACT_SETS = ("analyzed", "skipped", "inferred", "unresolved", "externals", "symbols", "http")
+EXACT_SETS = ("analyzed", "skipped", "inferred", "unresolved", "externals", "symbols", "http", "references")
 OUTCOMES = ("true_positive", "false_positive", "false_negative")
 
 
@@ -48,8 +50,14 @@ def _path(node_id):
     return node_id.split(":", 1)[1]
 
 
+def _reference_key(edge):
+    """(from, resolved path or written spec, status, rule or reason)."""
+    target = _path(edge["to"]) if edge["to"] else edge["spec"]
+    return (_path(edge["from"]), target, edge["status"], edge.get("rule") or edge["reason"])
+
+
 def observed_sets(graph):
-    edges = graph["edges"]
+    edges = [e for e in graph["edges"] if e["kind"] == "IMPORTS"]
     return {
         "analyzed": {_path(n["id"]) for n in graph["nodes"] if n["type"] == "file"},
         "skipped": {(s["path"], s["reason"]) for s in graph["skipped"]},
@@ -59,6 +67,7 @@ def observed_sets(graph):
         "externals": {(_path(x["from"]), x["package"]) for x in graph["externals"]},
         "symbols": {n["id"] for n in graph["nodes"] if n["type"] == "symbol"},
         "http": {_http_key(c) for c in graph.get("http_connections", [])},
+        "references": {_reference_key(e) for e in graph["edges"] if e["kind"] == "REFERENCES"},
     }
 
 
@@ -83,6 +92,7 @@ def expected_sets(expected):
         "symbols": set(expected["symbols"]),
         "http": {(h["file"], h["line"], h["method"], h["path"], h["reason"], tuple(sorted(h["routes"])))
                  for h in expected.get("http", [])},
+        "references": {(r["from"], r["target"], r["status"], r["how"]) for r in expected.get("references", [])},
     }
 
 

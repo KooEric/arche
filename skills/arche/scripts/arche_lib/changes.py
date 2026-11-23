@@ -38,11 +38,14 @@ def _diff(root: Path, base: str, head: str) -> list:
     return sorted(result, key=lambda entry: (entry["path"], entry.get("old_path", "")))
 
 
+_DEPENDENCY_KINDS = ("IMPORTS", "REFERENCES")
+
+
 def _reverse_imports(graph: dict) -> dict:
     reverse = defaultdict(set)
     for edge in graph["edges"]:
         source, target = edge.get("from"), edge.get("to")
-        if (edge.get("kind") == "IMPORTS" and edge.get("status") in ("verified", "inferred")
+        if (edge.get("kind") in _DEPENDENCY_KINDS and edge.get("status") in ("verified", "inferred")
                 and isinstance(source, str) and source.startswith("file:")
                 and isinstance(target, str) and target.startswith("file:")):
             reverse[target[5:]].add(source[5:])

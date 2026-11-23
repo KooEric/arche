@@ -166,3 +166,33 @@ def test_a_large_part_is_folded_by_folder_and_flows_still_connect():
     assert owner["app/ui/screen_3.py"] == "app:app/ui" and owner["app/main.py"] == "app"
     assert atlas["warnings"] == []
     assert any(link["from"] == "app:app/ui" and link["to"] == "app:app/core" for link in atlas["links"])
+
+
+def test_a_file_reference_between_parts_is_a_reference_link():
+    graph = _graph({"dags/dag.py": 'Q = "queries/load.sql"\n', "queries/load.sql": "select 1\n"})
+    inventory = {"files": [{"path": n["id"][5:], "status": "analyzed", "lines": n["lines"], "sha256": n["sha256"]}
+                           for n in graph["nodes"] if n["type"] == "file"]}
+    document = {"version": 1, "project": {"name": "demo", "summary": "s"}, "parts": [
+        {"id": "dags", "label": "DAGs", "kind": "script", "summary": "pipelines", "paths": ["dags"]},
+        {"id": "queries", "label": "Queries", "kind": "data", "summary": "sql", "paths": ["queries"]}],
+        "edges": [], "flows": []}
+
+    atlas = build_atlas(inventory, graph, document, {})
+
+    assert [(l["from"], l["to"], l["status"], l["kind"], l["count"]) for l in atlas["links"]] == [
+        ("dags", "queries", "verified", "reference", 1)]
+    assert atlas["file_links"] == [[0, 1, "verified", 1]]
+
+
+def test_brief_lists_file_references_between_folders_apart_from_imports(make_repo, run_script, tmp_path):
+    repo = make_repo({"dags/a/dag.py": 'Q = "dags/b/sql/x.sql"\n', "dags/b/sql/x.sql": "select 1\n"})
+    out = tmp_path / "out"
+    assert run_script("arche.py", repo, "--out", out).returncode == 0
+    assert run_script("brief.py", "--out", out).returncode == 0
+    text = (out / "brief.txt").read_text()
+
+    def section(title):
+        return text.split(title)[1].split("\n\n")[0]
+
+    assert "  dags/a -> dags/b  1" in section("FILE REFERENCES BETWEEN FOLDERS")
+    assert "dags/a -> dags/b" not in section("IMPORTS BETWEEN FOLDERS")

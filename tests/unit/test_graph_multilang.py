@@ -110,3 +110,11 @@ def test_unbalanced_file_is_marked_degraded_on_its_node():
     assert "degraded" not in nodes["file:src/ok.ts"]
     assert "sym:src/broken.ts#f" not in nodes
     assert _edge(graph, "src/broken.ts", "src/ok.ts")["status"] == "verified"
+
+
+def test_sql_and_hql_files_are_nodes_with_no_symbols_or_edges():
+    graph = _graph({"q/load.sql": "select 1\n", "q/settle.hql": "select 2\n"})
+
+    assert [(n["id"], n["type"], n["lang"]) for n in graph["nodes"]] == [
+        ("file:q/load.sql", "file", "sql"), ("file:q/settle.hql", "file", "sql")]
+    assert graph["edges"] == [] and graph["skipped"] == []

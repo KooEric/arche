@@ -10,7 +10,7 @@ can import a JavaScript file and the reverse.
 """
 from __future__ import annotations
 
-from . import dart, go, jvm, python, typescript
+from . import dart, go, jvm, python, sql, typescript
 
 ADAPTERS = {
     "python": python,
@@ -20,6 +20,7 @@ ADAPTERS = {
     "go": go,
     "java": jvm,
     "kotlin": jvm,
+    "sql": sql,
 }
 
 

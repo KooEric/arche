@@ -46,3 +46,20 @@ def test_unmatched_or_dirty_graph_has_no_impact(make_repo, git_cmd, run_script, 
     assert not changes["impact_available"]
     assert changes["files"][0]["impact"] == []
     assert run_script("changes.py", "--out", out, "--base", "missing", "--head", "HEAD").returncode != 0
+
+
+def test_changing_a_sql_file_reaches_the_python_file_that_names_it(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"dag.py": 'QUERY = "q/load.sql"\n', "q/load.sql": "select 1\n"})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    (repo / "q" / "load.sql").write_text("select 2\n")
+    git_cmd(repo, "add", "-A")
+    git_cmd(repo, "commit", "-qm", "edit")
+    head = git_cmd(repo, "rev-parse", "HEAD").strip()
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 0, result.stderr
+    files = {item["path"]: item for item in json.loads((out / "changes.json").read_text())["files"]}
+    assert files["q/load.sql"]["impact"] == ["dag.py"]

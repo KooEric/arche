@@ -87,6 +87,17 @@ _KO = {
     "No connected tour relationships within two hops.": "두 단계 이내에 연결된 투어 관계가 없습니다.",
     "inferred HTTP": "추론된 HTTP",
     "HTTP connections": "HTTP 연결",
+    "SQL file references": "SQL 파일 참조",
+    "A reference is a SQL file path written as text in a parsed Python file. Paths in configuration files and includes inside SQL are not read, so a file listed here may still be used. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read.":
+        "참조는 분석한 Python 파일 안에 문자열로 적힌 SQL 파일 경로입니다. 설정 파일에 적힌 경로와 SQL 안의 include는 읽지 않으므로, 여기 나온 파일도 실제로는 쓰일 수 있습니다. 파일 의존성에서 SQL 파일을 열면 그 파일을 가리키는 곳을 볼 수 있습니다. 어느 operator나 task가 실행하는지는 읽지 않습니다.",
+    "SQL files with no static reference": "정적 참조가 없는 SQL 파일",
+    "Every SQL file is named by a parsed file.": "모든 SQL 파일을 분석한 파일이 가리킵니다.",
+    "1 path is built at run time.": "경로 1개가 실행 시점에 만들어집니다.",
+    "{count} paths are built at run time.": "경로 {count}개가 실행 시점에 만들어집니다.",
+    "A file listed here may still be used through one of them.": "여기 나온 파일도 그런 경로로 쓰일 수 있습니다.",
+    "Paths built at run time": "실행 시점에 만들어지는 경로",
+    "Paths matching several files": "여러 파일과 일치하는 경로",
+    "Paths matching no scanned file": "스캔한 파일과 일치하지 않는 경로",
     "HTTP": "HTTP",
     "HTTP requests and route handlers": "HTTP 요청과 라우트 핸들러",
     "Candidates share the HTTP method and path shape. A request to a named outside host is listed as external_host. The deployment host of this repository is unknown.":
