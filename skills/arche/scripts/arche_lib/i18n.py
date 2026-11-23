@@ -87,6 +87,14 @@ _KO = {
     "No connected tour relationships within two hops.": "두 단계 이내에 연결된 투어 관계가 없습니다.",
     "inferred HTTP": "추론된 HTTP",
     "HTTP connections": "HTTP 연결",
+    "Tables": "테이블",
+    "A table is external when no scanned SQL file writes it. Only table names written in SQL files are read. SQL inside Python, default schemas and tables inside views are not, so a table listed here may still be made in this repository. Open a SQL file under File dependencies to see which files read what it writes.":
+        "외부 테이블은 스캔한 SQL 파일 중 쓰는 파일이 없는 테이블입니다. SQL 파일에 적힌 테이블 이름만 읽습니다. Python 안의 SQL, 기본 스키마, 뷰 안의 테이블은 읽지 않으므로, 여기 나온 테이블도 이 레포에서 만들 수 있습니다. 파일 의존성에서 SQL 파일을 열면 그 파일이 쓰는 테이블을 읽는 파일을 볼 수 있습니다.",
+    "External tables": "외부 테이블",
+    "Every table read here is written by a scanned SQL file.": "여기서 읽는 모든 테이블을 스캔한 SQL 파일이 씁니다.",
+    "no schema": "스키마 없음",
+    "Table names built at run time": "실행 시점에 만들어지는 테이블 이름",
+    "Table names matching several tables": "여러 테이블과 일치하는 테이블 이름",
     "SQL file references": "SQL 파일 참조",
     "A reference is a SQL file path written as text in a parsed Python file. Paths in configuration files and includes inside SQL are not read, so a file listed here may still be used. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read.":
         "참조는 분석한 Python 파일 안에 문자열로 적힌 SQL 파일 경로입니다. 설정 파일에 적힌 경로와 SQL 안의 include는 읽지 않으므로, 여기 나온 파일도 실제로는 쓰일 수 있습니다. 파일 의존성에서 SQL 파일을 열면 그 파일을 가리키는 곳을 볼 수 있습니다. 어느 operator나 task가 실행하는지는 읽지 않습니다.",
