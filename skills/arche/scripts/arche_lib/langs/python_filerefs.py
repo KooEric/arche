@@ -79,11 +79,23 @@ def _chain(node: ast.BinOp, op: type) -> Tuple[List[ast.AST], List[ast.AST]]:
 
 def _concatenated(node: ast.BinOp, consumed: Set[int]) -> Found:
     """`"sql/" + name + ".sql"` as `sql/{}.sql`; only a chain that ends in a SQL file name."""
+    hit = _concat_spec(node)
+    if hit is None:
+        return None
+    spec, parts, line = hit
+    consumed.update(id(part) for part in parts)
+    return spec, line
+
+
+def _concat_spec(node: ast.BinOp) -> Optional[Tuple[str, List[ast.AST], int]]:
+    """(spec, the nodes the chain uses up, line) for a `+` chain that builds a SQL path, else None."""
     operands, inner = _chain(node, ast.Add)
     last = _text(operands[-1])
     if last is None or not last.lower().endswith(SUFFIXES):
         return None
     pieces = [_text(operand) for operand in operands]
+    if any(piece is not None and piece.lower().endswith(SUFFIXES) for piece in pieces[:-1]):
+        return None  # "a.sql" + "b.sql" is two paths, not one being built
     if all(piece is not None for piece in pieces):
         spec = "".join(pieces)  # type: ignore[arg-type]
     elif last.startswith("/"):
@@ -92,22 +104,36 @@ def _concatenated(node: ast.BinOp, consumed: Set[int]) -> Found:
         spec = "".join("{}" if piece is None else piece for piece in pieces)
     if not is_path(spec):
         return None
-    consumed.update(id(part) for part in inner)
-    consumed.update(id(operand) for operand in operands if _text(operand) is not None)
-    return spec, operands[-1].lineno
+    parts = [node] + inner + [operand for operand in operands if _text(operand) is not None]
+    return spec, parts, operands[-1].lineno
 
 
 def _joined(operands: Sequence[ast.AST], consumed: Set[int]) -> Found:
-    """The trailing run of text operands joined with `/`; operands before it are dropped."""
+    """The trailing run of text operands joined with `/`; operands before it are dropped.
+
+    The last operand may also be a `+` chain that builds a SQL path; it is the final piece."""
+    tail: List[str] = []
+    used: List[ast.AST] = []
+    rest = list(operands)
+    line = 0
+    if rest and isinstance(rest[-1], ast.BinOp) and isinstance(rest[-1].op, ast.Add):
+        hit = _concat_spec(rest[-1])
+        if hit is None:
+            return None
+        spec, used, line = hit
+        tail.append(spec.strip("/"))
+        rest.pop()
     run = []
-    for operand in reversed(operands):
+    for operand in reversed(rest):
         if _text(operand) is None:
             break
         run.append(operand)
-    if not run:
+    if not run and not tail:
         return None
-    spec = "/".join(piece for piece in (_text(operand).strip("/") for operand in reversed(run)) if piece)
+    pieces = [_text(operand).strip("/") for operand in reversed(run)] + tail
+    spec = "/".join(piece for piece in pieces if piece)
     if not is_path(spec):
         return None
     consumed.update(id(operand) for operand in run)
-    return spec, run[0].lineno
+    consumed.update(id(part) for part in used)
+    return spec, line or run[0].lineno

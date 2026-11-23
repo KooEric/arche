@@ -94,3 +94,19 @@ def test_concatenated_paths_are_recorded():
 
 def test_a_chained_division_is_collected_once():
     assert _specs('a = Path(B) / "a.sql" / "b.sql"\n') == [(1, "a.sql/b.sql", False)]
+
+
+def test_a_concatenation_inside_a_join_keeps_the_folder():
+    source = (
+        'a = os.path.join(BASE, "sql", "x" + ".sql")\n'
+        'b = Path(B) / "sql" / ("y" + ".sql")\n'
+        'c = os.path.join(BASE, "sql", name + ".sql")\n'
+        'd = Path(B) / (name + ".hql")\n'
+    )
+
+    assert _specs(source) == [(1, "sql/x.sql", False), (2, "sql/y.sql", False), (3, "sql/{}.sql", True),
+                              (4, "{}.hql", True)]
+
+
+def test_two_paths_added_together_stay_two_paths():
+    assert _specs('a = "a.sql" + "b.sql"\n') == [(1, "a.sql", False), (1, "b.sql", False)]
