@@ -218,3 +218,91 @@ def test_missing_workspace_src_submodule_is_not_external():
     assert python_resolve.resolve(_imp("import", "core.missing"), "app/main.py", ctx) == [
         {"status": "unresolved", "spec": "core.missing", "reason": "module_not_found"}
     ]
+
+
+def _ctx_with_files(files):
+    paths = list(files)
+    parsed = [p for p in paths if p.endswith(".py")]
+    return python_resolve.build_context(parsed, paths, files.get)
+
+
+AIRFLOW_DAG_REPO = [
+    "team_a/src/airflow/dags/load.py",
+    "team_b/src/airflow/dags/export.py",
+    "team_a/src/airflow/dags/report.py",
+]
+
+
+def test_dotted_import_no_local_airflow_folder_provides_is_external():
+    ctx = _ctx(AIRFLOW_DAG_REPO)
+
+    found = python_resolve.resolve(_imp("from", "airflow.operators.python", ["PythonOperator"]),
+                                   "team_a/src/airflow/dags/load.py", ctx)
+
+    assert found == [{"status": "external", "package": "airflow"}]
+
+
+def test_only_the_airflow_folder_that_provides_the_module_is_inferred():
+    ctx = _ctx(AIRFLOW_DAG_REPO)
+
+    found = python_resolve.resolve(_imp("from", "airflow.dags.report", ["run"]),
+                                   "team_b/src/airflow/dags/export.py", ctx)
+
+    assert found == [{"status": "inferred", "to": "team_a/src/airflow/dags/report.py",
+                      "names": ["run"], "rule": "unique-module-name"}]
+
+
+def test_declared_requirement_makes_a_shadowed_import_external():
+    ctx = _ctx_with_files({
+        "requirements-dev.txt": "# pinned\napache-airflow[celery]==2.9.1 ; python_version>'3.8'\n-r base.txt\n",
+        "team_a/src/airflow/dags/load.py": "",
+        "team_b/src/airflow/dags/export.py": "",
+    })
+
+    for imp in (_imp("from", "airflow", ["DAG"]), _imp("import", "airflow"),
+                _imp("from", "airflow.dags", ["export"])):
+        assert python_resolve.resolve(imp, "team_a/src/airflow/dags/load.py", ctx) == [
+            {"status": "external", "package": "airflow"}
+        ]
+
+
+def test_declared_dependency_beats_a_root_level_namespace_folder():
+    ctx = _ctx_with_files({
+        "pyproject.toml": '[project]\nname = "dags"\ndependencies = [\n  "apache-airflow-providers-google>=10",\n  "PyYAML",\n]\n',
+        "airflow/dags/load.py": "",
+        "yaml/config.py": "",
+    })
+
+    assert python_resolve.resolve(_imp("from", "airflow.operators.python", ["PythonOperator"]),
+                                  "airflow/dags/load.py", ctx) == [
+        {"status": "external", "package": "airflow"}
+    ]
+    assert python_resolve.resolve(_imp("import", "yaml"), "airflow/dags/load.py", ctx) == [
+        {"status": "external", "package": "yaml"}
+    ]
+
+
+def test_declared_dependency_does_not_hide_a_module_that_exists_locally():
+    ctx = _ctx_with_files({
+        "setup.cfg": "[options]\ninstall_requires =\n    requests>=2\n    apache-airflow\n",
+        "airflow/__init__.py": "",
+        "airflow/hooks.py": "",
+        "main.py": "",
+    })
+
+    assert python_resolve.resolve(_imp("import", "airflow.hooks"), "main.py", ctx) == [
+        _verified("airflow/hooks.py")
+    ]
+
+
+def test_poetry_dependencies_are_declared():
+    ctx = _ctx_with_files({
+        "pyproject.toml": '[tool.poetry.dependencies]\npython = "^3.10"\nrequests = "^2"\n\n[tool.poetry.group.dev.dependencies]\npytest = "*"\n',
+        "a/requests/__init__.py": "",
+        "b/requests/__init__.py": "",
+        "main.py": "",
+    })
+
+    assert python_resolve.resolve(_imp("import", "requests"), "main.py", ctx) == [
+        {"status": "external", "package": "requests"}
+    ]
