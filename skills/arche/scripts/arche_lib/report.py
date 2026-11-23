@@ -62,8 +62,9 @@ def _status(status):
 
 def _relation(edge, other, anchors):
     label = _file_link(other, anchors) if other else _code(edge["spec"])
+    table = f" · {_code(edge['table'])}" if "table" in edge and other else ""
     reason = f" · {escape(edge['reason'])}" if "reason" in edge else ""
-    return f'{label} · {_status(edge["status"])} · {_evidence(edge)}{reason}'
+    return f'{label}{table} · {_status(edge["status"])} · {_evidence(edge)}{reason}'
 
 
 def _bar(value, largest):
@@ -98,7 +99,7 @@ def _file_details(graph, files):
         target = index.get(edge["to"], -1)
         details[index[edge["from"]]]["o"].append(
             [target, "" if target >= 0 else (edge["to"] or edge.get("spec", "")).removeprefix("file:"), edge["status"],
-             edge["evidence"]["line"], edge.get("reason", "")])
+             edge["evidence"]["line"], edge.get("reason", ""), edge.get("table", "")])
     for item in graph["externals"]:
         details[index[item["from"]]]["x"].append([item["package"], item["line"]])
     return json.dumps(details, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
@@ -511,6 +512,59 @@ def _file_references(edges, files, anchors):
                     T("A reference is a SQL file path written as text in a parsed Python file. Paths in configuration files and includes inside SQL are not read, so a file listed here may still be used. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read."))
 
 
+_UNRESOLVED_READS = (
+    ("dynamic", "Table names built at run time"),
+    ("ambiguous", "Table names matching several tables"),
+)
+
+
+MAX_READERS_SHOWN = 5
+
+
+def _external_tables(external, anchors):
+    """External tables grouped by schema, each with the files reading it."""
+    readers = defaultdict(list)
+    for item in external:
+        readers[item["table"]].append(f'{_file_link(item["from"], anchors)}:{item["line"]:d}')
+    schemas = defaultdict(list)
+    for table in sorted(readers):
+        schemas[table.rpartition(".")[0]].append(table)
+    blocks = []
+    for schema, tables in sorted(schemas.items(), key=lambda pair: (-len(pair[1]), pair[0])):
+        label = _code(schema) if schema else T("no schema")
+        rows = (f'{_code(table)} · ' + _readers(readers[table]) for table in tables)
+        blocks.append(f'<details class="group"><summary>{label} <span class="count">{len(tables)}</span></summary>'
+                      + _items(rows, "") + '</details>')
+    return "".join(blocks)
+
+
+def _readers(links):
+    shown = ", ".join(links[:MAX_READERS_SHOWN])
+    hidden = len(links) - MAX_READERS_SHOWN
+    return f'{shown}, {T("+{count} more").format(count=hidden)}' if hidden > 0 else shown
+
+
+def _tables(graph, anchors):
+    """Tables read here and written nowhere scanned, and table names that were not followed."""
+    external = graph.get("external_tables", [])
+    reads = [edge for edge in graph["edges"] if edge.get("kind") == "READS"]
+    if not external and not reads:
+        return ""
+    by_reason = defaultdict(list)
+    for edge in reads:
+        if not edge["to"]:
+            by_reason[edge["reason"]].append(f'{_code(edge["spec"])} · {_evidence(edge)}')
+    count = len({item["table"] for item in external})
+    body = (f'<h3>{T("External tables")} <span class="count">{count}</span></h3>'
+            + (_external_tables(external, anchors) or f'<p class="empty">{T("Every table read here is written by a scanned SQL file.")}</p>'))
+    for reason, title in _UNRESOLVED_READS:
+        if by_reason[reason]:
+            body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
+                     + _items(by_reason[reason], "", "columns") + '</details>')
+    return _section("tables", T("Tables"), body,
+                    T("A table is external when no scanned SQL file writes it. Only table names written in SQL files are read. SQL inside Python, default schemas and tables inside views are not, so a table listed here may still be made in this repository. Open a SQL file under File dependencies to see which files read what it writes."))
+
+
 def _graph_data(graph, files, anchors):
     """Compact file-level graph for the interactive map. No source text."""
     index = {file["id"]: position for position, file in enumerate(files)}
@@ -597,6 +651,8 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
         ("file-references", T("SQL file references"),
          sum(1 for edge in edges if edge.get("kind") == "REFERENCES" and edge["to"]) or None,
          _file_references(edges, files, anchors)),
+        ("tables", T("Tables"), len({item["table"] for item in graph.get("external_tables", [])}) or None,
+         _tables(graph, anchors)),
         ("files", T("Dependencies"), len(files), _section("files", T("File dependencies"), file_list)),
         ("changes", T("Changes"), len(changes["files"]) if changes else None, _section("changes", T("Changes and impact"), _changes(changes, anchors))),
         ("audit", T("Audit"), (len(findings) + cycle_count) or None,

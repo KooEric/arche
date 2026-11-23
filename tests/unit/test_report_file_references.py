@@ -87,3 +87,12 @@ def test_several_dynamic_paths_are_counted_in_korean_without_a_stray_space():
     html = render(TEMPLATE, _graph(edges), [], "match", lang="ko")
 
     assert "경로 2개가 실행 시점에 만들어집니다." in _section(html)
+
+
+def test_a_file_detail_names_the_table_a_read_goes_through():
+    read = {"kind": "READS", "from": "file:dags/sql/load.sql", "to": "file:dags/sql/unused.sql", "origin": "script",
+            "status": "verified", "rule": "name", "table": "billing.<orders>",
+            "evidence": {"path": "dags/sql/load.sql", "line": 1, "quote": "q"}}
+    html = render(TEMPLATE, _graph([read]), [], "match")
+
+    assert "<code>billing.&lt;orders&gt;</code>" in html and "billing.<orders>" not in html

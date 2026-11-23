@@ -2,13 +2,17 @@
   "analyzed": [
     "dags/billing/daily_dag.py",
     "dags/billing/sql/load_orders.sql",
+    "dags/billing/sql/restage.sql",
     "dags/billing/sql/settle.hql",
     "dags/billing/sql/unused.sql",
     "dags/common/readers.py",
     "dags/ledger/ledger_dag.py",
     "dags/ledger/sql/close.sql",
     "dags/ledger/sql/report.sql",
-    "dags/shared/sql/report.sql"
+    "dags/ledger/sql/summary.sql",
+    "dags/shared/sql/report.sql",
+    "dags/shared/sql/stage_a.sql",
+    "dags/shared/sql/stage_b.sql"
   ],
   "skipped": [],
   "imports": [],
@@ -37,5 +41,22 @@
     {"from": "dags/ledger/ledger_dag.py", "target": "dags/ledger/sql/close.sql", "status": "inferred", "how": "suffix"},
     {"from": "dags/ledger/ledger_dag.py", "target": "report.sql", "status": "unresolved", "how": "ambiguous"},
     {"from": "dags/ledger/ledger_dag.py", "target": "dags/billing/sql/settle.hql", "status": "inferred", "how": "suffix"}
+  ],
+  "reads": [
+    {"from": "dags/billing/sql/restage.sql", "target": "dags/billing/sql/load_orders.sql", "table": "billing.orders", "status": "verified", "how": "name"},
+    {"from": "dags/billing/sql/restage.sql", "target": "ledger.daily_{}", "table": "ledger.daily_{}", "status": "unresolved", "how": "dynamic"},
+    {"from": "dags/billing/sql/settle.hql", "target": "dags/billing/sql/load_orders.sql", "table": "billing.orders", "status": "verified", "how": "name"},
+    {"from": "dags/billing/sql/settle.hql", "target": "dags/billing/sql/restage.sql", "table": "billing.orders", "status": "verified", "how": "name"},
+    {"from": "dags/ledger/sql/close.sql", "target": "dags/billing/sql/settle.hql", "table": "billing.settled", "status": "verified", "how": "name"},
+    {"from": "dags/ledger/sql/report.sql", "target": "dags/ledger/sql/close.sql", "table": "ledger.closed", "status": "verified", "how": "name"},
+    {"from": "dags/ledger/sql/summary.sql", "target": "dags/ledger/sql/close.sql", "table": "ledger.closed", "status": "verified", "how": "name"},
+    {"from": "dags/ledger/sql/summary.sql", "target": "dags/billing/sql/load_orders.sql", "table": "{}.orders", "status": "inferred", "how": "table_name"},
+    {"from": "dags/ledger/sql/summary.sql", "target": "dags/billing/sql/restage.sql", "table": "{}.orders", "status": "inferred", "how": "table_name"}
+  ],
+  "external_tables": [
+    {"from": "dags/billing/sql/load_orders.sql", "table": "staging.orders"},
+    {"from": "dags/shared/sql/report.sql", "table": "shared.calendar"},
+    {"from": "dags/shared/sql/stage_a.sql", "table": "shared.calendar"},
+    {"from": "dags/shared/sql/stage_b.sql", "table": "shared.calendar"}
   ]
 }

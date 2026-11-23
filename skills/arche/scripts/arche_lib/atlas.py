@@ -21,6 +21,7 @@ MIN_TOP, MAX_TOP = 3, 9
 UNASSIGNED_WARNING = 0.10
 LARGE_PART_FILES = 24
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_LINK_KINDS = {"REFERENCES": "reference", "READS": "read"}
 
 
 def _bad(where: str, message: str, hint: str = "") -> None:
@@ -297,7 +298,7 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
         file_links[index_of[source], index_of[target], edge["status"]] += 1
         a, b = owner.get(source), owner.get(target)
         if a and b and a != b:
-            kind = "reference" if edge.get("kind") == "REFERENCES" else "import"
+            kind = _LINK_KINDS.get(edge.get("kind"), "import")
             counts[a, b, edge["status"], kind, None, None] += 1
     host_parts = {host: part["id"] for part in parts for host in part["hosts"]}
     for connection in graph.get("http_connections", ()):

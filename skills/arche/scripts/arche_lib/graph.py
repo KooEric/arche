@@ -1,4 +1,4 @@
-"""Build graph.json content: file and symbol nodes plus IMPORTS and REFERENCES edges."""
+"""Build graph.json content: file and symbol nodes plus IMPORTS, REFERENCES and READS edges."""
 from __future__ import annotations
 
 import posixpath
@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import SCHEMA_VERSION, fileref
+from . import SCHEMA_VERSION, fileref, lineage
 from .errors import ParseError
 from .httpmatch import connect, join_path
 from .jsonio import inventory_digest
@@ -111,6 +111,54 @@ def _references(analyzed: List[dict], extracted: Dict[str, dict]) -> List[dict]:
                 edge = {**base, **candidates, "to": None, "spec": result["spec"], "reason": result["reason"]}
             edges.setdefault(_edge_key(edge), edge)
     return list(edges.values())
+
+
+def _written_tables(paths: List[str], extracted: Dict[str, dict]) -> dict:
+    """Tables each SQL file writes for others to read: no temporary and no run-time names."""
+    return lineage.index(
+        (path, item["table"]) for path in paths for item in extracted[path]["tables"]
+        if item["access"] == "write" and not item["temp"] and not item["dynamic"])
+
+
+def _reads(analyzed: List[dict], extracted: Dict[str, dict]) -> Tuple[List[dict], List[dict]]:
+    """(READS edges from a file to the files writing a table it reads, tables nothing scanned writes)."""
+    paths = [entry["path"] for entry in analyzed if "tables" in extracted.get(entry["path"], {})]
+    writers = _written_tables(paths, extracted)
+    edges: Dict[tuple, dict] = {}
+    external: Dict[tuple, dict] = {}
+    for path in paths:
+        records = extracted[path]["tables"]
+        local = {item["table"] for item in records if item["temp"]}
+        own_writes = {item["table"]: item["line"] for item in records
+                      if item["access"] == "write" and not item["temp"] and not item["dynamic"]}
+        for item in records:
+            if item["access"] != "read" or item["table"] in local:
+                continue
+            if item["table"] in own_writes and own_writes[item["table"]] <= item["line"]:
+                continue  # the file made this table itself before reading it
+            for result in lineage.resolve(item["table"], item["dynamic"], writers):
+                if result["status"] == "external":
+                    external.setdefault((path, item["table"]),
+                                        {"from": _file_id(path), "table": item["table"], "line": item["line"]})
+                elif result.get("to") != path:
+                    edge = _read_edge(path, item, result)
+                    edges[(path, item["line"], edge["to"] or "", item["table"])] = edge
+    return list(edges.values()), sorted(external.values(), key=lambda x: (x["from"], x["line"], x["table"]))
+
+
+def _read_edge(path: str, item: dict, result: dict) -> dict:
+    base = {
+        "kind": "READS",
+        "from": _file_id(path),
+        "origin": "script",
+        "status": result["status"],
+        "table": item["table"],
+        "evidence": {"path": path, "line": item["line"], "quote": item["quote"]},
+    }
+    if result["status"] in _RESOLVED:
+        return {**base, "rule": result["rule"], "to": _file_id(result["to"])}
+    candidates = {"candidates": result["candidates"]} if "candidates" in result else {}
+    return {**base, **candidates, "to": None, "spec": result["spec"], "reason": result["reason"]}
 
 
 def _dedupe_externals(externals: List[dict]) -> List[dict]:
@@ -325,13 +373,16 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
     edges, externals = _resolve_all(analyzed, extracted, contexts)
     repo = inventory["repo"]
     connections, routes = _http(extracted, edges)
+    reads, external_tables = _reads(analyzed, extracted)
     return {
         "schema_version": SCHEMA_VERSION,
         "inventory_sha256": inventory_digest(inventory),
         "repo": {"name": repo["name"], "commit": repo["commit"], "dirty": repo["dirty"]},
         "nodes": _nodes(analyzed, extracted),
-        "edges": sorted(edges + _references(analyzed, extracted), key=_edge_key),
+        "edges": sorted(edges + _references(analyzed, extracted) + reads,
+                       key=lambda edge: _edge_key(edge) + (edge.get("table", ""),)),
         "externals": _dedupe_externals(externals),
+        "external_tables": external_tables,
         "http_connections": connections,
         "http_routes": routes,
         "skipped": _skipped(inventory, failures),
