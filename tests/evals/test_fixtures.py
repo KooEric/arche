@@ -3,7 +3,7 @@ import pytest
 import score
 from arche_lib import jsonio
 
-FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic", "hono-mobile", "jvm-basic"}
+FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic", "hono-mobile", "jvm-basic", "airflow-sql"}
 INFERRED_ONLY = {
     ("py-dynamic", "tools/run.py", "vendor_local/helper.py"),
     ("ts-alias", "src/main.ts", "packages/legacy/src/index.ts"),
@@ -43,6 +43,13 @@ def test_import_edges_meet_the_release_gates(results):
 
 def test_every_language_is_scored(results):
     assert set(score.by_language(results)) == {"python", "typescript", "dart", "java", "kotlin"}
+
+
+def test_file_references_stay_out_of_import_precision_and_recall(results):
+    airflow = next(r for r in results if r["fixture"] == "airflow-sql")
+
+    assert all(airflow[outcome] == [] for outcome in score.OUTCOMES)
+    assert airflow["inferred_correct"] == [] and airflow["inferred_wrong"] == []
 
 
 def test_edges_not_verified_are_exactly_the_ones_declared_as_inferred(results):
