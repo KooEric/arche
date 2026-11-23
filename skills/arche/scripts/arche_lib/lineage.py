@@ -29,7 +29,9 @@ def resolve(table: str, dynamic: bool, writers: dict) -> List[dict]:
     if "{}" not in table and table in writers["files"]:
         return [{"status": "verified", "to": path, "rule": "name"} for path in writers["files"][table]]
     if "{}" not in table:
-        prefixed = sorted(name for name in writers["files"] if "{}" not in name and _differs_by_catalog(table, name))
+        # Names that differ only by catalog share the last part, so only that bucket can match.
+        same_last = writers["names"].get(table.rsplit(".", 1)[-1], [])
+        prefixed = sorted(name for name in same_last if "{}" not in name and _differs_by_catalog(table, name))
         if len(prefixed) == 1:
             return [{"status": "inferred", "to": path, "rule": "table_name"} for path in writers["files"][prefixed[0]]]
         if prefixed:
