@@ -62,8 +62,9 @@ def _status(status):
 
 def _relation(edge, other, anchors):
     label = _file_link(other, anchors) if other else _code(edge["spec"])
+    table = f" · {_code(edge['table'])}" if "table" in edge and other else ""
     reason = f" · {escape(edge['reason'])}" if "reason" in edge else ""
-    return f'{label} · {_status(edge["status"])} · {_evidence(edge)}{reason}'
+    return f'{label}{table} · {_status(edge["status"])} · {_evidence(edge)}{reason}'
 
 
 def _bar(value, largest):

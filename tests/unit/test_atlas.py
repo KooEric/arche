@@ -196,3 +196,34 @@ def test_brief_lists_file_references_between_folders_apart_from_imports(make_rep
 
     assert "  dags/a -> dags/b  1" in section("FILE REFERENCES BETWEEN FOLDERS")
     assert "dags/a -> dags/b" not in section("IMPORTS BETWEEN FOLDERS")
+
+
+def test_a_table_read_between_parts_is_a_read_link():
+    graph = _graph({"load/a.sql": "INSERT INTO a.t SELECT 1;\n", "report/b.sql": "SELECT * FROM a.t;\n"})
+    inventory = {"files": [{"path": n["id"][5:], "status": "analyzed", "lines": n["lines"], "sha256": n["sha256"]}
+                           for n in graph["nodes"] if n["type"] == "file"]}
+    document = {"version": 1, "project": {"name": "demo", "summary": "s"}, "parts": [
+        {"id": "load", "label": "Load", "kind": "data", "summary": "writes", "paths": ["load"]},
+        {"id": "report", "label": "Report", "kind": "data", "summary": "reads", "paths": ["report"]}],
+        "edges": [], "flows": []}
+
+    atlas = build_atlas(inventory, graph, document, {})
+
+    assert [(l["from"], l["to"], l["status"], l["kind"], l["count"]) for l in atlas["links"]] == [
+        ("report", "load", "verified", "read", 1)]
+    assert atlas["file_links"] == [[1, 0, "verified", 1]]
+
+
+def test_brief_lists_table_reads_between_folders_apart_from_imports_and_references(make_repo, run_script, tmp_path):
+    repo = make_repo({"dags/a/x.sql": "INSERT INTO a.t SELECT 1;\n", "dags/b/y.sql": "SELECT * FROM a.t;\n"})
+    out = tmp_path / "out"
+    assert run_script("arche.py", repo, "--out", out).returncode == 0
+    assert run_script("brief.py", "--out", out).returncode == 0
+    text = (out / "brief.txt").read_text()
+
+    def section(title):
+        return text.split(title)[1].split("\n\n")[0]
+
+    assert "  dags/b -> dags/a  1" in section("TABLE READS BETWEEN FOLDERS")
+    assert "dags/b -> dags/a" not in section("IMPORTS BETWEEN FOLDERS")
+    assert "dags/b -> dags/a" not in section("FILE REFERENCES BETWEEN FOLDERS")

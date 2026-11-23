@@ -38,7 +38,7 @@ def _diff(root: Path, base: str, head: str) -> list:
     return sorted(result, key=lambda entry: (entry["path"], entry.get("old_path", "")))
 
 
-_DEPENDENCY_KINDS = ("IMPORTS", "REFERENCES")
+_DEPENDENCY_KINDS = ("IMPORTS", "REFERENCES", "READS")
 
 
 def _reverse_imports(graph: dict) -> dict:

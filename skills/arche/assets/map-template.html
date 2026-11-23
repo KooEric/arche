@@ -274,7 +274,7 @@ function level() {
   };
   for (const item of D.file_links) link(repFile(item[0]), repFile(item[1]), item[2], item[3]);
   const end = (item, side) => item[side + '_file'] !== undefined ? repFile(item[side + '_file']) : repPart(item[side]);
-  for (const item of D.links) if (item.status === 'cited' || (item.kind !== 'import' && item.kind !== 'reference')) link(end(item, 'from'), end(item, 'to'), item.status, item.count, item.label);
+  for (const item of D.links) if (item.status === 'cited' || !['import', 'reference', 'read'].includes(item.kind)) link(end(item, 'from'), end(item, 'to'), item.status, item.count, item.label);
   // Inside a part, keep only the links that touch it and the neighbours those links reach.
   const inner = id => nodes.has(id) && nodes.get(id).type !== 'ghost';
   const kept = [...edges.values()].filter(edge => nodes.has(edge.from) && nodes.has(edge.to) && (inner(edge.from) || inner(edge.to)));

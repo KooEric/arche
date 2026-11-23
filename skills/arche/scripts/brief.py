@@ -62,7 +62,7 @@ def build(graph, read_path=None):
     if root:
         lines.append("  (root) " + ", ".join(root))
 
-    fan_in, fan_out, between, referenced = Counter(), Counter(), Counter(), Counter()
+    fan_in, fan_out, between, referenced, table_reads = Counter(), Counter(), Counter(), Counter(), Counter()
     resolved = {(e["from"][5:], e["to"][5:], e.get("kind", "IMPORTS")) for e in graph["edges"] if e["to"] and e["to"][5:] in files}
     for source, target, kind in sorted(resolved):
         if source == target:
@@ -71,7 +71,7 @@ def build(graph, read_path=None):
         fan_in[target] += 1
         a, b = ("/".join(p.split("/")[:-1][:2]) or "." for p in (source, target))
         if a != b:
-            (referenced if kind == "REFERENCES" else between)[a, b] += 1
+            {"REFERENCES": referenced, "READS": table_reads}.get(kind, between)[a, b] += 1
     entries = sorted((p for p in files if fan_out[p] and not fan_in[p] and not _TEST.search(p)), key=lambda p: (-fan_out[p], p))
     lines += ["", "ENTRY POINT CANDIDATES (imported by nothing, importing others; tests left out)"]
     lines += [f"  {path}  imports {fan_out[path]}" for path in entries[:TOP]] or ["  none"]
@@ -81,6 +81,8 @@ def build(graph, read_path=None):
     lines += [f"  {a} -> {b}  {count}" for (a, b), count in sorted(between.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]
     lines += ["", "FILE REFERENCES BETWEEN FOLDERS (a SQL file path written as text; two levels deep)"]
     lines += [f"  {a} -> {b}  {count}" for (a, b), count in sorted(referenced.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]
+    lines += ["", "TABLE READS BETWEEN FOLDERS (a SQL file reading a table another SQL file writes; two levels deep)"]
+    lines += [f"  {a} -> {b}  {count}" for (a, b), count in sorted(table_reads.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]
 
     connections = graph.get("http_connections", [])
     lines += ["", f"HTTP ({len(graph.get('http_routes', []))} routes read, {len(connections)} requests read)"]

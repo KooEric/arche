@@ -63,3 +63,21 @@ def test_changing_a_sql_file_reaches_the_python_file_that_names_it(make_repo, gi
     assert result.returncode == 0, result.stderr
     files = {item["path"]: item for item in json.loads((out / "changes.json").read_text())["files"]}
     assert files["q/load.sql"]["impact"] == ["dag.py"]
+
+
+def test_changing_a_sql_file_reaches_readers_of_its_table_and_the_code_naming_them(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"dag.py": 'QUERY = "q/report.sql"\n', "q/load.sql": "INSERT INTO a.t SELECT 1;\n",
+                      "q/report.sql": "SELECT * FROM a.t;\n"})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    (repo / "q" / "load.sql").write_text("INSERT INTO a.t SELECT 2;\n")
+    git_cmd(repo, "add", "-A")
+    git_cmd(repo, "commit", "-qm", "edit")
+    head = git_cmd(repo, "rev-parse", "HEAD").strip()
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 0, result.stderr
+    files = {item["path"]: item for item in json.loads((out / "changes.json").read_text())["files"]}
+    assert files["q/load.sql"]["impact"] == ["dag.py", "q/report.sql"]
