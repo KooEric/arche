@@ -56,8 +56,10 @@ def resolve(spec: str, importer_path: str, by_name: Dict[str, List[str]], dynami
         return _unresolved(spec, "not_found")
     if clean in known:
         return {"status": "verified", "to": clean, "rule": "root"}
-    # The longest tail of the written path that ends a scanned path decides.
-    for start in range(len(parts)):
+    # The longest tail of the written path that ends a scanned path decides. A written
+    # directory is kept: only a bare file name is matched by name alone.
+    shortest = min(len(parts), 2)
+    for start in range(len(parts) - shortest + 1):
         tail = "/".join(parts[start:])
         matches = [path for path in known if path == tail or path.endswith("/" + tail)]
         if len(matches) == 1:

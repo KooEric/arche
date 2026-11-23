@@ -88,7 +88,7 @@ A와 C를 한 규칙으로 처리하기 위해 호출 위치를 보지 않는다
 | 4 | 끝부분이 일치하는 SQL 파일이 여럿 | `unresolved` | `reason: ambiguous`, `candidates`에 정렬된 경로 |
 | 5 | 일치 없음 | `unresolved` | `reason: not_found` |
 
-규칙 3의 "경로 조각 경계"는 `x.sql`이 `sql/x.sql`과는 맞고 `sql/ax.sql`과는 맞지 않는다는 뜻이다. 적힌 경로가 레포 경로보다 길면(예: `/opt/airflow/dags/a/sql/x.sql`) 앞 조각을 하나씩 떼어 가며 처음 일치가 나오는 가장 긴 꼬리로 판단한다. 대상은 스캔에서 분석된 SQL 파일로 한정한다. `skipped`인 파일(예: `too_large`)은 대상이 아니다.
+규칙 3의 "경로 조각 경계"는 `x.sql`이 `sql/x.sql`과는 맞고 `sql/ax.sql`과는 맞지 않는다는 뜻이다. 적힌 경로가 레포 경로보다 길면(예: `/opt/airflow/dags/a/sql/x.sql`) 앞 조각을 하나씩 떼어 가며 처음 일치가 나오는 가장 긴 꼬리로 판단한다. 폴더가 적힌 경로는 마지막 폴더와 파일 이름까지는 남긴다. 파일 이름만으로 맞추는 것은 폴더 없이 이름만 적힌 경우뿐이다. 대상은 스캔에서 분석된 SQL 파일로 한정한다. `skipped`인 파일(예: `too_large`)은 대상이 아니다.
 
 상태 이름은 기존 `IMPORTS` edge와 같다(`verified`, `inferred`, `unresolved`).
 
