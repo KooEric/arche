@@ -463,6 +463,40 @@ def _excluded(skipped):
     return f'<p class="lead">{T("Files left out of parsing, grouped by reason.")}</p>' + "".join(blocks)
 
 
+_UNRESOLVED_REFERENCES = (
+    ("dynamic", "Paths built at run time"),
+    ("ambiguous", "Paths matching several files"),
+    ("not_found", "Paths matching no scanned file"),
+)
+
+
+def _file_references(edges, files, anchors):
+    """SQL files nothing names, and written paths that were not followed. Empty without SQL or references."""
+    sql = [file["id"] for file in files if file["lang"] == "sql"]
+    references = [edge for edge in edges if edge.get("kind") == "REFERENCES"]
+    if not sql and not references:
+        return ""
+    named = {edge["to"] for edge in references if edge["to"]}
+    unnamed = [node_id for node_id in sql if node_id not in named]
+    by_reason = defaultdict(list)
+    for edge in references:
+        if not edge["to"]:
+            by_reason[edge["reason"]].append(f'{_code(edge["spec"])} · {_evidence(edge)}')
+    dynamic = len(by_reason["dynamic"])
+    warning = ""
+    if dynamic:
+        counted = T("1 path is built at run time.") if dynamic == 1 else f'{dynamic:,} {T("paths are built at run time.")}'
+        warning = f'<p class="callout" data-tone="warn">{counted} {T("A file listed here may still be used through one of them.")}</p>'
+    body = (f'<h3>{T("SQL files with no static reference")} <span class="count">{len(unnamed)}</span></h3>' + warning
+            + _items((_file_link(node_id, anchors) for node_id in unnamed), T("Every SQL file is named by a parsed file."), "columns"))
+    for reason, title in _UNRESOLVED_REFERENCES:
+        if by_reason[reason]:
+            body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
+                     + _items(by_reason[reason], "", "columns") + '</details>')
+    return _section("file-references", T("SQL file references"), body,
+                    T("A reference is a SQL file path written as text in a parsed file. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read."))
+
+
 def _graph_data(graph, files, anchors):
     """Compact file-level graph for the interactive map. No source text."""
     index = {file["id"]: position for position, file in enumerate(files)}
@@ -546,6 +580,9 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
          _section("tour", T("Evidence tour"), _tour(tour, anchors), T("Follow the steps in order. Each one cites its source location.") if has_tour else "")),
         ("feature-focus", T("Feature focus"), None, _feature_focus(tour, connections, anchors)),
         ("http", T("HTTP connections"), len(connections), _http_section(connections, anchors)),
+        ("file-references", T("SQL file references"),
+         sum(1 for edge in edges if edge.get("kind") == "REFERENCES" and edge["to"]) or None,
+         _file_references(edges, files, anchors)),
         ("files", T("Dependencies"), len(files), _section("files", T("File dependencies"), file_list)),
         ("changes", T("Changes"), len(changes["files"]) if changes else None, _section("changes", T("Changes and impact"), _changes(changes, anchors))),
         ("audit", T("Audit"), (len(findings) + cycle_count) or None,
