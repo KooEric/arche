@@ -1,4 +1,4 @@
-"""Build graph.json content: file and symbol nodes plus IMPORTS edges."""
+"""Build graph.json content: file and symbol nodes plus IMPORTS and REFERENCES edges."""
 from __future__ import annotations
 
 import posixpath
@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import SCHEMA_VERSION
+from . import SCHEMA_VERSION, fileref
 from .errors import ParseError
 from .httpmatch import connect, join_path
 from .jsonio import inventory_digest
@@ -88,6 +88,29 @@ def _resolve_all(analyzed: List[dict], extracted: Dict[str, dict], contexts: dic
 
 def _edge_key(edge: dict) -> tuple:
     return (edge["from"], edge["evidence"]["line"], edge["to"] or "", edge.get("spec", ""))
+
+
+def _references(analyzed: List[dict], extracted: Dict[str, dict]) -> List[dict]:
+    """REFERENCES edges: a SQL file path written as text, resolved against the parsed SQL files."""
+    by_name = fileref.index(entry["path"] for entry in analyzed if entry["lang"] == "sql" and entry["path"] in extracted)
+    edges: Dict[tuple, dict] = {}
+    for path in sorted(extracted):
+        for ref in extracted[path].get("file_refs", []):
+            result = fileref.resolve(ref["spec"], path, by_name, ref["dynamic"])
+            base = {
+                "kind": "REFERENCES",
+                "from": _file_id(path),
+                "origin": "script",
+                "status": result["status"],
+                "evidence": {"path": path, "line": ref["line"], "quote": ref["quote"]},
+            }
+            if result["status"] in _RESOLVED:
+                edge = {**base, "rule": result["rule"], "to": _file_id(result["to"])}
+            else:
+                candidates = {"candidates": result["candidates"]} if "candidates" in result else {}
+                edge = {**base, **candidates, "to": None, "spec": result["spec"], "reason": result["reason"]}
+            edges.setdefault(_edge_key(edge), edge)
+    return list(edges.values())
 
 
 def _dedupe_externals(externals: List[dict]) -> List[dict]:
@@ -307,7 +330,7 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
         "inventory_sha256": inventory_digest(inventory),
         "repo": {"name": repo["name"], "commit": repo["commit"], "dirty": repo["dirty"]},
         "nodes": _nodes(analyzed, extracted),
-        "edges": sorted(edges, key=_edge_key),
+        "edges": sorted(edges + _references(analyzed, extracted), key=_edge_key),
         "externals": _dedupe_externals(externals),
         "http_connections": connections,
         "http_routes": routes,
