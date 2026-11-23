@@ -56,26 +56,24 @@ A와 C를 한 규칙으로 처리하기 위해 호출 위치를 보지 않는다
 | `langs/sql.py` (신규) | `.sql`·`.hql`을 언어 `sql`로 등록한다. `extract`는 빈 import와 빈 심볼을 돌려준다. | 없음 |
 | `langs/python_filerefs.py` (신규) | Python AST에서 경로 문자열을 모아 `file_refs` 레코드로 돌려준다. | `ast` |
 | `fileref.py` (신규) | 경로 문자열 하나를 레포 파일로 해석한다. 언어와 무관하다. | 전체 경로 목록 |
-| `langs/python_extract.py` (수정) | `extract` 결과에 `file_refs` 키를 추가한다. | `python_filerefs` |
+| `langs/python.py` (수정) | `extract` 결과에 `file_refs` 키를 추가한다. HTTP 라우트를 더하는 기존 방식과 같다. | `python_filerefs` |
 | `graph.py` (수정) | `file_refs`를 `REFERENCES` edge로 만든다. | `fileref` |
 
 `file_refs`는 `imports`와 섞지 않는다. import 해석기와 감사 규칙이 import 레코드의 형태에 의존하기 때문이다.
 
 ## 수집 규칙
 
-`python_filerefs.collect(tree, lines)`는 다음 레코드를 돌려준다.
+`python_filerefs.file_refs(path, text)`는 다음 레코드를 돌려준다.
 
 ```
 {"spec": "sql/x.sql", "line": 12, "quote": "...", "dynamic": False}
 ```
 
-- **리터럴.** 문자열 상수가 `.sql` 또는 `.hql`로 끝나고(대소문자 무시) 공백과 줄바꿈이 없으면 수집한다. 길이는 200자 이하로 제한한다.
-- **docstring 제외.** 모듈·클래스·함수의 docstring은 수집하지 않는다.
-- **경로 조합.** `os.path.join(...)`과 `Path(...) / "a" / "b"`는 마지막 인자부터 거슬러 올라가며 연속된 리터럴 조각만 `/`로 잇는다. `os.path.join(BASE, "sql", "x.sql")`의 `spec`은 `sql/x.sql`이다. 조합에 쓰인 리터럴은 따로 다시 수집하지 않는다.
-- **동적.** 다음은 `dynamic: True`로 수집하고 `spec`에는 원문을 둔다.
-  - 포맷 값이 들어간 f-string 중 마지막 리터럴 부분이 `.sql`/`.hql`로 끝나는 것
-  - `%` 연산이나 `.format(...)`의 대상이면서 `.sql`/`.hql`로 끝나는 리터럴
-  - `{{`를 포함하는 리터럴
+- **리터럴.** 문자열 상수가 `.sql` 또는 `.hql`로 끝나고(대소문자 무시) 공백과 줄바꿈이 없으면 수집한다. Jinja `{{ … }}` 안의 공백은 허용한다. 길이는 200자 이하로 제한한다.
+- **docstring 제외.** docstring을 포함해 문장으로 홀로 놓인 문자열은 수집하지 않는다.
+- **경로 조합.** `os.path.join(...)`, `.joinpath(...)`, `Path(...) / "a" / "b"`는 마지막 인자부터 거슬러 올라가며 연속된 리터럴 조각만 `/`로 잇는다. `os.path.join(BASE, "sql", "x.sql")`의 `spec`은 `sql/x.sql`이다. 조합에 쓰인 리터럴은 따로 다시 수집하지 않는다.
+- **f-string.** 값이 들어가는 자리를 `{}`로 바꾼 문자열을 `spec`으로 둔다. `f"sql/{t}.sql"`의 `spec`은 `sql/{}.sql`이다.
+- **동적.** `spec`에 `{`, `%`, `*`, `?` 중 하나가 있으면 `dynamic: True`다. f-string, `"%s.sql" % x`, `"{}.sql".format(x)`, Jinja 템플릿, glob 패턴이 모두 여기에 든다.
 
 ## 해석 규칙
 
@@ -90,7 +88,7 @@ A와 C를 한 규칙으로 처리하기 위해 호출 위치를 보지 않는다
 | 4 | 끝부분이 일치하는 SQL 파일이 여럿 | `unresolved` | `reason: ambiguous`, `candidates`에 정렬된 경로 |
 | 5 | 일치 없음 | `unresolved` | `reason: not_found` |
 
-규칙 3의 "경로 조각 경계"는 `x.sql`이 `sql/x.sql`과는 맞고 `sql/ax.sql`과는 맞지 않는다는 뜻이다. 대상은 스캔에서 분석된 SQL 파일로 한정한다. `skipped`인 파일(예: `too_large`)은 대상이 아니다.
+규칙 3의 "경로 조각 경계"는 `x.sql`이 `sql/x.sql`과는 맞고 `sql/ax.sql`과는 맞지 않는다는 뜻이다. 적힌 경로가 레포 경로보다 길면(예: `/opt/airflow/dags/a/sql/x.sql`) 앞 조각을 하나씩 떼어 가며 처음 일치가 나오는 가장 긴 꼬리로 판단한다. 대상은 스캔에서 분석된 SQL 파일로 한정한다. `skipped`인 파일(예: `too_large`)은 대상이 아니다.
 
 상태 이름은 기존 `IMPORTS` edge와 같다(`verified`, `inferred`, `unresolved`).
 
@@ -110,13 +108,13 @@ A와 C를 한 규칙으로 처리하기 위해 호출 위치를 보지 않는다
 |---|---|---|
 | 감사 (`audit.py`) | `IMPORTS`가 아닌 edge를 건너뛴다. | 없음. 순환·반복 import 규칙은 그대로다. |
 | 리비전 비교 (`changes.py`) | 해석된 `IMPORTS`만 비교한다. | 해석된 `REFERENCES`도 비교한다. |
-| 지도 (`atlas.py`) | 그래프 edge를 종류와 무관하게 `import` 연결로 센다. | `REFERENCES`는 `reference` 연결로 따로 센다. 뷰어의 범례와 선 모양에 한 종류를 추가한다. |
+| 지도 (`atlas.py`) | 그래프 edge를 종류와 무관하게 `import` 연결로 센다. | `REFERENCES`는 `atlas.json`에 `reference` 연결로 따로 센다. 뷰어는 import와 같은 선으로 그린다. 선 모양 구분은 이번 범위가 아니다. |
 | 리포트 (`report.py`) | "확정된 import" 목록은 `IMPORTS`만 본다. | 그대로 둔다. 아래 두 목록을 추가한다. |
 | 폴더 요약 (`brief.py`) | 폴더 간 import 수를 낸다. | 폴더 간 참조 수를 한 구역 추가한다. |
 
 리포트에 추가하는 것은 두 가지다.
 
-- **SQL 파일 상세.** SQL 파일마다 그 파일을 참조하는 Python 파일과 근거 줄을 보여준다.
+- **SQL 파일 상세.** SQL 파일마다 그 파일을 참조하는 Python 파일과 근거 줄을 보여준다. 기존 파일 상세가 edge 종류를 가리지 않으므로 새 코드 없이 나온다. 제목은 "Imported by" 그대로다.
 - **정적 참조가 없는 SQL.** 해석된 `REFERENCES`가 하나도 없는 SQL 파일 목록이다. 제목에 "정적 참조 없음"이라고 쓰고 "미사용"이라고 쓰지 않는다. 스캔 범위 안에 `dynamic` 참조가 하나라도 있으면 목록 위에 그 건수와 "동적 참조로 쓰일 수 있음"을 표시한다.
 
 `not_found` 참조는 기록하되 리포트에서는 접힌 구역에 둔다. 삭제된 SQL을 가리키는 죽은 참조와 쓰기용 파일명(`"output.sql"`)이 섞여 있어 기본으로 펼치지 않는다.
