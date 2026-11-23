@@ -49,8 +49,7 @@ def test_unresolved_paths_are_folded_by_reason():
     edges = [_edge(3, spec="sql/gone.sql", reason="not_found"), _edge(4, spec="x.sql", reason="ambiguous")]
     section = _section(render(TEMPLATE, _graph(edges), [], "match"))
 
-    assert section.count('<details class="group">') == 2
-    assert "<code>not_found</code>" in section and "<code>ambiguous</code>" in section
+    assert "<code>not_found</code> <span" in section and "<code>ambiguous</code> <span" in section
     assert "<code>sql/gone.sql</code> · <code>dags/dag.py:3</code>" in section
 
 
@@ -64,3 +63,27 @@ def test_the_section_is_translated():
     html = render(TEMPLATE, _graph([_edge(1, to="file:dags/sql/load.sql")]), [], "match", lang="ko")
 
     assert "정적 참조가 없는 SQL 파일" in _section(html)
+
+
+def test_unreferenced_files_are_folded_by_folder():
+    sql = ("a/sql/one.sql", "a/sql/two.sql", "b/three.sql")
+    section = _section(render(TEMPLATE, _graph([], sql=sql), [], "match"))
+
+    assert section.index("<code>a/sql/</code>") < section.index("<code>b/</code>")
+    assert '<code>a/sql/</code> <span class="count">2</span>' in section
+    assert "<code>a/sql/one.sql</code>" in section
+
+
+def test_paths_from_the_repository_are_escaped():
+    edges = [_edge(2, spec="<b>&.sql", reason="not_found")]
+    section = _section(render(TEMPLATE, _graph(edges, sql=("q/<i>.sql",)), [], "match"))
+
+    assert "<b>" not in section and "<i>" not in section
+    assert "&lt;b&gt;&amp;.sql" in section
+
+
+def test_several_dynamic_paths_are_counted_in_korean_without_a_stray_space():
+    edges = [_edge(2, spec="a/{}.sql", reason="dynamic"), _edge(3, spec="b/{}.sql", reason="dynamic")]
+    html = render(TEMPLATE, _graph(edges), [], "match", lang="ko")
+
+    assert "경로 2개가 실행 시점에 만들어집니다." in _section(html)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import ast
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from ..fileref import is_path, is_template
+from ..fileref import SUFFIXES, is_path, is_template
 
 MAX_QUOTE_CHARS = 200
 _JOIN_NAMES = ("join", "joinpath")
@@ -47,7 +47,13 @@ def _read(node: ast.AST, consumed: Set[int]) -> Found:
     if isinstance(node, ast.Call) and _is_join(node.func):
         return _joined(list(node.args), consumed)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        return _joined(_division_operands(node), consumed)
+        operands, inner = _chain(node, ast.Div)
+        hit = _joined(operands, consumed)
+        if hit is not None:
+            consumed.update(id(part) for part in inner)
+        return hit
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _concatenated(node, consumed)
     text = _text(node)
     return (text, node.lineno) if text is not None and is_path(text) else None
 
@@ -58,15 +64,37 @@ def _is_join(func: ast.AST) -> bool:
     return isinstance(func, ast.Attribute) and func.attr in _JOIN_NAMES and _text(func.value) is None
 
 
-def _division_operands(node: ast.BinOp) -> List[ast.AST]:
-    """`a / "b" / "c"` as [a, "b", "c"]."""
+def _chain(node: ast.BinOp, op: type) -> Tuple[List[ast.AST], List[ast.AST]]:
+    """`a / "b" / "c"` as ([a, "b", "c"], [the inner `a / "b"` nodes])."""
     operands = [node.right]
+    inner: List[ast.AST] = []
     left = node.left
-    while isinstance(left, ast.BinOp) and isinstance(left.op, ast.Div):
+    while isinstance(left, ast.BinOp) and isinstance(left.op, op):
+        inner.append(left)
         operands.append(left.right)
         left = left.left
     operands.append(left)
-    return operands[::-1]
+    return operands[::-1], inner
+
+
+def _concatenated(node: ast.BinOp, consumed: Set[int]) -> Found:
+    """`"sql/" + name + ".sql"` as `sql/{}.sql`; only a chain that ends in a SQL file name."""
+    operands, inner = _chain(node, ast.Add)
+    last = _text(operands[-1])
+    if last is None or not last.lower().endswith(SUFFIXES):
+        return None
+    pieces = [_text(operand) for operand in operands]
+    if all(piece is not None for piece in pieces):
+        spec = "".join(pieces)  # type: ignore[arg-type]
+    elif last.startswith("/"):
+        spec = last
+    else:
+        spec = "".join("{}" if piece is None else piece for piece in pieces)
+    if not is_path(spec):
+        return None
+    consumed.update(id(part) for part in inner)
+    consumed.update(id(operand) for operand in operands if _text(operand) is not None)
+    return spec, operands[-1].lineno
 
 
 def _joined(operands: Sequence[ast.AST], consumed: Set[int]) -> Found:

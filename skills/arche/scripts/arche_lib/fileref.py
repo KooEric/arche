@@ -12,8 +12,9 @@ _JINJA = re.compile(r"\{\{.*?\}\}")
 
 
 def is_path(text: str) -> bool:
-    """True for text that can name one SQL file: right suffix, a stem, no whitespace outside `{{ }}`."""
+    """True for text that can name one SQL file: right suffix, a stem, no whitespace outside `{{ }}`, not a URL."""
     return (len(SUFFIXES[0]) < len(text) <= MAX_SPEC_CHARS and text.lower().endswith(SUFFIXES)
+            and "://" not in text
             and not any(char.isspace() for char in _JINJA.sub("{}", text)))
 
 

@@ -6,7 +6,7 @@ from arche_lib import fileref
 @pytest.mark.parametrize("text, expected", [
     ("sql/load.sql", True), ("settle.HQL", True), ("{{ params.dir }}/load.sql", True),
     (".sql", False), ("select 1 from a.sql", False), ("load.sql ", False), ("notes.txt", False),
-    ("a b.sql", False),
+    ("a b.sql", False), ("s3://bucket/sql/x.sql", False), ("https://example.com/a.sql", False),
     ("a" * 197 + ".sql", False),
 ])
 def test_only_text_that_can_name_one_sql_file_is_a_path(text, expected):

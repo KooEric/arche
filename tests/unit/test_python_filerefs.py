@@ -76,3 +76,21 @@ def test_a_file_that_does_not_parse_has_no_references():
 
 def test_the_python_adapter_reports_file_references():
     assert [ref["spec"] for ref in python.extract("m.py", 'Q = "q/x.sql"\n')["file_refs"]] == ["q/x.sql"]
+
+
+def test_concatenated_paths_are_recorded():
+    source = (
+        'a = "sql/" + name + ".sql"\n'
+        'b = "sql/" + "b.sql"\n'
+        'c = BASE + "/sql/c.sql"\n'
+        'd = os.path.join(BASE, "sql/" + name + ".sql")\n'
+        'e = Path(d) / (name + ".hql")\n'
+        'f = "total: " + str(n)\n'
+    )
+
+    assert _specs(source) == [(1, "sql/{}.sql", True), (2, "sql/b.sql", False), (3, "/sql/c.sql", False),
+                              (4, "sql/{}.sql", True), (5, "{}.hql", True)]
+
+
+def test_a_chained_division_is_collected_once():
+    assert _specs('a = Path(B) / "a.sql" / "b.sql"\n') == [(1, "a.sql/b.sql", False)]

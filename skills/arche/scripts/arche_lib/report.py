@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import posixpath
 import re
 from collections import Counter, defaultdict
 from graphlib import CycleError, TopologicalSorter
@@ -470,6 +471,19 @@ _UNRESOLVED_REFERENCES = (
 )
 
 
+def _folded_files(node_ids, anchors):
+    """File links grouped by parent folder, the largest folder first."""
+    if not node_ids:
+        return f'<p class="empty">{T("Every SQL file is named by a parsed file.")}</p>'
+    folders = defaultdict(list)
+    for node_id in node_ids:
+        folders[posixpath.dirname(node_id.removeprefix("file:")) or "."].append(node_id)
+    return "".join(
+        f'<details class="group"><summary>{_code(folder + "/")} <span class="count">{len(members)}</span></summary>'
+        + _items((_file_link(node_id, anchors) for node_id in members), "", "columns") + '</details>'
+        for folder, members in sorted(folders.items(), key=lambda pair: (-len(pair[1]), pair[0])))
+
+
 def _file_references(edges, files, anchors):
     """SQL files nothing names, and written paths that were not followed. Empty without SQL or references."""
     sql = [file["id"] for file in files if file["lang"] == "sql"]
@@ -485,16 +499,16 @@ def _file_references(edges, files, anchors):
     dynamic = len(by_reason["dynamic"])
     warning = ""
     if dynamic:
-        counted = T("1 path is built at run time.") if dynamic == 1 else f'{dynamic:,} {T("paths are built at run time.")}'
+        counted = T("1 path is built at run time.") if dynamic == 1 else T("{count} paths are built at run time.").replace("{count}", f"{dynamic:,}")
         warning = f'<p class="callout" data-tone="warn">{counted} {T("A file listed here may still be used through one of them.")}</p>'
     body = (f'<h3>{T("SQL files with no static reference")} <span class="count">{len(unnamed)}</span></h3>' + warning
-            + _items((_file_link(node_id, anchors) for node_id in unnamed), T("Every SQL file is named by a parsed file."), "columns"))
+            + _folded_files(unnamed, anchors))
     for reason, title in _UNRESOLVED_REFERENCES:
         if by_reason[reason]:
             body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
                      + _items(by_reason[reason], "", "columns") + '</details>')
     return _section("file-references", T("SQL file references"), body,
-                    T("A reference is a SQL file path written as text in a parsed file. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read."))
+                    T("A reference is a SQL file path written as text in a parsed Python file. Paths in configuration files and includes inside SQL are not read, so a file listed here may still be used. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read."))
 
 
 def _graph_data(graph, files, anchors):
