@@ -11,6 +11,7 @@ import re
 from typing import NamedTuple
 
 from ..lexer import Rules, depth_at, line_of, mask
+from .jvm_http import routes
 from .pathutil import source_line
 
 _JAVA = Rules(templates=False, regex=False, word_quote_guard=False, nested_comments=False,
@@ -109,7 +110,8 @@ def extract(path, text):
     references = {match.group(0) for match in _TYPE_REFERENCE.finditer(masked.text, body_start)}
     if kotlin:
         references |= {match.group(1) for match in _CALL.finditer(masked.text, body_start)}
-    return {"imports": imports, "symbols": symbols, "package": package, "references": references}
+    return {"imports": imports, "symbols": symbols, "package": package, "references": references,
+            "http_routes": routes(path, text, masked)}
 
 
 class Context(NamedTuple):
