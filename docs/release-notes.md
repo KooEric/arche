@@ -2,6 +2,7 @@
 
 ## 1.0 출시 후보
 
+- SQL 참조: `.sql`·`.hql` 파일을 노드로 스캔하고, Python 파일에 문자열로 적힌 SQL 경로를 `REFERENCES` 연결로 기록합니다. `os.path.join`과 `Path /`로 이은 경로도 읽습니다. 리포트의 **SQL 파일 참조**에서 정적 참조가 없는 SQL 파일과 따라가지 못한 경로를 볼 수 있습니다. SQL 내용, `task >> task`, `template_searchpath`는 읽지 않습니다.
 - HTTP 인식: Python에서 다른 파일이 `include_router(..., prefix=...)`로 붙인 접두사를 라우트에 적용합니다. chi의 중첩 `Route`, `this.api.get(...)` 형태의 axios 호출, 같은 파일의 상수 문자열을 넘기는 `fetch(URL)`도 읽습니다.
 - 감사: TypeScript·JavaScript·Dart·Go에서 export되지 않았고 이름이 파일·라이브러리·패키지 안에서 한 번만 나오는 선언을 후보로 냅니다.
 - 지도: 연결이 많은 화면은 선을 흐리게 그리고, 카드에 마우스를 올리거나 선택하면 그 카드의 연결만 보여 줍니다.
