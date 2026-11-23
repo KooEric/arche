@@ -297,7 +297,8 @@ def build_atlas(inventory: dict, graph: dict, document: Optional[dict] = None, d
         file_links[index_of[source], index_of[target], edge["status"]] += 1
         a, b = owner.get(source), owner.get(target)
         if a and b and a != b:
-            counts[a, b, edge["status"], "import", None, None] += 1
+            kind = "reference" if edge.get("kind") == "REFERENCES" else "import"
+            counts[a, b, edge["status"], kind, None, None] += 1
     host_parts = {host: part["id"] for part in parts for host in part["hosts"]}
     for connection in graph.get("http_connections", ()):
         request = connection["request"]
