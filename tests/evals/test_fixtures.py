@@ -57,7 +57,9 @@ def test_table_reads_are_scored_as_their_own_exact_sets():
 
     assert ("dags/ledger/sql/close.sql", "dags/billing/sql/settle.hql", "billing.settled", "verified", "name") in observed["reads"]
     assert observed["external_tables"] == {("dags/billing/sql/load_orders.sql", "staging.orders"),
-                                           ("dags/shared/sql/report.sql", "shared.calendar")}
+                                           ("dags/shared/sql/report.sql", "shared.calendar"),
+                                           ("dags/shared/sql/stage_a.sql", "shared.calendar"),
+                                           ("dags/shared/sql/stage_b.sql", "shared.calendar")}
     assert "reads" in score.EXACT_SETS and "external_tables" in score.EXACT_SETS
 
 

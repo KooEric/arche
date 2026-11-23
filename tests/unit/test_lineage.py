@@ -51,3 +51,12 @@ def test_a_fixed_schema_matches_a_writer_written_without_a_schema():
 
     assert lineage.resolve("acct.ledger", False, writers) == [{"status": "inferred", "to": "w.sql", "rule": "table_name"}]
     assert lineage.resolve("ledger", False, writers) == [{"status": "verified", "to": "w.sql", "rule": "name"}]
+
+
+def test_a_catalog_prefix_on_one_side_is_inferred():
+    writers = lineage.index([("w.sql", "dw.fa"), ("x.sql", "hive.dw.fb")])
+
+    assert lineage.resolve("hive.dw.fa", False, writers) == [{"status": "inferred", "to": "w.sql", "rule": "table_name"}]
+    assert lineage.resolve("dw.fb", False, writers) == [{"status": "inferred", "to": "x.sql", "rule": "table_name"}]
+    assert lineage.resolve("other.fa", False, writers) == [{"status": "external", "table": "other.fa"}]
+    assert lineage.resolve("spark.other.fa", False, writers) == [{"status": "external", "table": "spark.other.fa"}]

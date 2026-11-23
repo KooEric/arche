@@ -99,7 +99,7 @@ def _file_details(graph, files):
         target = index.get(edge["to"], -1)
         details[index[edge["from"]]]["o"].append(
             [target, "" if target >= 0 else (edge["to"] or edge.get("spec", "")).removeprefix("file:"), edge["status"],
-             edge["evidence"]["line"], edge.get("reason", "")])
+             edge["evidence"]["line"], edge.get("reason", ""), edge.get("table", "")])
     for item in graph["externals"]:
         details[index[item["from"]]]["x"].append([item["package"], item["line"]])
     return json.dumps(details, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
@@ -518,22 +518,30 @@ _UNRESOLVED_READS = (
 )
 
 
+MAX_READERS_SHOWN = 5
+
+
 def _external_tables(external, anchors):
     """External tables grouped by schema, each with the files reading it."""
     readers = defaultdict(list)
     for item in external:
-        location = _code(item["from"].removeprefix("file:") + ":" + str(item["line"]))
-        readers[item["table"]].append(f'{_file_link(item["from"], anchors)} {location}')
+        readers[item["table"]].append(f'{_file_link(item["from"], anchors)}:{item["line"]:d}')
     schemas = defaultdict(list)
     for table in sorted(readers):
         schemas[table.rpartition(".")[0]].append(table)
     blocks = []
     for schema, tables in sorted(schemas.items(), key=lambda pair: (-len(pair[1]), pair[0])):
         label = _code(schema) if schema else T("no schema")
-        rows = (f'{_code(table)} · ' + ", ".join(readers[table]) for table in tables)
+        rows = (f'{_code(table)} · ' + _readers(readers[table]) for table in tables)
         blocks.append(f'<details class="group"><summary>{label} <span class="count">{len(tables)}</span></summary>'
                       + _items(rows, "") + '</details>')
     return "".join(blocks)
+
+
+def _readers(links):
+    shown = ", ".join(links[:MAX_READERS_SHOWN])
+    hidden = len(links) - MAX_READERS_SHOWN
+    return f'{shown}, {T("+{count} more").format(count=hidden)}' if hidden > 0 else shown
 
 
 def _tables(graph, anchors):

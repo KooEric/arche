@@ -323,7 +323,7 @@ clearModule.addEventListener('click', () => selectModule(null));
 const fileDetails = JSON.parse(document.getElementById('file-details').textContent);
 if (fileDetails) {
   const incoming = fileDetails.map(() => []);
-  fileDetails.forEach((detail, from) => { for (const edge of detail.o) if (edge[0] >= 0) incoming[edge[0]].push([from, '', edge[2], edge[3], edge[4]]); });
+  fileDetails.forEach((detail, from) => { for (const edge of detail.o) if (edge[0] >= 0) incoming[edge[0]].push([from, '', edge[2], edge[3], edge[4], edge[5]]); });
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   const block = (parent, title, items, empty) => {
     const heading = make('h3', title + ' ');
@@ -336,7 +336,7 @@ if (fileDetails) {
   };
   const relation = (edge, evidenceFile) => {
     const parts = [];
-    if (edge[0] >= 0) { const link = make('a'); link.href = '#file-' + edge[0]; link.append(make('code', rows[edge[0]].dataset.file)); parts.push(link); }
+    if (edge[0] >= 0) { const link = make('a'); link.href = '#file-' + edge[0]; link.append(make('code', rows[edge[0]].dataset.file)); parts.push(link); if (edge[5]) parts.push(' · ', make('code', edge[5])); }
     else parts.push(make('code', edge[1]));
     const status = make('span', edge[2], 'status');
     status.dataset.state = edge[2];

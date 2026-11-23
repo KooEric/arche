@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from typing import Dict, List, Optional, Set, Tuple
 
 MAX_QUOTE_CHARS = 200
@@ -71,6 +72,8 @@ def _name(token: str) -> Optional[str]:
     parts = [part.strip().strip('`"').lower() for part in token.split(".")]
     if not 1 <= len(parts) <= MAX_NAME_PARTS or not all(parts) or parts[0][0].isdigit():
         return None
+    if any(char in part for part in parts for char in "/:"):  # a path or URI in backticks, not a table
+        return None
     return ".".join(parts)
 
 
@@ -78,7 +81,8 @@ def tables(path: str, text: str) -> dict:
     """{"tables": [{"table", "access", "line", "quote", "dynamic", "temp"}], "degraded": bool}."""
     masked, unterminated = mask(text)
     source = _placeholders(masked)
-    lines = text.splitlines()
+    lines = text.split("\n")  # line numbers count "\n" only, so the quote must come from the same split
+    newlines = [match.start() for match in re.finditer("\n", source)]
     tokens = [(match.group(), match.start()) for match in _TOKEN.finditer(source)]
     words = [token.upper() for token, _ in tokens]
     found: Dict[Tuple[str, str], dict] = {}
@@ -93,7 +97,7 @@ def tables(path: str, text: str) -> dict:
         name = _name(tokens[index][0])
         if name is None or (access == "read" and name in ctes):
             return
-        line = source.count("\n", 0, tokens[index][1]) + 1
+        line = bisect_left(newlines, tokens[index][1]) + 1
         quote = lines[line - 1].strip()[:MAX_QUOTE_CHARS] if line <= len(lines) else ""
         found.setdefault((name, access), {"table": name, "access": access, "line": line, "quote": quote,
                                          "dynamic": "{}" in name.rsplit(".", 1)[-1], "temp": temp})
@@ -114,8 +118,14 @@ def tables(path: str, text: str) -> dict:
     for index, word in enumerate(words):
         if word == "(":
             selects.append(False)
-            if index >= 2 and words[index - 1] == "AS" and words[index - 3:index - 2] in (["WITH"], ["RECURSIVE"], [","]):
-                ctes.add(_name(tokens[index - 2][0]) or "")
+            if index >= 2 and words[index - 1] == "AS":
+                declared = index - 2
+                if words[declared] == ")":  # WITH name (col, ...) AS (
+                    while declared >= 0 and words[declared] != "(":
+                        declared -= 1
+                    declared -= 1
+                if declared >= 1 and words[declared - 1] in ("WITH", "RECURSIVE", ","):
+                    ctes.add(_name(tokens[declared][0]) or "")
         elif word == ")":
             if len(selects) > 1:
                 selects.pop()

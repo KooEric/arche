@@ -44,3 +44,16 @@ def test_reads_leave_other_edges_and_non_sql_repositories_alone():
     graph = _graph({"app/main.py": "import os\n"})
 
     assert graph["edges"] == [] and graph["external_tables"] == []
+
+
+def test_a_table_a_file_wrote_earlier_is_its_own_source():
+    sources = {
+        "q/a.sql": "CREATE TABLE tmp.stage AS SELECT * FROM ods.a;\nINSERT OVERWRITE TABLE dw.fa SELECT * FROM tmp.stage;\n",
+        "q/b.sql": "CREATE TABLE tmp.stage AS SELECT * FROM ods.b;\nINSERT OVERWRITE TABLE dw.fb SELECT * FROM tmp.stage;\n",
+        "q/c.sql": "SELECT * FROM tmp.stage;\n",
+    }
+    graph = _graph(sources)
+
+    assert [(e["from"], e["to"]) for e in _reads(graph)] == [
+        ("file:q/c.sql", "file:q/a.sql"), ("file:q/c.sql", "file:q/b.sql")]
+    assert [x["table"] for x in graph["external_tables"]] == ["ods.a", "ods.b"]

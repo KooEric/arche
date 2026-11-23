@@ -10,7 +10,9 @@
     "dags/ledger/sql/close.sql",
     "dags/ledger/sql/report.sql",
     "dags/ledger/sql/summary.sql",
-    "dags/shared/sql/report.sql"
+    "dags/shared/sql/report.sql",
+    "dags/shared/sql/stage_a.sql",
+    "dags/shared/sql/stage_b.sql"
   ],
   "skipped": [],
   "imports": [],
@@ -53,6 +55,8 @@
   ],
   "external_tables": [
     {"from": "dags/billing/sql/load_orders.sql", "table": "staging.orders"},
-    {"from": "dags/shared/sql/report.sql", "table": "shared.calendar"}
+    {"from": "dags/shared/sql/report.sql", "table": "shared.calendar"},
+    {"from": "dags/shared/sql/stage_a.sql", "table": "shared.calendar"},
+    {"from": "dags/shared/sql/stage_b.sql", "table": "shared.calendar"}
   ]
 }

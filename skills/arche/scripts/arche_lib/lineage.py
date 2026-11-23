@@ -15,12 +15,25 @@ def index(writes: Iterable[Tuple[str, str]]) -> dict:
     return {"files": {table: sorted(paths) for table, paths in files.items()}, "names": names}
 
 
+def _differs_by_catalog(one: str, other: str) -> bool:
+    """True when one name has three parts, the other two, and the two equal the last two of the three."""
+    a, b = one.split("."), other.split(".")
+    longer, shorter = (a, b) if len(a) > len(b) else (b, a)
+    return len(longer) == 3 and len(shorter) == 2 and longer[1:] == shorter
+
+
 def resolve(table: str, dynamic: bool, writers: dict) -> List[dict]:
     """verified (rule name), inferred (rule table_name), unresolved (dynamic|ambiguous) or external."""
     if dynamic:
         return [{"status": "unresolved", "spec": table, "reason": "dynamic"}]
     if "{}" not in table and table in writers["files"]:
         return [{"status": "verified", "to": path, "rule": "name"} for path in writers["files"][table]]
+    if "{}" not in table:
+        prefixed = sorted(name for name in writers["files"] if "{}" not in name and _differs_by_catalog(table, name))
+        if len(prefixed) == 1:
+            return [{"status": "inferred", "to": path, "rule": "table_name"} for path in writers["files"][prefixed[0]]]
+        if prefixed:
+            return [{"status": "unresolved", "spec": table, "reason": "ambiguous", "candidates": prefixed}]
     prefix, _, last = table.rpartition(".")
     same_name = writers["names"].get(last, [])
     # A schema that is a run-time value or absent, on either side, can only be matched by the table name.

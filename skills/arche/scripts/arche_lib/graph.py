@@ -129,9 +129,13 @@ def _reads(analyzed: List[dict], extracted: Dict[str, dict]) -> Tuple[List[dict]
     for path in paths:
         records = extracted[path]["tables"]
         local = {item["table"] for item in records if item["temp"]}
+        own_writes = {item["table"]: item["line"] for item in records
+                      if item["access"] == "write" and not item["temp"] and not item["dynamic"]}
         for item in records:
             if item["access"] != "read" or item["table"] in local:
                 continue
+            if item["table"] in own_writes and own_writes[item["table"]] <= item["line"]:
+                continue  # the file made this table itself before reading it
             for result in lineage.resolve(item["table"], item["dynamic"], writers):
                 if result["status"] == "external":
                     external.setdefault((path, item["table"]),
@@ -375,7 +379,8 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
         "inventory_sha256": inventory_digest(inventory),
         "repo": {"name": repo["name"], "commit": repo["commit"], "dirty": repo["dirty"]},
         "nodes": _nodes(analyzed, extracted),
-        "edges": sorted(edges + _references(analyzed, extracted) + reads, key=_edge_key),
+        "edges": sorted(edges + _references(analyzed, extracted) + reads,
+                       key=lambda edge: _edge_key(edge) + (edge.get("table", ""),)),
         "externals": _dedupe_externals(externals),
         "external_tables": external_tables,
         "http_connections": connections,

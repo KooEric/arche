@@ -14,10 +14,10 @@ def _unresolved(line, table, reason):
             "table": table, "spec": table, "reason": reason, "evidence": {"path": "q/report.sql", "line": line, "quote": "q"}}
 
 
-def _graph(edges=(), external=()):
+def _graph(edges=(), external=(), files=FILES):
     return {
         "repo": {"name": "sample", "commit": None, "dirty": None},
-        "nodes": [{"type": "file", "id": "file:" + path, "lang": "sql", "lines": 1} for path in FILES],
+        "nodes": [{"type": "file", "id": "file:" + path, "lang": "sql", "lines": 1} for path in files],
         "edges": list(edges), "externals": [], "skipped": [],
         "external_tables": [{"from": "file:" + path, "table": table, "line": line} for path, table, line in external],
     }
@@ -36,7 +36,8 @@ def test_external_tables_are_folded_by_schema_with_their_readers():
     assert '<code>staging</code> <span class="count">2</span>' in section
     assert section.index("<code>staging</code>") < section.index("no schema")
     assert "<code>staging.orders</code>" in section
-    assert "<code>q/load.sql:1</code>" in section and "<code>q/report.sql:4</code>" in section
+    assert '<code>q/load.sql</code></a>:1' in section and '<code>q/report.sql</code></a>:4' in section
+    assert "<code>q/load.sql:1</code>" not in section
 
 
 def test_names_that_were_not_followed_are_folded_by_reason():
@@ -71,3 +72,30 @@ def test_the_section_is_translated():
     html = render(TEMPLATE, _graph(external=[("q/load.sql", "staging.orders", 1)]), [], "match", lang="ko")
 
     assert "외부 테이블" in _section(html)
+
+
+def test_external_table_readers_are_capped_with_a_note_for_the_rest():
+    external = [(f"q/r{n}.sql", "staging.orders", n) for n in range(1, 8)]
+    section = _section(render(TEMPLATE, _graph(external=external, files=[e[0] for e in external]), [], "match"))
+
+    assert section.count("</code></a>:") == 5
+    assert "+2 more" in section
+    assert "</code></a>:6" not in section
+
+
+def test_the_reader_note_is_translated():
+    external = [(f"q/r{n}.sql", "staging.orders", n) for n in range(1, 8)]
+    section = _section(render(TEMPLATE, _graph(external=external, files=[e[0] for e in external]), [], "match", lang="ko"))
+
+    assert "외 2곳" in section
+
+
+def test_large_reports_carry_the_table_name_in_file_details_as_escaped_json():
+    edge = {"kind": "READS", "from": "file:q/report.sql", "to": "file:q/load.sql", "origin": "script",
+            "status": "verified", "rule": "name", "table": "billing.<orders>",
+            "evidence": {"path": "q/report.sql", "line": 2, "quote": "q"}}
+    html = render(TEMPLATE, _graph(edges=[edge]), [], "match", lazy_file_limit=0)
+    data = html.split('id="file-details">')[1].split("</script>")[0]
+
+    assert '"billing.\\u003corders>"' in data
+    assert "billing.<orders>" not in html

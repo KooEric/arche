@@ -128,3 +128,19 @@ def test_backslash_escapes_and_quoted_spans_do_not_swallow_the_file():
 
 def test_an_apostrophe_inside_a_backtick_name_is_part_of_the_name():
     assert _found("select * from `it's` ; select * from b") == [("read", "b"), ("read", "it's")]
+
+
+def test_a_cte_with_a_column_list_is_not_a_table():
+    source = "WITH orders (id, amt) AS (SELECT 1 FROM ods.raw) INSERT INTO dw.x SELECT * FROM orders"
+
+    assert _found(source) == [("read", "ods.raw"), ("write", "dw.x")]
+
+
+def test_a_quote_comes_from_the_same_line_as_its_number():
+    record = tables("q.sql", "-- a\x0cb\nSELECT 1;\nSELECT * FROM a.x")["tables"][0]
+
+    assert (record["line"], record["quote"]) == (3, "SELECT * FROM a.x")
+
+
+def test_a_path_in_backticks_is_not_a_table():
+    assert _found("SELECT * FROM parquet.`s3://bucket/path/x.parquet` p JOIN a.b ON 1=1") == [("read", "a.b")]

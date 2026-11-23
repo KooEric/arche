@@ -93,6 +93,7 @@ _KO = {
     "External tables": "외부 테이블",
     "Every table read here is written by a scanned SQL file.": "여기서 읽는 모든 테이블을 스캔한 SQL 파일이 씁니다.",
     "no schema": "스키마 없음",
+    "+{count} more": "외 {count}곳",
     "Table names built at run time": "실행 시점에 만들어지는 테이블 이름",
     "Table names matching several tables": "여러 테이블과 일치하는 테이블 이름",
     "SQL file references": "SQL 파일 참조",
