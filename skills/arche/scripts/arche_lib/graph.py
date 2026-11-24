@@ -108,10 +108,11 @@ def _config_references(inventory: dict, extracted: Dict[str, dict]) -> Tuple[Lis
                 continue
             base = {"kind": "REFERENCES", "from": _file_id(path), "origin": "script", "status": result["status"],
                     "via": ref["via"], "evidence": {"path": path, "line": ref["line"], "quote": ref["quote"]}}
+            glob = {key: result[key] for key in ("glob", "matched") if key in result}
             if result["status"] in _RESOLVED:
-                edge = {**base, "rule": result["rule"], "to": _file_id(result["to"])}
+                edge = {**base, **glob, "rule": result["rule"], "to": _file_id(result["to"])}
             else:
-                edge = {**base, "to": None, "spec": result["spec"], "reason": result["reason"]}
+                edge = {**base, **glob, "to": None, "spec": result["spec"], "reason": result["reason"]}
             if edge.get("to") != base["from"]:
                 edges.setdefault(_edge_key(edge), edge)
         externals.extend({"from": _file_id(path), "package": item["package"], "line": item["line"]}

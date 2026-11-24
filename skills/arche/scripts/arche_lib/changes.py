@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from pathlib import Path
 
-from . import SCHEMA_VERSION, gitinfo
+from . import SCHEMA_VERSION, gitinfo, pathref
 from .errors import IntegrityError, UsageError
 
 
@@ -46,8 +46,11 @@ def _reverse_imports(graph: dict) -> dict:
 
     A Terraform module edge points at one representative file of the module
     directory (`module_dir`); every .tf file in that directory is part of the same
-    module, so each of them counts as a dependency of the caller."""
+    module, so each of them counts as a dependency of the caller. Likewise every file
+    a Terraform `fileset` pattern (`glob`) matches is a dependency, not only the one
+    the edge points at."""
     module_files = defaultdict(list)
+    files = sorted(node["id"][5:] for node in graph["nodes"] if node.get("type") == "file")
     for node in graph["nodes"]:
         if node.get("type") == "file" and node.get("lang") == "terraform":
             path = node["id"][5:]
@@ -61,6 +64,11 @@ def _reverse_imports(graph: dict) -> dict:
             reverse[target[5:]].add(source[5:])
             for member in module_files.get(edge.get("module_dir"), ()):
                 reverse[member].add(source[5:])
+            if edge.get("glob"):
+                regex = pathref.glob_pattern(edge["glob"])
+                for path in files:
+                    if regex.match(path):
+                        reverse[path].add(source[5:])
     return reverse
 
 

@@ -2,7 +2,8 @@
 
 Comments (`#`, `//`, `/* */`) are dropped. A quoted string keeps its literal text;
 a `${ ... }` or `%{ ... }` template inside it is skipped with its nesting and marks
-the string as templated. A heredoc (`<<EOF`, `<<-EOF`) is one string token.
+the string as templated, except `${path.module}`, `${path.root}` and `${path.cwd}`,
+which are kept as written so a file path's base directory stays known. A heredoc (`<<EOF`, `<<-EOF`) is one string token.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from typing import List, NamedTuple, Tuple
 
 _IDENT_START = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_")
 _IDENT = _IDENT_START | frozenset("0123456789-")
+PATH_VALUES = frozenset({"path.module", "path.root", "path.cwd"})
 
 
 class Token(NamedTuple):
@@ -88,8 +90,12 @@ def _string(text: str, i: int) -> Tuple[str, bool, int]:
             end = _template_end(text, i + 2)
             if end < 0:
                 return "", templated, -1
-            templated = True
-            parts.append("${}")
+            expression = text[i + 2:end - 1].strip()
+            if char == "$" and expression in PATH_VALUES:
+                parts.append("${" + expression + "}")
+            else:
+                templated = True
+                parts.append("${}")
             i = end
             continue
         parts.append(char)

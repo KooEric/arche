@@ -167,3 +167,110 @@ def test_a_change_to_any_file_of_the_module_reaches_its_caller():
 
     assert _dependents(reverse, "infra/modules/vpc/variables.tf") == ["infra/main.tf"]
     assert _dependents(reverse, "infra/modules/vpc/main.tf") == ["infra/main.tf"]
+
+
+FILE_READS = '''locals {
+  workspaces = { for f in fileset(path.module, "workspaces/**/*.yaml") : f => yamldecode(file("${path.module}/${f}")) }
+  policy     = file("${path.module}/policies/base.json")
+  user_data  = templatefile("templates/user_data.sh.tpl", { name = var.name })
+  teams      = fileset("${path.root}/teams", "*.{yml,yaml}")
+  dynamic    = file("${var.dir}/x.json")
+  formatted  = file(format("%s/a.json", path.module))
+}
+'''
+
+
+def test_file_functions_become_path_references():
+    refs = terraform.extract("onboarding/main.tf", FILE_READS)["path_refs"]
+
+    assert [(r["via"], r["spec"], r["base"], r["target"], r.get("inferred", False)) for r in refs] == [
+        ("terraform:fileset", "workspaces/**/*.yaml", "onboarding", "glob", False),
+        ("terraform:file", "${}", "onboarding", "file", False),
+        ("terraform:file", "policies/base.json", "onboarding", "file", False),
+        ("terraform:templatefile", "templates/user_data.sh.tpl", "onboarding", "file", True),
+        ("terraform:fileset", "teams/*.{yml,yaml}", "onboarding", "glob", True),
+        ("terraform:file", "${}/x.json", "onboarding", "file", True),
+    ]
+
+
+def test_path_module_template_is_not_a_dynamic_module_source():
+    toks, _ = tokens('x = "${path.module}/a" y = "${var.a}/b"\n')
+
+    assert (toks[2].value, toks[2].templated) == ("${path.module}/a", False)
+    assert (toks[5].value, toks[5].templated) == ("${}/b", True)
+
+
+ONBOARDING = {
+    "onboarding/main.tf": FILE_READS,
+    "onboarding/workspaces/team-a/app.yaml": "name: app\n",
+    "onboarding/workspaces/team-b/db.yaml": "name: db\n",
+    "onboarding/workspaces/README.md": "docs\n",
+    "onboarding/policies/base.json": "{}\n",
+    "onboarding/templates/user_data.sh.tpl": "#!/bin/sh\n",
+    "onboarding/teams/a.yml": "x: 1\n",
+}
+
+
+def _onboarding_graph():
+    files = []
+    for path, text in ONBOARDING.items():
+        measured = {"bytes": len(text), "lines": count_lines(text), "sha256": hashlib.sha256(text.encode()).hexdigest()}
+        lang = language_for(path)
+        files.append({"path": path, "status": "analyzed", "lang": lang, **measured} if lang
+                     else {"path": path, "status": "skipped", "reason": "unsupported_lang", **measured})
+    inventory = {"schema_version": "0.1", "repo": {"name": "demo", "root": "/abs/demo", "commit": None, "dirty": None},
+                 "files": files}
+    return build_graph(inventory, ONBOARDING.get)
+
+
+def test_fileset_links_to_its_first_match_and_records_the_pattern():
+    edges = [e for e in _onboarding_graph()["edges"] if e["kind"] == "REFERENCES"]
+    by_via = {(e["via"], e["status"]): e for e in edges}
+
+    workspaces = by_via[("terraform:fileset", "verified")]
+    assert (workspaces["to"], workspaces["rule"], workspaces["glob"], workspaces["matched"]) == (
+        "file:onboarding/workspaces/team-a/app.yaml", "glob", "onboarding/workspaces/**/*.yaml", 2)
+    teams = by_via[("terraform:fileset", "inferred")]
+    assert (teams["to"], teams["matched"]) == ("file:onboarding/teams/a.yml", 1)
+    assert {(e["via"], e["status"], e.get("reason")) for e in edges if e["via"] == "terraform:file"} == {
+        ("terraform:file", "unresolved", "dynamic"), ("terraform:file", "unresolved", "target_skipped")}
+    assert ("terraform:templatefile", "unresolved") in by_via  # a .tpl file is not parsed
+
+
+def test_a_change_to_any_file_a_fileset_matches_reaches_the_caller():
+    reverse = _reverse_imports(_onboarding_graph())
+
+    assert _dependents(reverse, "onboarding/workspaces/team-b/db.yaml") == ["onboarding/main.tf"]
+
+
+MODULE_ARG = {
+    "onboarding/main.tf": ('module "workspaces" {\n'
+                           '  source     = "./modules/workspace"\n'
+                           '  config_dir = "${path.module}/workspaces"\n'
+                           '  dynamic    = "${path.module}/${var.x}"\n'
+                           '  self       = "${path.module}"\n'
+                           '}\n'),
+    "onboarding/modules/workspace/main.tf": 'locals { all = fileset(var.config_dir, "**/*.yaml") }\n',
+    "onboarding/workspaces/a/app.yaml": "name: app\n",
+    "onboarding/workspaces/b/db.yaml": "name: db\n",
+}
+
+
+def test_a_path_module_string_names_a_folder_and_covers_every_file_under_it():
+    global ONBOARDING
+    saved, ONBOARDING = ONBOARDING, MODULE_ARG
+    try:
+        graph = _onboarding_graph()
+    finally:
+        ONBOARDING = saved
+    refs = [e for e in graph["edges"] if e.get("via") == "terraform:path"]
+
+    assert [(e["status"], e["to"], e["glob"], e["matched"]) for e in refs] == [
+        ("verified", "file:onboarding/workspaces/a/app.yaml", "onboarding/workspaces/**", 2)]
+    assert _dependents(_reverse_imports(graph), "onboarding/workspaces/b/db.yaml") == ["onboarding/main.tf"]
+
+
+def test_strings_inside_file_function_calls_are_not_read_twice():
+    refs = terraform.extract("m/main.tf", 'x = fileset("${path.module}/teams", "*.yml")\n')["path_refs"]
+
+    assert [(r["via"], r["spec"]) for r in refs] == [("terraform:fileset", "teams/*.yml")]
