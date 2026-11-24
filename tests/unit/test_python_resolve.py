@@ -306,3 +306,29 @@ def test_poetry_dependencies_are_declared():
     assert python_resolve.resolve(_imp("import", "requests"), "main.py", ctx) == [
         {"status": "external", "package": "requests"}
     ]
+
+
+def test_plain_airflow_folder_at_a_source_root_does_not_hide_the_installed_package():
+    ctx = _ctx(["airflow/dags/load.py", "airflow/plugins/hooks.py"])
+
+    for imp in (_imp("from", "airflow", ["DAG"]), _imp("from", "airflow.models", ["Variable"]),
+                _imp("import", "airflow.operators.python")):
+        assert python_resolve.resolve(imp, "airflow/dags/load.py", ctx) == [
+            {"status": "external", "package": "airflow"}
+        ]
+
+
+def test_plain_airflow_folder_still_resolves_the_modules_it_holds():
+    ctx = _ctx(["airflow/dags/load.py", "airflow/plugins/hooks.py"])
+
+    found = python_resolve.resolve(_imp("from", "airflow.dags", ["load"]), "airflow/plugins/hooks.py", ctx)
+
+    assert found == [_verified("airflow/dags/load.py")]
+
+
+def test_plain_airflow_folder_beside_the_importer_does_not_hide_the_installed_package():
+    ctx = _ctx(["dags/airflow/common.py", "dags/main.py"])
+
+    assert python_resolve.resolve(_imp("from", "airflow.models", ["Variable"]), "dags/main.py", ctx) == [
+        {"status": "external", "package": "airflow"}
+    ]

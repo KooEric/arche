@@ -212,6 +212,21 @@ def _provides(directory: str, parts: Sequence[str], imp: dict, ctx: Context) -> 
     )
 
 
+def _shadows_installed(root: str, parts: Sequence[str], found: Optional[Sequence[dict]], ctx: Context) -> bool:
+    """True when `root` holds only a plain folder named like the import's top level
+    (no __init__.py, no module file, not under src/) and that folder does not hold
+    the imported module. Python would keep searching sys.path, so such a folder,
+    like an `airflow/` folder of DAGs, does not hide the installed package."""
+    found = found or []
+    return (
+        _join(root, parts[:1]) in ctx.package_dirs
+        and not _found_locally(found)
+        and not any(r.get("reason") == "namespace_package" for r in found)
+        and _module_file(root, parts[:1], ctx) is None
+        and PurePosixPath(root).name != "src"
+    )
+
+
 def _external(parts: Sequence[str]) -> List[dict]:
     return [{"status": "external", "package": parts[0]}]
 
@@ -228,6 +243,8 @@ def _resolve_by_unique_name(parts: Sequence[str], imp: dict, ctx: Context) -> Op
             return _external(parts)
     if len(directories) == 1:
         found = _resolve_in_root(directories[0], parts, imp, ctx)
+        if _shadows_installed(directories[0], parts, found, ctx):
+            return _external(parts)
         return ([_unresolved(imp["module"], "module_not_found")] if found is None
                 else [_as_inferred(result) for result in found])
     if len(directories) > 1:
@@ -248,8 +265,12 @@ def resolve(imp: dict, importer: str, ctx: Context) -> List[dict]:
     parts = imp["module"].split(".")
     roots = _ordered_roots(importer, ctx)
     declared = parts[0] in ctx.declared
+    shadowed = False
     for root in roots:
         found = _resolve_in_root(root, parts, imp, ctx)
+        if _shadows_installed(root, parts, found, ctx):
+            shadowed = True
+            continue
         if found is not None and (not declared or _found_locally(found)):
             return found
     if declared:
@@ -257,6 +278,8 @@ def resolve(imp: dict, importer: str, ctx: Context) -> List[dict]:
     fallback = _resolve_by_unique_name(parts, imp, ctx)
     if fallback is not None:
         return fallback
+    if shadowed:
+        return _external(parts)
     if _top_level_known(parts[0], roots, ctx):
         return [_unresolved(imp["module"], "module_not_found")]
     return _external(parts)
