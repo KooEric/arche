@@ -103,8 +103,8 @@ _KO = {
     "A reference is a SQL file path written as text in a parsed Python or YAML file. Includes inside SQL are not read, so a file listed here may still be used. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read.":
         "참조는 분석한 Python·YAML 파일 안에 문자열로 적힌 SQL 파일 경로입니다. SQL 안의 include는 읽지 않으므로, 여기 나온 파일도 실제로는 쓰일 수 있습니다. 파일 의존성에서 SQL 파일을 열면 그 파일을 가리키는 곳을 볼 수 있습니다. 어느 operator나 task가 실행하는지는 읽지 않습니다.",
     "Configuration references": "설정 파일 참조",
-    "Paths that Docker Compose, GitHub Actions, Helm chart and dbt files write, grouped by the key that holds them. A folder links to its action.yml, Chart.yaml or dbt_project.yml when present, else to its first parsed file. A path_value entry is a value in a YAML file no schema describes that names an existing file; it is inferred. Remote images, actions, charts and packages are listed with the external packages.":
-        "Docker Compose, GitHub Actions, Helm 차트, dbt 파일에 적힌 경로를 그 경로가 들어 있는 키별로 묶었습니다. 폴더는 action.yml, Chart.yaml, dbt_project.yml이 있으면 그 파일로, 없으면 그 폴더에서 처음 분석한 파일로 연결합니다. path_value는 스키마를 모르는 YAML 파일의 값이 실제 파일을 가리키는 경우로, 추정입니다. 원격 이미지·액션·차트·패키지는 외부 패키지에 나옵니다.",
+    "Paths that Docker Compose, GitHub Actions, Helm chart and dbt files write, and files Terraform or Python reads, grouped by the key or function that holds them. A folder links to its action.yml, Chart.yaml or dbt_project.yml when present, else to its first parsed file. A path_value entry is a value in a YAML file no schema describes that names an existing file; it is inferred. Remote images, actions, charts and packages are listed with the external packages.":
+        "Docker Compose, GitHub Actions, Helm 차트, dbt 파일에 적힌 경로와 Terraform·Python이 읽는 파일을, 경로가 들어 있는 키나 함수별로 묶었습니다. 폴더는 action.yml, Chart.yaml, dbt_project.yml이 있으면 그 파일로, 없으면 그 폴더에서 처음 분석한 파일로 연결합니다. path_value는 스키마를 모르는 YAML 파일의 값이 실제 파일을 가리키는 경우로, 추정입니다. 원격 이미지·액션·차트·패키지는 외부 패키지에 나옵니다.",
     "Paths filled in at run time": "실행 시점에 채워지는 경로",
     "Paths matching no scanned file or folder": "스캔한 파일이나 폴더와 일치하지 않는 경로",
     "Paths to files that were not parsed": "분석하지 않은 파일을 가리키는 경로",

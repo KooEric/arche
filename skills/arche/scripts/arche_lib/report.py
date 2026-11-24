@@ -541,7 +541,7 @@ def _config_references(edges, anchors):
             body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
                      + _items(by_reason[reason], "", "columns") + '</details>')
     return _section("config-references", T("Configuration references"), body,
-                    T("Paths that Docker Compose, GitHub Actions, Helm chart and dbt files write, grouped by the key that holds them. A folder links to its action.yml, Chart.yaml or dbt_project.yml when present, else to its first parsed file. A path_value entry is a value in a YAML file no schema describes that names an existing file; it is inferred. Remote images, actions, charts and packages are listed with the external packages."))
+                    T("Paths that Docker Compose, GitHub Actions, Helm chart and dbt files write, and files Terraform or Python reads, grouped by the key or function that holds them. A folder links to its action.yml, Chart.yaml or dbt_project.yml when present, else to its first parsed file. A path_value entry is a value in a YAML file no schema describes that names an existing file; it is inferred. Remote images, actions, charts and packages are listed with the external packages."))
 
 
 _UNRESOLVED_READS = (

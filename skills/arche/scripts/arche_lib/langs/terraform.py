@@ -5,18 +5,31 @@ that directory's representative file, main.tf when present and otherwise the
 first .tf file by name; the edge carries the directory as `module_dir` so change
 analysis can treat the other files there as part of the same module. Registry,
 Git, HTTP and bucket sources are external.
+
+Files read with `file()`, `templatefile()`, the `file*` hash functions and
+`fileset()` become path references (`path_refs`, resolved by `pathref`). A path
+under `${path.module}` is relative to the file's own directory and verified; a
+bare relative path or one under `${path.root}` / `${path.cwd}` is relative to the
+directory Terraform runs in, assumed to be the same one, and inferred.
+
+Any other string that starts with `${path.module}/` (or `path.root`, `path.cwd`),
+such as a module argument `config_dir = "${path.module}/workspaces"`, is a path
+too (`terraform:path`): a file, or a directory standing for every file under it.
 """
 from __future__ import annotations
 
 import posixpath
 from typing import Dict, FrozenSet, List, NamedTuple, Optional, Sequence
 
-from .hcl_lexer import Token, tokens
+from .hcl_lexer import PATH_VALUES, Token, tokens
 
 MAX_QUOTE_CHARS = 200
 MAIN_FILE = "main.tf"
 SUFFIX = ".tf"
 # Block type -> (symbol name prefix, how many labels name it, exported)
+FILE_FUNCTIONS = frozenset({"file", "templatefile", "filebase64", "filemd5", "filesha1", "filesha256",
+                            "filesha512", "filebase64sha256", "filebase64sha512"})
+GLOB_FUNCTION = "fileset"
 _BLOCKS = {
     "resource": ("", 2, False),
     "data": ("data.", 2, False),
@@ -80,8 +93,90 @@ def extract(path: str, text: str) -> dict:
             value = toks[i + 2]
             imports.append(_import(path, value, token.line, lines))
         i += 1
-    result = {"imports": imports, "symbols": symbols}
+    result = {"imports": imports, "symbols": symbols, "path_refs": _file_reads(path, toks, lines)}
     return {**result, "degraded": True} if broken else result
+
+
+def _arguments(toks: Sequence[Token], start: int, used: Optional[set] = None) -> List[Optional[str]]:
+    """Arguments of the call whose `(` is toks[start]: a string's text, `${path.module}`
+    for a bare `path.module`, or None for anything more complex."""
+    args: List[List[Token]] = [[]]
+    depth = 0
+    for position in range(start + 1, len(toks)):
+        token = toks[position]
+        if used is not None:
+            used.add(position)
+        if token.kind == "punct" and token.value in "([{":
+            depth += 1
+        elif token.kind == "punct" and token.value in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif token.kind == "punct" and token.value == "," and depth == 0:
+            args.append([])
+            continue
+        args[-1].append(token)
+    values: List[Optional[str]] = []
+    for arg in args:
+        text = "".join(token.value for token in arg)
+        if len(arg) == 1 and arg[0].kind == "string":
+            values.append(arg[0].value)
+        elif text in PATH_VALUES and len(arg) == 3:
+            values.append("${" + text + "}")
+        else:
+            values.append(None)
+    return values
+
+
+def _file_reads(path: str, toks: Sequence[Token], lines: Sequence[str]) -> List[dict]:
+    used: set = set()  # token positions inside file-function calls, read there already
+    refs = _function_reads(path, toks, lines, used)
+    seen = {(ref["line"], ref["spec"]) for ref in refs}
+    for position, token in enumerate(toks):
+        if position in used or token.kind != "string" or token.templated or not token.value.startswith("${path."):
+            continue
+        ref = _path_ref(path, token.value, "tree", "path", token.line, lines)
+        if ref is not None and ref["spec"] != "." and (ref["line"], ref["spec"]) not in seen:
+            seen.add((ref["line"], ref["spec"]))
+            refs.append(ref)
+    return refs
+
+
+def _function_reads(path: str, toks: Sequence[Token], lines: Sequence[str], used: set) -> List[dict]:
+    refs: List[dict] = []
+    for index, token in enumerate(toks[:-1]):
+        name = token.value
+        if token.kind != "ident" or toks[index + 1].value != "(" or (name not in FILE_FUNCTIONS and name != GLOB_FUNCTION):
+            continue
+        args = _arguments(toks, index + 1, used)
+        if name == GLOB_FUNCTION:
+            if len(args) < 2 or args[0] is None or args[1] is None:
+                continue
+            written, target = args[0].rstrip("/") + "/" + args[1].lstrip("/"), "glob"
+        else:
+            if not args or args[0] is None:
+                continue
+            written, target = args[0], "file"
+        ref = _path_ref(path, written, target, name, token.line, lines)
+        if ref is not None:
+            refs.append(ref)
+    return refs
+
+
+def _path_ref(path: str, written: str, target: str, function: str, line: int, lines: Sequence[str]) -> Optional[dict]:
+    base, inferred, spec = posixpath.dirname(path), True, written
+    for value in PATH_VALUES:
+        marker = "${" + value + "}"
+        if spec.startswith(marker):
+            spec, inferred = spec[len(marker):].lstrip("/") or ".", value != "path.module"
+            break
+    else:
+        if target == "tree":
+            return None
+    if spec.startswith("/") or not spec:
+        return None
+    return {"spec": spec, "line": line, "quote": _quote(lines, line), "via": f"terraform:{function}",
+            "base": base, "target": target, "markers": [], **({"inferred": True} if inferred else {})}
 
 
 def _import(path: str, value: Token, line: int, lines: Sequence[str]) -> dict:
