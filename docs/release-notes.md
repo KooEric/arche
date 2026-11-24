@@ -2,6 +2,11 @@
 
 ## 1.0 출시 후보
 
+- Jsonnet: `.jsonnet`·`.libsonnet` 파일의 `import`·`importstr`·`importbin`을 읽어 연결합니다. 가져오는 파일 기준 상대 경로를 먼저 찾고, 그다음 `--jpath DIR`로 받은 라이브러리 폴더를 `jsonnet -J`처럼 나중에 준 것부터 찾습니다. 두 경우 모두 확정입니다. `--jpath`가 없으면 레포의 `lib/` 폴더를 추정으로 찾고, jsonnet-bundler 패키지는 외부로 기록합니다. `brief.txt`는 `-J`·`--jpath`·`JSONNET_PATH`가 적힌 줄을 보여 줍니다. 최상위 `local`은 심볼로 남깁니다.
+- 속도: import 단계가 파일마다 Python 구문 트리를 한 번만 만들고, FastAPI·Flask 이름이나 SQL 확장자가 없는 파일은 해당 탐색을 건너뜁니다. 절대 import는 그 이름을 가진 소스 루트만 찾습니다. apache/airflow(1만 5,600 파일)에서 132초가 39초로, 그 5배 크기에서 1,559초가 236초로 줄었고 결과는 같습니다.
+- 메모리: 감사(audit)가 파일마다 구문 트리를 요약한 뒤 버립니다. apache/airflow에서 render 최대 메모리가 2.4GB에서 237MB로 줄었고 결과는 같습니다.
+- Python: `__init__.py` 없는 로컬 `airflow/` 같은 폴더가, 그 안에 없는 모듈의 import를 가리지 않습니다. 이런 import는 외부 패키지로 분류됩니다.
+
 - Spring 라우트: Java·Kotlin에서 클래스의 `@RequestMapping` 접두사와 메서드의 `@GetMapping`·`@PostMapping`·`@PutMapping`·`@DeleteMapping`·`@PatchMapping`·`@RequestMapping(method = ...)`을 읽어 라우트로 기록합니다. `value =`·`path =`와 배열(`{...}`, `[...]`, `arrayOf(...)`) 형태를 읽고, 각 라우트는 매핑 어노테이션이 있는 줄을 가리킵니다. 경로가 상수나 식이면 읽지 않고, 클래스 접두사가 상수면 `prefix_unknown`으로 표시합니다. `@FeignClient`의 매핑은 라우트로 세지 않으며, Feign·gRPC 호출 연결은 아직 읽지 않습니다.
 - 테이블 lineage: SQL·HQL 파일에서 `FROM`·`JOIN`으로 읽는 테이블과 `INSERT`·`CREATE`·`MERGE`·`DELETE`로 쓰는 테이블을 읽어, 읽는 파일에서 쓰는 파일로 가는 `READS` 연결을 기록합니다. 스키마가 변수인 이름은 테이블 이름으로 맞춰 "추론됨"으로 표시하고, 이름 자체가 실행 시점에 정해지면 따라가지 않습니다. 리포트의 **테이블**에서 외부 테이블을 스키마별로 볼 수 있고, SQL 파일을 바꾸면 그 테이블을 읽는 SQL과 이를 가리키는 DAG 파일이 영향 범위에 듭니다. 컬럼 단위 lineage, Python 안의 SQL, `USE`로 정하는 기본 스키마는 읽지 않습니다. 같은 파일이 먼저 만든 테이블을 읽는 경우는 연결하지 않고, 한쪽에만 카탈로그가 붙은 이름은 "추론됨"으로 연결합니다.
 - SQL 참조: `.sql`·`.hql` 파일을 노드로 스캔하고, Python 파일에 문자열로 적힌 SQL 경로를 `REFERENCES` 연결로 기록합니다. `os.path.join`과 `Path /`로 이은 경로도 읽습니다. 리포트의 **SQL 파일 참조**에서 정적 참조가 없는 SQL 파일과 따라가지 못한 경로를 볼 수 있습니다. SQL 내용, `task >> task`, `template_searchpath`는 읽지 않습니다.

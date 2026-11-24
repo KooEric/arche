@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from arche_lib import cli
-from arche_lib.errors import IntegrityError
+from arche_lib.errors import IntegrityError, UsageError
 from arche_lib.graph import build_graph
 from arche_lib.jsonio import read_snapshot, write_json
 from arche_lib.runlog import record_step
@@ -25,6 +25,8 @@ GRAPH_FILE = "graph.json"
 def _parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, help="directory that holds inventory.json")
+    parser.add_argument("--jpath", action="append", default=[], metavar="DIR",
+                        help="repository-relative Jsonnet library directory, as given to jsonnet -J (repeatable)")
     return parser
 
 
@@ -43,9 +45,12 @@ def main(argv):
     args = _parser().parse_args(argv)
     out_dir = Path(args.out)
     started = time.time()
+    for directory in args.jpath:
+        if directory.startswith(("/", "\\")) or ".." in directory.replace("\\", "/").split("/"):
+            raise UsageError(f"--jpath must be a directory inside the repository, relative to its root: {directory}")
     inventory = read_snapshot(out_dir / INVENTORY_FILE)
     try:
-        graph = build_graph(inventory, make_reader(inventory))
+        graph = build_graph(inventory, make_reader(inventory), {"jpath": args.jpath})
     except (KeyError, TypeError) as exc:
         raise IntegrityError(f"{INVENTORY_FILE} is malformed: {exc!r}") from None
     write_json(out_dir / GRAPH_FILE, graph)

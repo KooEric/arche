@@ -37,7 +37,8 @@ def _extract_all(analyzed: List[dict], read_path: ReadPath) -> Tuple[Dict[str, d
     return extracted, failures
 
 
-def _contexts(analyzed: List[dict], extracted: Dict[str, dict], inventory: dict, read_path: ReadPath) -> dict:
+def _contexts(analyzed: List[dict], extracted: Dict[str, dict], inventory: dict, read_path: ReadPath,
+              options: Dict[str, list]) -> dict:
     """One context per adapter, shared by every language that adapter handles."""
     all_paths = [entry["path"] for entry in inventory["files"]]
     langs = sorted({entry["lang"] for entry in analyzed})
@@ -48,7 +49,8 @@ def _contexts(analyzed: List[dict], extracted: Dict[str, dict], inventory: dict,
             continue
         handled = {name for name in langs if adapter_for(name) is adapter}
         parsed = [e["path"] for e in analyzed if e["lang"] in handled and e["path"] in extracted]
-        by_adapter[adapter.__name__] = adapter.build_context(parsed, all_paths, read_path)
+        given = {name: options[name] for name in getattr(adapter, "OPTIONS", ()) if name in options}
+        by_adapter[adapter.__name__] = adapter.build_context(parsed, all_paths, read_path, **given)
     return {lang: by_adapter[adapter_for(lang).__name__] for lang in langs}
 
 
@@ -362,14 +364,18 @@ def _http(extracted: Dict[str, dict], edges: List[dict]) -> Tuple[List[dict], Li
     return connections, listed
 
 
-def build_graph(inventory: dict, read_path: ReadPath) -> dict:
-    """Deterministic: the same inventory and file contents give identical output."""
+def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str, list]] = None) -> dict:
+    """Deterministic: the same inventory, file contents and options give identical output.
+
+    `options` holds run-time settings an adapter cannot see in the files, such as
+    {"jpath": [...]} for Jsonnet. Given options are recorded in the graph."""
+    options = {name: list(value) for name, value in (options or {}).items() if value}
     analyzed = sorted(
         (entry for entry in inventory["files"] if entry["status"] == "analyzed"),
         key=lambda entry: entry["path"],
     )
     extracted, failures = _extract_all(analyzed, read_path)
-    contexts = _contexts(analyzed, extracted, inventory, read_path)
+    contexts = _contexts(analyzed, extracted, inventory, read_path, options)
     edges, externals = _resolve_all(analyzed, extracted, contexts)
     repo = inventory["repo"]
     connections, routes = _http(extracted, edges)
@@ -386,4 +392,5 @@ def build_graph(inventory: dict, read_path: ReadPath) -> dict:
         "http_connections": connections,
         "http_routes": routes,
         "skipped": _skipped(inventory, failures),
+        **({"options": options} if options else {}),
     }

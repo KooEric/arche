@@ -26,6 +26,8 @@ _ROUTE_LIKE = {
     "typescript": re.compile(r"\.(?:get|post|put|patch|delete|all)\(\s*[\"'`]/"),
 }
 _ROUTE_LIKE["javascript"] = _ROUTE_LIKE["typescript"]
+# Where a build names Jsonnet library directories: `jsonnet -J lib`, `--jpath=lib`, `JSONNET_PATH=lib`.
+_JPATH_LIKE = re.compile(r"(?:^|[\s\"'])(?:-J\s*[^\s\-]|--jpath[=\s]|JSONNET_PATH\s*[=:])")
 
 
 def unread_routes(graph, read_path):
@@ -44,7 +46,17 @@ def unread_routes(graph, read_path):
     return found
 
 
-def build(graph, read_path=None):
+def jpath_lines(text_paths, read_path):
+    """Lines in scanned text files that pass Jsonnet library directories; the map does not read them."""
+    found = []
+    for path in sorted(text_paths):
+        for number, line in enumerate((read_path(path) or "").splitlines(), 1):
+            if _JPATH_LIKE.search(line):
+                found.append(f"{path}:{number}")
+    return found
+
+
+def build(graph, read_path=None, text_paths=()):
     files = {node["id"][5:]: node for node in graph["nodes"] if node["type"] == "file"}
     lines = [f"REPOSITORY {graph['repo']['name']} · {len(files)} parsed files · {sum(n['lines'] for n in files.values())} lines", ""]
 
@@ -100,6 +112,12 @@ def build(graph, read_path=None):
                        if item["package"].split(".")[0] not in builtin and not item["package"].startswith(("dart:", "node:")))
     lines += ["", "EXTERNAL HOSTS", "  " + (", ".join(hosts) or "none"), "", "EXTERNAL PACKAGES (files using each; standard libraries left out)"]
     lines += [f"  {name}  {count}" for name, count in sorted(packages.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]
+    if any(node.get("lang") == "jsonnet" for node in files.values()):
+        given = graph.get("options", {}).get("jpath", [])
+        hints = jpath_lines(text_paths, read_path) if read_path else []
+        lines += ["", "JSONNET LIBRARY PATHS (--jpath given: " + (", ".join(given) or "none") + ")"]
+        lines += [f"  lines passing -J, --jpath or JSONNET_PATH ({len(hints)}; rerun with --jpath DIR for each directory they name)"]
+        lines += ["  " + ", ".join(hints[:TOP])] if hints else ["  none"]
     skipped = Counter(item["reason"] for item in graph["skipped"])
     lines += ["", "NOT PARSED", "  " + (", ".join(f"{reason} {count}" for reason, count in sorted(skipped.items())) or "none")]
     return "\n".join(lines) + "\n"
@@ -111,7 +129,8 @@ def main(argv):
     args = parser.parse_args(argv)
     inventory, graph = load_inputs(args.out)
     path = args.out / "brief.txt"
-    write_text(path, build(graph, make_reader(inventory)))
+    text_paths = [entry["path"] for entry in inventory["files"] if "sha256" in entry and entry.get("reason") != "secret"]
+    write_text(path, build(graph, make_reader(inventory), text_paths))
     return {"step": "brief", "brief": str(path.resolve())}
 
 

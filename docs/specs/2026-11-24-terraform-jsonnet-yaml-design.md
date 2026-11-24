@@ -197,7 +197,7 @@ dbt 모델 이름은 프로젝트 안에서 유일해야 하므로 이름 맞추
 
 ## 그래프에 들어가는 모양
 
-- Terraform `module.source`와 Jsonnet `import`는 `IMPORTS` edge다. `origin`은 언어 이름이다. 기존 화면의 의존 지도와 순환 검사에 그대로 들어간다.
+- Terraform `module.source`와 Jsonnet `import`는 `IMPORTS` edge다. `origin`은 다른 언어와 같이 `script`다. 언어는 파일 노드의 `lang`으로 구분한다. 기존 화면의 의존 지도와 순환 검사에 그대로 들어간다.
 - YAML 경로는 `REFERENCES` edge다. `via`에 스키마와 키 경로를 남긴다(예: `kustomize:resources`). 지금 `REFERENCES`는 "Python 파일에 적힌 SQL 파일 경로"만 뜻한다. 설명 문서(`SKILL.md`)와 리포트 문구를 함께 고친다.
 - 외부 출처는 기존 `externals`에 넣는다. 리포트의 외부 패키지 표에 Terraform 모듈, GitHub 액션, Jsonnet 패키지가 함께 나온다.
 

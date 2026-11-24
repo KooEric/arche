@@ -5,12 +5,15 @@ Every adapter provides:
     build_context(parsed_paths, all_paths, read_path) -> context
     resolve(import_record, importer_path, context) -> [result, ...]
 
+An adapter that takes run-time options lists their names in OPTIONS; build_context
+then receives each given option as a keyword argument.
+
 Languages that share an adapter also share one context, so a TypeScript file
 can import a JavaScript file and the reverse.
 """
 from __future__ import annotations
 
-from . import dart, go, jvm, python, sql, typescript
+from . import dart, go, jsonnet, jvm, python, sql, typescript
 
 ADAPTERS = {
     "python": python,
@@ -21,6 +24,7 @@ ADAPTERS = {
     "java": jvm,
     "kotlin": jvm,
     "sql": sql,
+    "jsonnet": jsonnet,
 }
 
 
