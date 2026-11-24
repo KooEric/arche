@@ -38,7 +38,7 @@
 
 ## 전제
 
-- 대상 레포는 Terraform, Jsonnet, YAML을 함께 쓴다. 사용자가 확인한 YAML 종류는 Helm, Docker Compose, GitHub Actions, Airflow, dbt다.
+- 대상 레포는 Terraform, Jsonnet, YAML을 함께 쓴다. 사용자가 확인한 YAML 종류는 Helm, Docker Compose, GitHub Actions, Airflow(팀별 자체 형식), dbt(프로젝트 하나)다.
 - Terraform은 1.x 문법을 가정한다.
 - Jsonnet 라이브러리 경로는 주로 실행 옵션 `-J`로 정한다(사용자 확인). jsonnet-bundler(`jsonnetfile.json`과 `vendor/`)도 쓸 수 있다.
 
@@ -149,15 +149,25 @@ YAML 전체를 해석하지 않는다. 다음만 읽는다.
 | Helm | 차트 폴더(`Chart.yaml`이 있는 폴더)의 `values*.yaml` | 읽지 않는다. 차트 노드에 묶이도록 파일 노드만 만든다 | — |
 | Compose | `compose*.y?ml`, `docker-compose*.y?ml` | `services.*.build`(문자열), `services.*.build.context`, `services.*.build.dockerfile`, `services.*.env_file`(경로만), `services.*.extends.file`, `services.*.volumes.[]`의 `./`·`../`로 시작하는 호스트 쪽 경로, `include.[]` | 파일 또는 폴더 |
 | GitHub Actions | `.github/workflows/*.y?ml`, `action.y?ml` | `jobs.*.uses`, `jobs.*.steps.[].uses`, `runs.steps.[].uses` | `./…`는 폴더(`action.yml`) 또는 워크플로 파일. 그 밖에는 외부 |
-| Airflow | 최상위 매핑의 값에 `default_args`와 `tasks`가 있음(dag-factory 형식) | `*.tasks.*.python_callable_file`, `*.tasks.*.bash_command`·`*.tasks.*.sql`이 파일 경로일 때, `template_searchpath` | 파일 또는 폴더 |
 | dbt 프로젝트 | `dbt_project.yml` | `model-paths`, `seed-paths`, `test-paths`, `analysis-paths`, `macro-paths`, `snapshot-paths`의 각 항목 | 폴더 |
 | dbt 패키지 | `packages.yml`, `dependencies.yml` | `packages.[].local` | 폴더(`dbt_project.yml`). `package`·`git`은 외부 |
 | dbt 속성 | `dbt_project.yml`이 있는 프로젝트의 모델 폴더 아래 `*.yml` | `models.[].name`, `snapshots.[].name`, `seeds.[].name` | 같은 이름의 모델·스냅숏·시드 파일(`.sql`, `.csv`) |
 | (모든 YAML) | 항상 | 값이 SQL 파일 경로(`fileref.is_path`) | SQL 파일 |
+| (스키마 없는 YAML) | 위 스키마에 맞지 않음 | 값이 레포에 실제로 있는 파일 경로(아래 "스키마 없는 YAML") | 분석한 파일 |
 
 `env_file`은 경로만 기록하고 대상 파일의 내용은 읽지 않는다. 그 파일이 비밀 패턴에 걸리면 edge는 `unresolved`, `target_skipped`가 된다. Helm `templates/` 안의 YAML은 Go 템플릿이므로 파일 노드만 만들고 내용은 읽지 않는다.
 
-Airflow 설정은 dag-factory 형식만 스키마로 읽는다. 다른 형식의 Airflow YAML(연결·변수 설정, 자체 형식의 DAG 정의)은 마지막 줄의 SQL 경로 찾기만 적용된다. 사용자의 레포에 다른 형식이 많으면 키 목록을 받아 스키마를 더한다.
+### 스키마 없는 YAML(Airflow 팀별 형식)
+
+대상 레포의 Airflow YAML은 팀마다 형식이 다르다(사용자 확인). 키 이름을 미리 정할 수 없으므로 스키마를 만들지 않는다. 대신 값이 실제로 있는 파일을 가리킬 때만 연결한다.
+
+- 대상: 위 스키마에 맞지 않는 모든 YAML 파일의 스칼라 값
+- 경로 모양: 공백이 없고(변수 자리 `{{ }}` 제외), `://`가 없고, 확장자가 분석 대상 언어(`.py`, `.sql`, `.hql`, `.jsonnet`, `.libsonnet`, `.yaml`, `.yml`, `.tf` 등)이며, 200자 이하인 값
+- 해석: 그 YAML 파일의 폴더 기준, 그다음 레포 루트 기준. 둘 다 없으면 SQL 참조처럼 파일 이름 뒤쪽이 맞는 파일 하나(`rule: suffix`)
+- 결과: 실제 파일과 맞을 때만 `REFERENCES` edge를 만든다. 스키마가 보증하지 않으므로 상대·루트 기준으로 맞아도 `inferred`, `rule: path_value`다. 맞는 파일이 없으면 edge도 미해결 기록도 남기지 않는다. 경로가 아닌 값을 잘못 잡아 미해결 목록이 커지는 것을 막기 위해서다.
+- 변수 자리가 있는 값(`sql/{{ ds }}.sql`)은 SQL 경로일 때만 기존 규칙대로 `dynamic`으로 남긴다.
+
+edge의 `via`에는 키 경로를 남긴다(예: `path_value:load.tasks.extract.sql_file`). 같은 키가 여러 팀 파일에서 반복되면 리포트에서 키별로 묶어 보여 준다. 나중에 자주 나오는 키를 스키마로 올릴 근거가 된다.
 
 ### dbt 모델 연결
 
@@ -169,6 +179,8 @@ dbt 모델 SQL은 테이블 이름 대신 `{{ ref('orders') }}`를 쓴다. 지�
 - `{{ source('원천', '테이블') }}`은 `external_tables`에 `원천.테이블`로 기록한다.
 
 dbt 모델 이름은 프로젝트 안에서 유일해야 하므로 이름 맞추기를 확정으로 본다.
+
+대상 레포에는 dbt 프로젝트가 하나다(사용자 확인). 그래서 프로젝트가 하나일 때를 기본으로 만든다. `dbt_project.yml`이 둘 이상이면 `ref()`는 그 SQL 파일이 속한 프로젝트(가장 가까운 상위 `dbt_project.yml`) 안에서만 찾는다. 다른 프로젝트는 `packages.yml`의 `local`로 이어졌을 때만 찾는다. 프로젝트를 가로지르는 이름 추측은 하지 않는다.
 
 ### 해석
 
@@ -212,7 +224,7 @@ dbt 모델 이름은 프로젝트 안에서 유일해야 하므로 이름 맞추
 | A | Jsonnet과 `--jpath` | 문법이 가장 단순하고 import 규칙이 분명하다. 어댑터 추가 경로와 옵션 전달 경로를 검증한다. |
 | B | Terraform | HCL 렉서가 필요하다. 모듈 대표 파일 규칙을 여기서 정한다. |
 | C | YAML 리더, `REFERENCES` 일반화, Compose·GitHub Actions·Helm | 가장 크다. `fileref` 변경이 SQL 참조에 영향이 없는지 함께 본다. |
-| D | dbt(`dbt_project.yml`·`packages.yml`·속성 YAML, SQL의 `ref()`)와 Airflow(dag-factory) | 데이터 파이프라인 연결이다. dbt는 SQL 쪽도 바꾸므로 C와 따로 낸다. |
+| D | dbt(`dbt_project.yml`·`packages.yml`·속성 YAML, SQL의 `ref()`)와 스키마 없는 YAML의 경로 값 | 데이터 파이프라인 연결이다. dbt는 SQL 쪽도 바꾸므로 C와 따로 낸다. |
 | 후속 | Kustomize, Ansible, OpenAPI, dbt `source()` 펼치기, Terraform 모듈 안 참조 | 요청이 있을 때 |
 
 ## 결정 사항
@@ -222,8 +234,5 @@ dbt 모델 이름은 프로젝트 안에서 유일해야 하므로 이름 맞추
 1. YAML 종류: Helm, Docker Compose, GitHub Actions, Airflow, dbt. Kustomize·Ansible·OpenAPI는 후속으로 미룬다. dbt `ref()` 연결을 범위에 넣는다.
 2. Terraform 모듈 edge는 대표 파일 하나로 연결한다. `module_dir`는 기록해 변경 분석에 쓴다.
 3. Jsonnet 라이브러리 경로는 주로 `-J`로 지정한다. `--jpath` 옵션을 추가하고, 받은 경로로 찾은 import는 `verified`로 본다. 옵션이 없을 때만 `lib/` 추측을 쓴다.
-
-## 남은 질문
-
-1. 레포의 Airflow YAML이 dag-factory 형식인가, 자체 형식인가? 자체 형식이면 경로를 담는 키 이름을 알려 주면 스키마에 넣는다.
-2. dbt 프로젝트가 레포에 여러 개 있는가? 여러 개면 `ref()`는 같은 프로젝트 안에서 먼저 찾고, `packages.yml`의 `local`로 이어진 프로젝트를 그다음에 찾는다.
+4. Airflow YAML은 팀마다 형식이 다르다. 스키마를 만들지 않고, 값이 레포에 실제로 있는 파일을 가리킬 때만 `inferred`로 연결한다.
+5. dbt 프로젝트는 하나다. 여러 개일 때는 가장 가까운 프로젝트 안에서만 `ref()`를 찾는다.
