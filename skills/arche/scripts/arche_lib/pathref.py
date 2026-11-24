@@ -15,6 +15,9 @@ resolves to the first parsed file the pattern matches, and the result carries th
 pattern (`glob`) and how many scanned files match it (`matched`). A reference with
 "inferred" gives an inferred result in place of a verified one.
 
+A reference may also carry "rule" (the rule name a match reports), "dynamic" (the
+path is built at run time) and "quiet" (graph.py keeps no edge when it is not found).
+
 A reference with "fallback" comes from a file no schema describes. It is tried
 against its own directory, then the repository root, then, when it names a
 directory, the one parsed file whose path ends with it. A match is inferred (rule
@@ -71,11 +74,11 @@ def _fallback(ref: dict, index: Index) -> Optional[dict]:
     for base in dict.fromkeys((ref["base"], "")):
         joined = posixpath.normpath(posixpath.join(base, clean))
         if joined in index.analyzed:
-            return {"status": "inferred", "to": joined, "rule": "path_value"}
+            return {"status": "inferred", "to": joined, "rule": ref.get("rule", "path_value")}
     if "/" in clean and not clean.startswith(("../", "/")):
         matches = [path for path in index.by_name.get(posixpath.basename(clean), []) if path.endswith("/" + clean)]
         if len(matches) == 1:
-            return {"status": "inferred", "to": matches[0], "rule": "path_value"}
+            return {"status": "inferred", "to": matches[0], "rule": ref.get("rule", "path_value")}
     return None
 
 
@@ -132,7 +135,7 @@ def _glob(ref: dict, joined: str, index: Index) -> dict:
     parsed = next((path for path in matches if path in index.analyzed), None)
     if parsed is None:
         return {**_unresolved(ref, "target_skipped"), "glob": joined, "matched": len(matches)}
-    return {"status": "verified", "to": parsed, "rule": "glob", "glob": joined, "matched": len(matches)}
+    return {"status": "verified", "to": parsed, "rule": ref.get("rule", "glob"), "glob": joined, "matched": len(matches)}
 
 
 def resolve(ref: dict, index: Index) -> Optional[dict]:
@@ -148,7 +151,7 @@ def resolve(ref: dict, index: Index) -> Optional[dict]:
 
 def _resolve(ref: dict, index: Index) -> dict:
     spec = ref["spec"]
-    if is_dynamic(spec):
+    if ref.get("dynamic") or is_dynamic(spec):
         return _unresolved(ref, "dynamic")
     joined = posixpath.normpath(posixpath.join(ref["base"], spec.replace("\\", "/")))
     if joined == ".." or joined.startswith("../") or spec.startswith("/"):

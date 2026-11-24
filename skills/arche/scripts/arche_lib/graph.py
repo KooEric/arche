@@ -104,7 +104,7 @@ def _config_references(inventory: dict, extracted: Dict[str, dict]) -> Tuple[Lis
     for path in with_refs:
         for ref in extracted[path].get("path_refs", []):
             result = pathref.resolve(ref, index)
-            if result is None:
+            if result is None or (ref.get("quiet") and result["status"] not in _RESOLVED):
                 continue
             base = {"kind": "REFERENCES", "from": _file_id(path), "origin": "script", "status": result["status"],
                     "via": ref["via"], "evidence": {"path": path, "line": ref["line"], "quote": ref["quote"]}}
