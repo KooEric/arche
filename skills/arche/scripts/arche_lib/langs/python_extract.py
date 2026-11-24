@@ -15,15 +15,18 @@ _BRANCH_NODE_NAMES = (
 _BRANCH_NODES = tuple(getattr(ast, name) for name in _BRANCH_NODE_NAMES if hasattr(ast, name))
 
 
-def extract(path: str, text: str) -> dict:
-    """Return {"imports": [...], "symbols": [...]} or raise ParseError."""
+def extract(path: str, text: str, keep_tree: bool = False):
+    """Return {"imports": [...], "symbols": [...]} or raise ParseError.
+
+    With `keep_tree`, return (result, syntax tree) so other readers skip a second parse."""
     try:
         tree = ast.parse(text)
         lines = text.splitlines()
         imports = list(_walk(tree.body, lines, False, False))
     except (SyntaxError, ValueError, RecursionError) as exc:
         raise ParseError(f"{path}: {exc}") from None
-    return {"imports": imports, "symbols": _top_level_symbols(tree)}
+    result = {"imports": imports, "symbols": _top_level_symbols(tree)}
+    return (result, tree) if keep_tree else result
 
 
 def _quote(lines: Sequence[str], lineno: int) -> str:

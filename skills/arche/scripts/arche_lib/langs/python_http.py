@@ -100,14 +100,14 @@ def _includes(tree, known) -> Dict[str, List[tuple]]:
     return found
 
 
-def _prefixes(tree) -> Dict[str, Tuple[str, bool]]:
+def _prefixes(tree, known=None, includes=None) -> Dict[str, Tuple[str, bool]]:
     """Router name -> (same-file prefix, whether the whole prefix is known).
 
     An unknown prefix still carries the router's own literal prefix, so the
     listed path stays close to what the source says.
     """
-    known = _bindings(tree)
-    includes = _includes(tree, known)
+    known = _bindings(tree) if known is None else known
+    includes = _includes(tree, known) if includes is None else includes
 
     def resolve(name, seen):
         own = known[name]["prefix"]
@@ -185,15 +185,22 @@ def routes(path: str, text: str) -> list:
             for route in routes_and_mounts(path, text)[0]]
 
 
-def routes_and_mounts(path: str, text: str):
-    """(routes, mounts of imported routers, routers declared here) in the shape the graph step joins."""
+def routes_and_mounts(path: str, text: str, tree=None):
+    """(routes, mounts of imported routers, routers declared here) in the shape the graph step joins.
+
+    Routes, mounts and routers all hang off a FastAPI, Flask, APIRouter or Blueprint
+    call in this file, so a file that never names one is not walked."""
+    if not any(name in text for name in _ROOTS | _SUBS):
+        return [], [], {}
     try:
-        tree = ast.parse(text)
-        prefixes = _prefixes(tree)
+        tree = ast.parse(text) if tree is None else tree
+        known = _bindings(tree)
+        if not known:
+            return [], [], {}
+        included_here = _includes(tree, known)
+        prefixes = _prefixes(tree, known, included_here)
     except (SyntaxError, ValueError, RecursionError):
         return [], [], {}
-    known = _bindings(tree)
-    included_here = _includes(tree, known)
     routers = {name: {"sub": not info["root"]} for name, info in known.items()}
     found = []
     for node in ast.walk(tree):
