@@ -101,22 +101,39 @@ def _config_references(inventory: dict, extracted: Dict[str, dict]) -> Tuple[Lis
     index = pathref.build_index((entry["path"] for entry in inventory["files"]), extracted)
     edges: Dict[tuple, dict] = {}
     externals: List[dict] = []
+    conventions: Dict[str, dict] = {}  # matched file -> first loader reference naming it
     for path in with_refs:
         for ref in extracted[path].get("path_refs", []):
-            result = pathref.resolve(ref, index)
-            if result is None or (ref.get("quiet") and result["status"] not in _RESOLVED):
-                continue
-            base = {"kind": "REFERENCES", "from": _file_id(path), "origin": "script", "status": result["status"],
-                    "via": ref["via"], "evidence": {"path": path, "line": ref["line"], "quote": ref["quote"]}}
-            glob = {key: result[key] for key in ("glob", "matched") if key in result}
-            if result["status"] in _RESOLVED:
-                edge = {**base, **glob, "rule": result["rule"], "to": _file_id(result["to"])}
-            else:
-                edge = {**base, **glob, "to": None, "spec": result["spec"], "reason": result["reason"]}
-            if edge.get("to") != base["from"]:
-                edges.setdefault(_edge_key(edge), edge)
+            results = pathref.resolve_all(ref, index)
+            if ref["target"] == "name" and len(results) > 1:
+                # A loader that builds `<folder>/<name>` reads every such file: one edge
+                # with the pattern for the map, and each file linked to its own code below.
+                for result in results:
+                    conventions.setdefault(result["to"], {"loader": path, "ref": ref})
+                results = [{**results[0], "glob": "**/" + ref["spec"].lstrip("/")}]
+            for result in results:
+                if ref.get("quiet") and result["status"] not in _RESOLVED:
+                    continue
+                base = {"kind": "REFERENCES", "from": _file_id(path), "origin": "script", "status": result["status"],
+                        "via": ref["via"], "evidence": {"path": path, "line": ref["line"], "quote": ref["quote"]}}
+                glob = {key: result[key] for key in ("glob", "matched") if key in result}
+                if result["status"] in _RESOLVED:
+                    edge = {**base, **glob, "rule": result["rule"], "to": _file_id(result["to"])}
+                else:
+                    edge = {**base, **glob, "to": None, "spec": result["spec"], "reason": result["reason"]}
+                if edge.get("to") != base["from"]:
+                    edges.setdefault(_edge_key(edge), edge)
         externals.extend({"from": _file_id(path), "package": item["package"], "line": item["line"]}
                          for item in extracted[path].get("config_externals", []))
+    for target, found in sorted(conventions.items()):
+        ref = found["ref"]
+        siblings = [sibling for sibling in index.children.get(posixpath.dirname(target), [])
+                    if sibling.endswith(".py") and sibling in index.analyzed and sibling != found["loader"]]
+        for sibling in siblings:
+            edge = {"kind": "REFERENCES", "from": _file_id(sibling), "origin": "script", "status": "inferred",
+                    "via": ref["via"], "rule": "same_folder_name", "to": _file_id(target), "loader": found["loader"],
+                    "evidence": {"path": found["loader"], "line": ref["line"], "quote": ref["quote"]}}
+            edges.setdefault((edge["from"], edge["to"], "same_folder_name"), edge)
     return list(edges.values()), externals
 
 

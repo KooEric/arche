@@ -12,7 +12,7 @@ LANG_BY_EXT = {
     ".java": "java", ".kt": "kotlin", ".kts": "kotlin",
     ".sql": "sql", ".hql": "sql",
     ".jsonnet": "jsonnet", ".libsonnet": "jsonnet",
-    ".tf": "terraform",
+    ".tf": "terraform", ".tftpl": "terraform_template",
     ".yaml": "yaml", ".yml": "yaml",
 }
 

@@ -2,6 +2,9 @@
 
 ## 1.0 출시 후보
 
+- 공통 로더의 YAML 관례: 실행 시점에 정해지는 폴더에 붙는 YAML 파일 이름(`dag_dir / 'dag_config.yaml'`, `os.path.join(d, 'x.yaml')`, `f'{d}/x.yaml'`, `CONF = 'x.yaml'`)은 로더 옆에 그 파일이 없으면 같은 이름의 레포 파일을 가리킵니다(`python:yaml_name`, 추정). 여러 파일이면 로더에서 첫 파일로 연결 하나(`glob: **/이름`, `matched`)만 긋고, 각 파일은 자기 폴더의 Python 파일과 연결합니다(`rule: same_folder_name`, 증거는 로더의 줄). 변경 분석은 그 이름의 모든 파일을 로더의 의존으로 셉니다. apache/airflow에서 `provider.yaml`처럼 이름 하나가 111개 파일과 맞는 경우도 연결선 수가 파일 수 이상으로 늘지 않습니다.
+- `diagnose_yaml.py`가 arche의 실제 추출·해석 코드를 그대로 돌립니다. "arche가 Python에서 연결"하는 수가 그래프와 정확히 같고(apache/airflow 220 = 220), 규칙별 개수, 로더 패턴으로만 덮이는 파일, Python이 이름을 적었지만 해석하지 못한 파일과 그 Python의 폴더, 증거가 없는 파일을 나눠 보여 줍니다. 분석 대상 파일만 읽어 vendored·생성 파일을 건너뜁니다.
+- `.tftpl`(Terraform 템플릿)을 노드로 만들어 `templatefile()` 참조가 연결됩니다. 실행 요약의 `edges`는 분석하지 않는 파일을 가리키는 참조를 `unresolved`가 아니라 `target_not_parsed`로 셉니다.
 - Python이 읽는 YAML: Python 파일에 적힌 YAML 파일 이름(`DAG_DIR / 'dag.yaml'`)은 그 Python 파일의 폴더, 레포 루트, 경로 뒤쪽이 맞는 파일 하나 순으로 찾아 추정 연결합니다(`python:yaml_path`). `'configs/*.yaml'` 같은 패턴은 맞는 파일 전체를 대표하는 연결이 됩니다(`python:yaml_glob`). YAML을 읽는 호출(`yaml.safe_load`, `load_yaml_file` 등)이 있지만 파일 이름이 없으면 같은 폴더의 YAML로 추정 연결합니다(`python:same_folder_yaml`). f-string으로 만드는 경로는 따라가지 않고 동적 경로로 셉니다.
 - `diagnose_yaml.py`: 연결되지 않은 YAML을 최상위 키 구조별로 묶고, 군집마다 파일 수·폴더 분포·키별 값 모양과 세 신호(값이 레포 파일을 가리킴, Python이 파일 이름을 적음, 같은 폴더 Python이 YAML을 읽음), 어떤 규칙으로도 설명되지 않는 파일 수를 보여 줍니다. 값은 출력하지 않습니다. `--out`으로 arche 실행 폴더를 주면 이미 연결된 파일 수도 셉니다.
 - Terraform 파일 읽기: `file()`·`templatefile()`·`file*` 해시 함수·`fileset()`으로 읽는 파일을 `REFERENCES` edge(`via: terraform:함수`)로 연결합니다. `${path.module}` 기준 경로는 확정, 상대 경로와 `${path.root}`·`${path.cwd}`는 Terraform이 실행되는 폴더를 그 파일의 폴더로 보고 추정합니다. `fileset`은 패턴과 맞는 첫 분석 파일로 연결하고 `glob`과 `matched`(맞는 파일 수)를 남기며, 변경 분석은 패턴과 맞는 모든 파일을 의존으로 셉니다. 함수 밖의 `"${path.module}/workspaces"` 같은 문자열(모듈 인자 등)도 경로로 보고(`terraform:path`), 폴더면 그 아래 모든 파일(`폴더/**`)을 대표합니다. 변수로 넘긴 경로(`fileset(var.dir, …)`)는 따라가지 않습니다.

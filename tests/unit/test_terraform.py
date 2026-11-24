@@ -274,3 +274,19 @@ def test_strings_inside_file_function_calls_are_not_read_twice():
     refs = terraform.extract("m/main.tf", 'x = fileset("${path.module}/teams", "*.yml")\n')["path_refs"]
 
     assert [(r["via"], r["spec"]) for r in refs] == [("terraform:fileset", "teams/*.yml")]
+
+
+def test_templatefile_resolves_to_a_tftpl_node():
+    global ONBOARDING
+    saved, ONBOARDING = ONBOARDING, {
+        "m/main.tf": 'locals { a = templatefile("${path.module}/user_data.tftpl", {}) }\n',
+        "m/user_data.tftpl": "#!/bin/sh\necho ${name}\n",
+    }
+    try:
+        graph = _onboarding_graph()
+    finally:
+        ONBOARDING = saved
+    edge = next(e for e in graph["edges"] if e.get("via") == "terraform:templatefile")
+
+    assert (edge["status"], edge["to"]) == ("verified", "file:m/user_data.tftpl")
+    assert {n["lang"] for n in graph["nodes"] if n["type"] == "file"} == {"terraform", "terraform_template"}

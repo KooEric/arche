@@ -35,7 +35,11 @@ def _summary(graph, out_dir):
         "step": "imports",
         "out": str(out_dir),
         "nodes": dict(sorted(Counter(node["type"] for node in graph["nodes"]).items())),
-        "edges": dict(sorted(Counter(edge["status"] for edge in graph["edges"]).items())),
+        # A reference to a file the scan found but does not parse (a .tpl, a .json) is
+        # counted on its own, not as unresolved: nothing is wrong with the reference.
+        "edges": dict(sorted(Counter(
+            "target_not_parsed" if edge.get("reason") == "target_skipped" else edge["status"]
+            for edge in graph["edges"]).items())),
         "externals": len(graph["externals"]),
         "skipped": len(graph["skipped"]),
     }
