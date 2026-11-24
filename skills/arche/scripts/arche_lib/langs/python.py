@@ -10,7 +10,7 @@ __all__ = ["Context", "build_context", "extract", "resolve"]
 
 
 def extract(path: str, text: str) -> dict:
-    result = extract_imports(path, text)
-    result["http_routes"], result["http_mounts"], result["http_routers"] = routes_and_mounts(path, text)
-    result["file_refs"] = file_refs(path, text)
+    result, tree = extract_imports(path, text, keep_tree=True)
+    result["http_routes"], result["http_mounts"], result["http_routers"] = routes_and_mounts(path, text, tree)
+    result["file_refs"] = file_refs(path, text, tree)
     return result

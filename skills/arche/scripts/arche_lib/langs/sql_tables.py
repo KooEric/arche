@@ -19,6 +19,17 @@ _KEYWORDS = frozenset("""
     RIGHT SELECT SEMI SET SORT TABLE TABLESAMPLE UNION UNNEST UNPIVOT USING VALUES WHEN WHERE WINDOW WITH
 """.split())
 _IDENTIFIER_BODY = re.compile(r"[\w$.]*")
+# dbt's `{{ ref('model') }}` and `{{ source('src', 'table') }}`, found in masked text
+# (their string arguments are blanked there) and read back from the original.
+_DBT_CALL = re.compile(r"\{\{-?\s*(ref|source)\s*\(([^()]*)\)\s*-?\}\}")
+_DBT_TOKEN = re.compile(r"^__dbt_call_(\d+)__$")
+# Every `ref(` inside `{{ }}` or `{% %}` is a dbt dependency, wherever the SQL puts
+# it (a bare line, even a `--` comment): Jinja renders first. `{# #}` hides it.
+_JINJA_SPAN = re.compile(r"\{#.*?#\}|\{\{.*?\}\}|\{%.*?%\}", re.S)
+_REF_OPEN = re.compile(r"\bref\s*\(")
+_REF_CALL = re.compile(r"\bref\s*\(([^()]*)\)")
+_VERSION_ARG = re.compile(r"\b(?:v|version)\s*=\s*['\"]?(\d+)['\"]?")
+_LITERAL = re.compile(r"""\s*(?:'([^'\n]*)'|"([^"\n]*)")\s*""")
 _CLOSERS = {"/*": "*/", "{%": "%}", "{#": "#}"}
 
 
@@ -63,6 +74,53 @@ def mask(text: str) -> Tuple[str, bool]:
     return "".join(out), unterminated
 
 
+def _literal_args(text: str) -> Optional[List[str]]:
+    """Positional string arguments of a dbt call; keyword arguments (`v=2`) are ignored.
+    None when a positional argument is not a string literal."""
+    args: List[str] = []
+    for part in (piece for piece in text.split(",") if piece.strip()):
+        if "=" in part and not part.strip().startswith(("'", '"')):
+            continue
+        match = _LITERAL.fullmatch(part)
+        if match is None:
+            return None
+        args.append(match.group(1) if match.group(1) is not None else match.group(2))
+    return args
+
+
+def _dbt_calls(text: str, masked: str) -> Tuple[str, List[Tuple[str, Optional[List[str]]]]]:
+    """Replace each dbt call with a unique name the table reader can record. (masked, calls)."""
+    calls: List[Tuple[str, Optional[List[str]]]] = []
+
+    def replace(match: "re.Match[str]") -> str:
+        calls.append((match.group(1), _literal_args(text[match.start(2):match.end(2)])))
+        return f"__dbt_call_{len(calls) - 1}__" + "\n" * match.group().count("\n")
+
+    return _DBT_CALL.sub(replace, masked), calls
+
+
+def _jinja_refs(text: str) -> List[dict]:
+    """[{"ref", "package", "line", "quote", "dynamic"}] for each ref() call in Jinja, first per line and name."""
+    lines = text.split("\n")
+    found: Dict[Tuple[int, str, Optional[str]], dict] = {}
+    for span in _JINJA_SPAN.finditer(text):
+        if span.group().startswith("{#"):
+            continue
+        body = span.group()
+        for opening in _REF_OPEN.finditer(body):
+            call = _REF_CALL.match(body, opening.start())
+            args = _literal_args(call.group(1)) if call else None
+            dynamic = args is None or not 1 <= len(args) <= 2
+            line = text.count("\n", 0, span.start() + opening.start()) + 1
+            name = "" if dynamic else args[-1]
+            package = None if dynamic or len(args) == 1 else args[0]
+            quote = lines[line - 1].strip()[:MAX_QUOTE_CHARS] if line <= len(lines) else ""
+            version = _VERSION_ARG.search(call.group(1)) if call else None
+            found.setdefault((line, name, package), {"ref": name, "package": package, "line": line, "quote": quote,
+                                                     "dynamic": dynamic, **({"version": version.group(1)} if version else {})})
+    return list(found.values())
+
+
 def _placeholders(masked: str) -> str:
     """Each run-time value becomes `{}`; newlines inside it are kept after it."""
     return _PLACEHOLDER.sub(lambda match: "{}" + "\n" * match.group().count("\n"), masked)
@@ -78,8 +136,12 @@ def _name(token: str) -> Optional[str]:
 
 
 def tables(path: str, text: str) -> dict:
-    """{"tables": [{"table", "access", "line", "quote", "dynamic", "temp"}], "degraded": bool}."""
+    """{"tables": [{"table", "access", "line", "quote", "dynamic", "temp"}],
+    "dbt_refs": [{"ref", "package", "line", "quote", "dynamic"}], "degraded": bool}.
+
+    A table read through `{{ source('src', 'table') }}` is the table `src.table`."""
     masked, unterminated = mask(text)
+    masked, calls = _dbt_calls(text, masked)
     source = _placeholders(masked)
     lines = text.split("\n")  # line numbers count "\n" only, so the quote must come from the same split
     newlines = [match.start() for match in re.finditer("\n", source)]
@@ -160,5 +222,37 @@ def tables(path: str, text: str) -> dict:
                     cursor += 3
                 if is_name(cursor):
                     record(cursor, "write", temp)
-    return {"tables": sorted(found.values(), key=lambda item: (item["line"], item["access"], item["table"])),
-            "degraded": unterminated}
+    tables_found, written_refs = _apply_dbt_calls(found, calls)
+    refs = [ref for ref in (_jinja_refs(text) if "ref" in text else [])
+            if (ref["line"], ref["ref"]) not in written_refs]
+    return {"tables": sorted(tables_found, key=lambda item: (item["line"], item["access"], item["table"])),
+            "dbt_refs": sorted(refs, key=lambda item: (item["line"], item["ref"])), "degraded": unterminated}
+
+
+def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[dict], Set[Tuple[int, str]]]:
+    """Drop reads of `ref` calls (dbt_refs covers them) and turn `source` calls into table reads.
+
+    A dbt call written to (`insert into {{ ref('t') }}`) stays a run-time write, as any
+    other template in a write position does; the (line, name) of such a ref is
+    returned so it is not also counted as a read."""
+    tables_found: Dict[Tuple[str, str], dict] = {}
+    written_refs: Set[Tuple[int, str]] = set()
+    for item in found.values():
+        match = _DBT_TOKEN.match(item["table"])
+        if match is None:
+            tables_found.setdefault((item["table"], item["access"]), item)
+            continue
+        kind, args = calls[int(match.group(1))]
+        if item["access"] != "read":
+            if kind == "ref" and args:
+                written_refs.add((item["line"], args[-1]))
+            tables_found.setdefault(("{}", item["access"]), {**item, "table": "{}", "dynamic": True})
+            continue
+        if kind == "ref":
+            continue
+        if args is not None and len(args) == 2 and all(args):
+            name = f"{args[0]}.{args[1]}".lower()
+            tables_found.setdefault((name, "read"), {**item, "table": name, "dynamic": False})
+        else:
+            tables_found.setdefault(("{}", "read"), {**item, "table": "{}", "dynamic": True})
+    return list(tables_found.values()), written_refs

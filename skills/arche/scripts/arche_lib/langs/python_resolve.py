@@ -35,6 +35,8 @@ class Context(NamedTuple):
     roots: Tuple[str, ...]         # source roots; "" is the repository root
     top_level_dirs: Dict[str, Tuple[str, ...]]  # name -> non-package dirs providing it
     declared: FrozenSet[str] = frozenset()  # import names of declared dependencies
+    holders: Dict[str, FrozenSet[str]] = {}  # name -> directories holding name.py or a name/ folder of .py files
+    root_set: FrozenSet[str] = frozenset()
 
 
 def _parent(path: str) -> str:
@@ -85,6 +87,21 @@ def _top_level_dirs(paths: FrozenSet[str]) -> Dict[str, Tuple[str, ...]]:
     return {name: tuple(sorted(dirs)) for name, dirs in found.items()}
 
 
+def _holders(paths: FrozenSet[str], package_dirs: FrozenSet[str]) -> Dict[str, FrozenSet[str]]:
+    """Name -> directories where `name` is a module file or a directory above a .py file.
+
+    A root can resolve `import name...` only when it holds `name` this way, so the
+    resolver visits these directories instead of every source root."""
+    found: Dict[str, set] = {}
+    for path in paths:
+        if path.endswith(".py"):
+            found.setdefault(PurePosixPath(path).stem, set()).add(_parent(path))
+    for directory in package_dirs:
+        if directory:
+            found.setdefault(PurePosixPath(directory).name, set()).add(_parent(directory))
+    return {name: frozenset(dirs) for name, dirs in found.items()}
+
+
 def build_context(
     parsed_paths: Sequence[str],
     all_paths: Sequence[str],
@@ -93,13 +110,17 @@ def build_context(
     """`read_path` reads dependency manifests for the declared import names."""
     paths = frozenset(all_paths)
     python_dirs = (_parent(path) for path in paths if path.endswith(".py"))
+    package_dirs = frozenset(d for directory in python_dirs for d in _ancestors(directory))
+    roots = _source_roots(paths)
     return Context(
         modules=frozenset(parsed_paths),
         all_paths=paths,
-        package_dirs=frozenset(d for directory in python_dirs for d in _ancestors(directory)),
-        roots=_source_roots(paths),
+        package_dirs=package_dirs,
+        roots=roots,
         top_level_dirs=_top_level_dirs(paths),
         declared=declared_import_names(paths, read_path),
+        holders=_holders(paths, package_dirs),
+        root_set=frozenset(roots),
     )
 
 
@@ -132,14 +153,21 @@ def _is_under(root: str, directory: str) -> bool:
     return root == "" or directory == root or directory.startswith(root + "/")
 
 
-def _ordered_roots(importer: str, ctx: Context) -> Tuple[str, ...]:
-    """Nearest first: the importer's own directory when it is not a package,
-    then roots above the importer (deepest first), then the remaining roots."""
+def _roots_holding(name: str, importer: str, ctx: Context) -> Tuple[str, ...]:
+    """The roots that hold `name`, nearest first: the importer's own directory when
+    that directory is not a package, then roots above the importer (deepest first),
+    then the remaining roots.
+
+    Every other root returns None from `_resolve_in_root`, so skipping them changes no result."""
+    holders = ctx.holders.get(name, frozenset())
+    if not holders:
+        return ()
     own = _parent(importer)
     is_package = _join(own, [INIT_FILE]) in ctx.all_paths
-    above = sorted((root for root in ctx.roots if _is_under(root, own)), key=len, reverse=True)
-    others = sorted(root for root in ctx.roots if root not in above)
-    ordered = ([] if is_package else [own]) + above + others
+    hits = sorted(root for root in holders if root in ctx.root_set)
+    above = sorted((root for root in hits if _is_under(root, own)), key=len, reverse=True)
+    others = [root for root in hits if not _is_under(root, own)]
+    ordered = ([] if is_package or own not in holders else [own]) + above + others
     return tuple(dict.fromkeys(ordered))
 
 
@@ -212,6 +240,21 @@ def _provides(directory: str, parts: Sequence[str], imp: dict, ctx: Context) -> 
     )
 
 
+def _shadows_installed(root: str, parts: Sequence[str], found: Optional[Sequence[dict]], ctx: Context) -> bool:
+    """True when `root` holds only a plain folder named like the import's top level
+    (no __init__.py, no module file, not under src/) and that folder does not hold
+    the imported module. Python would keep searching sys.path, so such a folder,
+    like an `airflow/` folder of DAGs, does not hide the installed package."""
+    found = found or []
+    return (
+        _join(root, parts[:1]) in ctx.package_dirs
+        and not _found_locally(found)
+        and not any(r.get("reason") == "namespace_package" for r in found)
+        and _module_file(root, parts[:1], ctx) is None
+        and PurePosixPath(root).name != "src"
+    )
+
+
 def _external(parts: Sequence[str]) -> List[dict]:
     return [{"status": "external", "package": parts[0]}]
 
@@ -228,6 +271,8 @@ def _resolve_by_unique_name(parts: Sequence[str], imp: dict, ctx: Context) -> Op
             return _external(parts)
     if len(directories) == 1:
         found = _resolve_in_root(directories[0], parts, imp, ctx)
+        if _shadows_installed(directories[0], parts, found, ctx):
+            return _external(parts)
         return ([_unresolved(imp["module"], "module_not_found")] if found is None
                 else [_as_inferred(result) for result in found])
     if len(directories) > 1:
@@ -246,10 +291,14 @@ def resolve(imp: dict, importer: str, ctx: Context) -> List[dict]:
     if imp["level"] > 0:
         return _resolve_relative(imp, importer, ctx)
     parts = imp["module"].split(".")
-    roots = _ordered_roots(importer, ctx)
+    roots = _roots_holding(parts[0], importer, ctx)
     declared = parts[0] in ctx.declared
+    shadowed = False
     for root in roots:
         found = _resolve_in_root(root, parts, imp, ctx)
+        if _shadows_installed(root, parts, found, ctx):
+            shadowed = True
+            continue
         if found is not None and (not declared or _found_locally(found)):
             return found
     if declared:
@@ -257,6 +306,8 @@ def resolve(imp: dict, importer: str, ctx: Context) -> List[dict]:
     fallback = _resolve_by_unique_name(parts, imp, ctx)
     if fallback is not None:
         return fallback
+    if shadowed:
+        return _external(parts)
     if _top_level_known(parts[0], roots, ctx):
         return [_unresolved(imp["module"], "module_not_found")]
     return _external(parts)

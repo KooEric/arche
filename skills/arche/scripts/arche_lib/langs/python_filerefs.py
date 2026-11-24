@@ -11,12 +11,18 @@ _JOIN_NAMES = ("join", "joinpath")
 Found = Optional[Tuple[str, int]]
 
 
-def file_refs(path: str, text: str) -> List[dict]:
-    """[{"spec", "line", "quote", "dynamic"}], ordered by line. Empty when the file does not parse."""
-    try:
-        tree = ast.parse(text)
-    except (SyntaxError, ValueError, RecursionError):
+def file_refs(path: str, text: str, tree: Optional[ast.AST] = None) -> List[dict]:
+    """[{"spec", "line", "quote", "dynamic"}], ordered by line. Empty when the file does not parse.
+
+    A file whose text never spells a SQL suffix cannot hold one in a string literal, so it is not walked."""
+    lowered = text.lower()
+    if not any(suffix in lowered for suffix in SUFFIXES):
         return []
+    if tree is None:
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError, RecursionError):
+            return []
     lines = text.splitlines()
     consumed: Set[int] = set()
     found: Dict[Tuple[int, str], dict] = {}

@@ -488,7 +488,7 @@ def _folded_files(node_ids, anchors):
 def _file_references(edges, files, anchors):
     """SQL files nothing names, and written paths that were not followed. Empty without SQL or references."""
     sql = [file["id"] for file in files if file["lang"] == "sql"]
-    references = [edge for edge in edges if edge.get("kind") == "REFERENCES"]
+    references = [edge for edge in edges if edge.get("kind") == "REFERENCES" and "via" not in edge]
     if not sql and not references:
         return ""
     named = {edge["to"] for edge in references if edge["to"]}
@@ -509,12 +509,47 @@ def _file_references(edges, files, anchors):
             body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
                      + _items(by_reason[reason], "", "columns") + '</details>')
     return _section("file-references", T("SQL file references"), body,
-                    T("A reference is a SQL file path written as text in a parsed Python file. Paths in configuration files and includes inside SQL are not read, so a file listed here may still be used. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read."))
+                    T("A reference is a SQL file path written as text in a parsed Python or YAML file. Includes inside SQL are not read, so a file listed here may still be used. Open a SQL file under File dependencies to see what names it. Which operator or task runs it is not read."))
+
+
+_UNRESOLVED_CONFIG = (
+    ("dynamic", "Paths filled in at run time"),
+    ("ambiguous", "Paths matching several files"),
+    ("not_found", "Paths matching no scanned file or folder"),
+    ("target_skipped", "Paths to files that were not parsed"),
+)
+
+
+def _config_references(edges, anchors):
+    """Paths a known configuration file writes (Compose, GitHub Actions, Helm), grouped by schema key."""
+    references = [edge for edge in edges if edge.get("kind") == "REFERENCES" and "via" in edge]
+    if not references:
+        return ""
+    by_via = defaultdict(list)
+    by_reason = defaultdict(list)
+    for edge in references:
+        if edge["to"]:
+            by_via[edge["via"]].append(f'{_file_link(edge["from"], anchors)} → {_file_link(edge["to"], anchors)} · {_evidence(edge)}')
+        else:
+            by_reason[edge["reason"]].append(f'{_code(edge["spec"])} · {_evidence(edge)}')
+    body = "".join(
+        f'<details class="group"><summary>{_code(via)} <span class="count">{len(rows)}</span></summary>'
+        + _items(rows, "") + '</details>'
+        for via, rows in sorted(by_via.items(), key=lambda pair: (-len(pair[1]), pair[0])))
+    for reason, title in _UNRESOLVED_CONFIG:
+        if by_reason[reason]:
+            body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
+                     + _items(by_reason[reason], "", "columns") + '</details>')
+    return _section("config-references", T("Configuration references"), body,
+                    T("Paths that Docker Compose, GitHub Actions, Helm chart and dbt files write, grouped by the key that holds them. A folder links to its action.yml, Chart.yaml or dbt_project.yml when present, else to its first parsed file. A path_value entry is a value in a YAML file no schema describes that names an existing file; it is inferred. Remote images, actions, charts and packages are listed with the external packages."))
 
 
 _UNRESOLVED_READS = (
     ("dynamic", "Table names built at run time"),
     ("ambiguous", "Table names matching several tables"),
+    ("not_found", "dbt refs matching no model"),
+    ("target_skipped", "dbt refs to seeds or files that were not parsed"),
+    ("no_dbt_project", "dbt refs outside a dbt project"),
 )
 
 
@@ -649,8 +684,11 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
         ("feature-focus", T("Feature focus"), None, _feature_focus(tour, connections, anchors)),
         ("http", T("HTTP connections"), len(connections), _http_section(connections, anchors)),
         ("file-references", T("SQL file references"),
-         sum(1 for edge in edges if edge.get("kind") == "REFERENCES" and edge["to"]) or None,
+         sum(1 for edge in edges if edge.get("kind") == "REFERENCES" and edge["to"] and "via" not in edge) or None,
          _file_references(edges, files, anchors)),
+        ("config-references", T("Configuration references"),
+         sum(1 for edge in edges if edge.get("kind") == "REFERENCES" and edge["to"] and "via" in edge) or None,
+         _config_references(edges, anchors)),
         ("tables", T("Tables"), len({item["table"] for item in graph.get("external_tables", [])}) or None,
          _tables(graph, anchors)),
         ("files", T("Dependencies"), len(files), _section("files", T("File dependencies"), file_list)),

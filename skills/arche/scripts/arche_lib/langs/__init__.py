@@ -11,6 +11,9 @@ LANG_BY_EXT = {
     ".dart": "dart", ".go": "go",
     ".java": "java", ".kt": "kotlin", ".kts": "kotlin",
     ".sql": "sql", ".hql": "sql",
+    ".jsonnet": "jsonnet", ".libsonnet": "jsonnet",
+    ".tf": "terraform",
+    ".yaml": "yaml", ".yml": "yaml",
 }
 
 

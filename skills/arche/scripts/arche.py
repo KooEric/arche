@@ -38,6 +38,8 @@ def main(argv):
     parser.add_argument("--lang", choices=LANGUAGES, default="en", help="language of the report interface (default: en)")
     parser.add_argument("--internal-exports", action="append", default=[], metavar="DIR",
                         help="opt in a repository-relative internal directory for explicit Python export checks")
+    parser.add_argument("--jpath", action="append", default=[], metavar="DIR",
+                        help="repository-relative Jsonnet library directory, as given to jsonnet -J (repeatable)")
     args = parser.parse_args(argv)
 
     out = args.out
@@ -45,7 +47,7 @@ def main(argv):
         out = tempfile.mkdtemp(prefix="arche-")
     scanned = scan.main([args.repo, *(["--out", out] if out else [])])
     out = scanned["out"]
-    resolved = imports.main(["--out", out])
+    resolved = imports.main(["--out", out, *[arg for directory in args.jpath for arg in ("--jpath", directory)]])
     # Rebuild the atlas for this snapshot: from OUT/map.json when the agent wrote one, else from folders.
     carried = carry_step.main(["--out", out, "--from", args.source]) if args.source else None
     mapped = atlas_map.main(["--out", out])
