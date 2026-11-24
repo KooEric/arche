@@ -1,4 +1,4 @@
-"""Paths written in known YAML files: Docker Compose, GitHub Actions and Helm charts.
+"""Paths written in known YAML files: Docker Compose, GitHub Actions, Helm charts and dbt packages.
 
 `references(path, documents, lines)` returns (path_refs, externals, consumed) where
 path_refs follow `pathref`, externals are {"package", "line"}, and consumed holds
@@ -18,6 +18,7 @@ _COMPOSE = ("compose.yml", "compose.yaml", "compose.*.yml", "compose.*.yaml",
             "docker-compose.yml", "docker-compose.yaml", "docker-compose.*.yml", "docker-compose.*.yaml")
 _ACTION_FILES = ("action.yml", "action.yaml")
 _HELM_DEPENDENCY_FILES = ("Chart.yaml", "requirements.yaml")
+DBT_PACKAGE_FILES = ("packages.yml", "packages.yaml", "dependencies.yml", "dependencies.yaml")
 _REMOTE = ("://", "git@")
 
 Found = Tuple[List[dict], List[dict], Set[Tuple[tuple, int]]]
@@ -140,6 +141,16 @@ def _helm(c: _Collector, scalars: Sequence[Scalar]) -> None:
             c.external(item, value.rstrip("/") + ("/" + name if name else ""))
 
 
+def _dbt_packages(c: _Collector, scalars: Sequence[Scalar]) -> None:
+    """`packages: - local: ../shared` links to that dbt project; hub and Git packages are external."""
+    for item in scalars:
+        key, value, _ = item
+        if _matches(key, ("packages", "[]", "local")):
+            c.ref(item, "packages.local", value, "dir", markers=("dbt_project.yml",))
+        elif _matches(key, ("packages", "[]", "package")) or _matches(key, ("packages", "[]", "git")):
+            c.external(item, value)
+
+
 def _looks_like_compose(documents: Sequence[Sequence[Scalar]]) -> bool:
     """A top-level `services` mapping whose entries have an image or a build: Compose
     files named after their purpose (`base.yml`, `backend-postgres.yml`) are common."""
@@ -155,6 +166,8 @@ def schema_for(path: str, documents: Sequence[Sequence[Scalar]] = ()) -> Optiona
         return "actions", _actions
     if name in _HELM_DEPENDENCY_FILES:
         return "helm", _helm
+    if name in DBT_PACKAGE_FILES and any(key[:1] == ("packages",) for document in documents for key, _, _ in document):
+        return "dbt", _dbt_packages
     if _looks_like_compose(documents):
         return "compose", _compose
     return None

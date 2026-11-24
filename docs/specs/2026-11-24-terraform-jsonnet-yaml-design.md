@@ -245,4 +245,8 @@ dbt 모델 이름은 프로젝트 안에서 유일해야 하므로 이름 맞추
 - Compose는 파일 이름뿐 아니라 내용으로도 알아본다. 최상위 `services`의 항목에 `image`나 `build`가 있으면 Compose다. apache/airflow는 `scripts/ci/docker-compose/base.yml`처럼 용도로 이름 지은 Compose 파일이 61개다.
 - 여러 줄에 걸친 따옴표 스칼라는 닫는 따옴표까지 건너뛴다. 이어진 줄이 `{{`로 시작해도 템플릿으로 보지 않는다.
 - Kustomize는 이번 범위에서 빠졌으므로 스키마 표에서 지웠다.
+- dbt `ref()`는 FROM·JOIN 자리에서만이 아니라 `{{ }}`·`{% %}` 안 어디서든 읽는다. dbt는 Jinja를 SQL보다 먼저 실행하므로 SQL 주석 안의 `ref()`도 의존이다. dbt-project-evaluator의 테스트 모델에서 이런 경우가 많았다. FROM 자리의 `ref` 호출은 동적 테이블 읽기(`{}`)로 남지 않도록 지운다.
+- dbt 버전 모델(`orders_v1.sql`, `orders_v2.sql`)을 지원한다. `v=`가 있으면 그 버전으로 확정, 없으면 가장 높은 버전으로 추정(`rule: dbt_latest_version`)한다. 속성 파일의 `latest_version`은 읽지 않는다.
+- `dbt_project.yml`의 `model-paths` 등은 연결선을 만들지 않고 모델 색인에만 쓴다. 폴더의 첫 파일로 긋는 연결선은 뜻이 없다.
+- 스키마 없는 YAML의 경로 값은 SQL 외 분석 대상 확장자(`.py`, `.yaml`, `.tf`, `.jsonnet` 등)만 본다. SQL 경로는 기존 SQL 파일 참조가 맡는다. 파일 이름만 적힌 값(`main.py`)은 폴더·루트 기준으로만 찾고, 뒤쪽 맞추기는 `/`가 있는 값에만 쓴다. apache/airflow에서 243개가 연결되고, 대부분 pre-commit `entry:`와 PR 라벨러의 파일 목록이다.
 

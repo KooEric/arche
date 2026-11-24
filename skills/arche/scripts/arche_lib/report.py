@@ -540,12 +540,15 @@ def _config_references(edges, anchors):
             body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
                      + _items(by_reason[reason], "", "columns") + '</details>')
     return _section("config-references", T("Configuration references"), body,
-                    T("Paths that Docker Compose, GitHub Actions and Helm chart files write, grouped by the key that holds them. A folder links to its action.yml or Chart.yaml when present, else to its first parsed file. Remote images, actions and charts are listed with the external packages."))
+                    T("Paths that Docker Compose, GitHub Actions, Helm chart and dbt files write, grouped by the key that holds them. A folder links to its action.yml, Chart.yaml or dbt_project.yml when present, else to its first parsed file. A path_value entry is a value in a YAML file no schema describes that names an existing file; it is inferred. Remote images, actions, charts and packages are listed with the external packages."))
 
 
 _UNRESOLVED_READS = (
     ("dynamic", "Table names built at run time"),
     ("ambiguous", "Table names matching several tables"),
+    ("not_found", "dbt refs matching no model"),
+    ("target_skipped", "dbt refs to seeds or files that were not parsed"),
+    ("no_dbt_project", "dbt refs outside a dbt project"),
 )
 
 

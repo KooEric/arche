@@ -9,7 +9,7 @@ from .sql_tables import tables
 def extract(path: str, text: str) -> dict:
     found = tables(path, text)
     degraded = {"degraded": True} if found["degraded"] else {}
-    return {"imports": [], "symbols": [], "tables": found["tables"], **degraded}
+    return {"imports": [], "symbols": [], "tables": found["tables"], "dbt_refs": found["dbt_refs"], **degraded}
 
 
 def build_context(parsed_paths, all_paths, read_path) -> None:

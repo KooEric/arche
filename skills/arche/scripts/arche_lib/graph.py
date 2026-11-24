@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import SCHEMA_VERSION, fileref, lineage, pathref
+from . import SCHEMA_VERSION, dbt, fileref, lineage, pathref
 from .errors import ParseError
 from .httpmatch import connect, join_path
 from .jsonio import inventory_digest
@@ -104,6 +104,8 @@ def _config_references(inventory: dict, extracted: Dict[str, dict]) -> Tuple[Lis
     for path in with_refs:
         for ref in extracted[path].get("path_refs", []):
             result = pathref.resolve(ref, index)
+            if result is None:
+                continue
             base = {"kind": "REFERENCES", "from": _file_id(path), "origin": "script", "status": result["status"],
                     "via": ref["via"], "evidence": {"path": path, "line": ref["line"], "quote": ref["quote"]}}
             if result["status"] in _RESOLVED:
@@ -114,6 +116,40 @@ def _config_references(inventory: dict, extracted: Dict[str, dict]) -> Tuple[Lis
                 edges.setdefault(_edge_key(edge), edge)
         externals.extend({"from": _file_id(path), "package": item["package"], "line": item["line"]}
                          for item in extracted[path].get("config_externals", []))
+    return list(edges.values()), externals
+
+
+def _dbt_edges(inventory: dict, extracted: Dict[str, dict]) -> Tuple[List[dict], List[dict]]:
+    """READS edges for `{{ ref() }}` in SQL, REFERENCES edges for model names in property
+    files, and refs to packages that are not in the repository."""
+    with_refs = [path for path in sorted(extracted) if extracted[path].get("dbt_refs") or extracted[path].get("dbt_names")]
+    if not with_refs:
+        return [], []
+    projects = dbt.build((entry["path"] for entry in inventory["files"]), extracted)
+    edges: Dict[tuple, dict] = {}
+    externals: List[dict] = []
+    for path in with_refs:
+        for ref in extracted[path].get("dbt_refs", []):
+            result = dbt.resolve_ref(ref, path, projects, extracted)
+            if result["status"] == "external":
+                externals.append({"from": _file_id(path), "package": result["package"], "line": ref["line"]})
+                continue
+            item = {"table": ref["ref"], "line": ref["line"], "quote": ref["quote"]}
+            edge = {**_read_edge(path, item, result), "via": "dbt:ref"}
+            if edge["to"] != _file_id(path):
+                edges.setdefault((path, ref["line"], edge["to"] or "", ref["ref"]), edge)
+        for item in extracted[path].get("dbt_names", []):
+            result = dbt.resolve_name(item, path, projects, extracted)
+            if result is None:
+                continue
+            base = {"kind": "REFERENCES", "from": _file_id(path), "origin": "script", "status": result["status"],
+                    "via": f"dbt:{item['kind']}.name", "evidence": {"path": path, "line": item["line"], "quote": item["quote"]}}
+            if result["status"] in _RESOLVED:
+                edge = {**base, "rule": result["rule"], "to": _file_id(result["to"])}
+            else:
+                candidates = {"candidates": result["candidates"]} if "candidates" in result else {}
+                edge = {**base, **candidates, "to": None, "spec": result["spec"], "reason": result["reason"]}
+            edges.setdefault((path, item["line"], edge["to"] or "", item["name"]), edge)
     return list(edges.values()), externals
 
 
@@ -406,14 +442,15 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
     connections, routes = _http(extracted, edges)
     reads, external_tables = _reads(analyzed, extracted)
     config_edges, config_externals = _config_references(inventory, extracted)
+    dbt_edges, dbt_externals = _dbt_edges(inventory, extracted)
     return {
         "schema_version": SCHEMA_VERSION,
         "inventory_sha256": inventory_digest(inventory),
         "repo": {"name": repo["name"], "commit": repo["commit"], "dirty": repo["dirty"]},
         "nodes": _nodes(analyzed, extracted),
-        "edges": sorted(edges + _references(analyzed, extracted) + config_edges + reads,
+        "edges": sorted(edges + _references(analyzed, extracted) + config_edges + reads + dbt_edges,
                        key=lambda edge: _edge_key(edge) + (edge.get("table", ""),)),
-        "externals": _dedupe_externals(externals + config_externals),
+        "externals": _dedupe_externals(externals + config_externals + dbt_externals),
         "external_tables": external_tables,
         "http_connections": connections,
         "http_routes": routes,
