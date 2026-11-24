@@ -33,6 +33,7 @@ VENDORED_DIRS = frozenset(
         "venv",
         ".next",
         "target",
+        ".terraform",
     }
 )
 SECRET_PATTERNS = (
@@ -42,6 +43,10 @@ SECRET_PATTERNS = (
     "*.key",
     "*.p12",
     "*.keystore",
+    "*.tfvars",
+    "*.tfvars.json",
+    "*.tfstate",
+    "*.tfstate.*",
     "id_rsa*",
     "credentials*.json",
     "google-services.json",

@@ -13,7 +13,7 @@ can import a JavaScript file and the reverse.
 """
 from __future__ import annotations
 
-from . import dart, go, jsonnet, jvm, python, sql, typescript
+from . import dart, go, jsonnet, jvm, python, sql, terraform, typescript
 
 ADAPTERS = {
     "python": python,
@@ -25,6 +25,7 @@ ADAPTERS = {
     "kotlin": jvm,
     "sql": sql,
     "jsonnet": jsonnet,
+    "terraform": terraform,
 }
 
 

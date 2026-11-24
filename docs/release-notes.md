@@ -2,6 +2,7 @@
 
 ## 1.0 출시 후보
 
+- Terraform: `.tf` 파일의 최상위 `resource`·`data`·`module`·`variable`·`output` 블록을 심볼로 남기고, `module` 블록의 `source`를 연결합니다. 로컬 경로(`./`, `../`)는 그 폴더의 대표 파일(`main.tf`, 없으면 이름순 첫 `.tf`)로 확정 연결하고, edge에 `module_dir`를 남깁니다. 변경 분석은 그 폴더의 다른 `.tf` 파일이 바뀌어도 모듈을 부르는 파일을 영향 후보로 보여 줍니다. 레지스트리·Git·HTTP·S3·GCS 출처는 외부 패키지로 기록합니다. `*.tfvars`·`*.tfstate*`는 비밀 파일로 열지 않고, `.terraform/`은 vendored로 건너뜁니다. terraform-aws-modules의 eks·vpc 레포에서 로컬 모듈 출처 61개·43개가 모두 연결됩니다.
 - Jsonnet: `.jsonnet`·`.libsonnet` 파일의 `import`·`importstr`·`importbin`을 읽어 연결합니다. 가져오는 파일 기준 상대 경로를 먼저 찾고, 그다음 `--jpath DIR`로 받은 라이브러리 폴더를 `jsonnet -J`처럼 나중에 준 것부터 찾습니다. 두 경우 모두 확정입니다. `--jpath`가 없으면 레포의 `lib/` 폴더를 추정으로 찾고, jsonnet-bundler 패키지는 외부로 기록합니다. `brief.txt`는 `-J`·`--jpath`·`JSONNET_PATH`가 적힌 줄을 보여 줍니다. 최상위 `local`은 심볼로 남깁니다.
 - 속도: import 단계가 파일마다 Python 구문 트리를 한 번만 만들고, FastAPI·Flask 이름이나 SQL 확장자가 없는 파일은 해당 탐색을 건너뜁니다. 절대 import는 그 이름을 가진 소스 루트만 찾습니다. apache/airflow(1만 5,600 파일)에서 132초가 39초로, 그 5배 크기에서 1,559초가 236초로 줄었고 결과는 같습니다.
 - 메모리: 감사(audit)가 파일마다 구문 트리를 요약한 뒤 버립니다. apache/airflow에서 render 최대 메모리가 2.4GB에서 237MB로 줄었고 결과는 같습니다.

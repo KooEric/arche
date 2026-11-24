@@ -42,6 +42,16 @@ _DEPENDENCY_KINDS = ("IMPORTS", "REFERENCES", "READS")
 
 
 def _reverse_imports(graph: dict) -> dict:
+    """File -> files that depend on it directly.
+
+    A Terraform module edge points at one representative file of the module
+    directory (`module_dir`); every .tf file in that directory is part of the same
+    module, so each of them counts as a dependency of the caller."""
+    module_files = defaultdict(list)
+    for node in graph["nodes"]:
+        if node.get("type") == "file" and node.get("lang") == "terraform":
+            path = node["id"][5:]
+            module_files[path.rpartition("/")[0]].append(path)
     reverse = defaultdict(set)
     for edge in graph["edges"]:
         source, target = edge.get("from"), edge.get("to")
@@ -49,6 +59,8 @@ def _reverse_imports(graph: dict) -> dict:
                 and isinstance(source, str) and source.startswith("file:")
                 and isinstance(target, str) and target.startswith("file:")):
             reverse[target[5:]].add(source[5:])
+            for member in module_files.get(edge.get("module_dir"), ()):
+                reverse[member].add(source[5:])
     return reverse
 
 
