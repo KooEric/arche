@@ -236,3 +236,13 @@ dbt 모델 이름은 프로젝트 안에서 유일해야 하므로 이름 맞추
 3. Jsonnet 라이브러리 경로는 주로 `-J`로 지정한다. `--jpath` 옵션을 추가하고, 받은 경로로 찾은 import는 `verified`로 본다. 옵션이 없을 때만 `lib/` 추측을 쓴다.
 4. Airflow YAML은 팀마다 형식이 다르다. 스키마를 만들지 않고, 값이 레포에 실제로 있는 파일을 가리킬 때만 `inferred`로 연결한다.
 5. dbt 프로젝트는 하나다. 여러 개일 때는 가장 가까운 프로젝트 안에서만 `ref()`를 찾는다.
+
+## 구현하며 바꾼 것
+
+- PR C는 `fileref.py`를 일반화하지 않고 `pathref.py`를 새로 만들었다. SQL 경로 해석(파일 이름 뒤쪽 맞추기)과 설정 경로 해석(기준 폴더, 파일·폴더 대상)은 규칙이 달라, 한 모듈에 섞으면 기존 SQL 참조 결과가 바뀔 위험이 있다.
+- YAML 어댑터 모듈 이름은 `yaml.py`가 아니라 `yaml_config.py`다. PyYAML(`import yaml`)과 혼동하지 않게 했다.
+- 폴더 대표 파일에서 `Dockerfile`을 뺐다. Dockerfile은 분석 언어가 아니라 그래프 노드가 없다. 표시 파일(`action.yml`, `Chart.yaml`)이 분석된 파일일 때만 쓰고, 아니면 그 폴더의 첫 분석 파일로 연결한다.
+- Compose는 파일 이름뿐 아니라 내용으로도 알아본다. 최상위 `services`의 항목에 `image`나 `build`가 있으면 Compose다. apache/airflow는 `scripts/ci/docker-compose/base.yml`처럼 용도로 이름 지은 Compose 파일이 61개다.
+- 여러 줄에 걸친 따옴표 스칼라는 닫는 따옴표까지 건너뛴다. 이어진 줄이 `{{`로 시작해도 템플릿으로 보지 않는다.
+- Kustomize는 이번 범위에서 빠졌으므로 스키마 표에서 지웠다.
+

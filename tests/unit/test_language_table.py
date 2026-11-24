@@ -23,7 +23,7 @@ def test_language_is_chosen_by_extension(path, lang):
 
 def test_typescript_and_javascript_share_one_adapter():
     assert adapter_for("typescript") is adapter_for("javascript")
-    assert set(ADAPTERS) == {"python", "typescript", "javascript", "dart", "go", "java", "kotlin", "sql", "jsonnet", "terraform"}
+    assert set(ADAPTERS) == {"python", "typescript", "javascript", "dart", "go", "java", "kotlin", "sql", "jsonnet", "terraform", "yaml"}
 
 
 @pytest.mark.parametrize("directory", [".wrangler", ".turbo", ".vercel", ".cache", "coverage"])

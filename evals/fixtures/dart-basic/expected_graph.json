@@ -11,13 +11,10 @@
     "lib/src/platform/storage_web.dart",
     "lib/src/services/order_cache.dart",
     "lib/src/services/order_service.dart",
+    "pubspec.yaml",
     "test/order_test.dart"
   ],
   "skipped": [
-    {
-      "path": "pubspec.yaml",
-      "reason": "unsupported_lang"
-    },
     {
       "path": "lib/src/models/order.g.dart",
       "reason": "generated"

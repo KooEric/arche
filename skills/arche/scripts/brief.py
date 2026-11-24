@@ -91,7 +91,7 @@ def build(graph, read_path=None, text_paths=()):
     lines += [f"  {path}  imported by {count}" for path, count in sorted(fan_in.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP]] or ["  none"]
     lines += ["", "IMPORTS BETWEEN FOLDERS (two levels deep)"]
     lines += [f"  {a} -> {b}  {count}" for (a, b), count in sorted(between.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]
-    lines += ["", "FILE REFERENCES BETWEEN FOLDERS (a SQL file path written as text; two levels deep)"]
+    lines += ["", "FILE REFERENCES BETWEEN FOLDERS (a SQL path in Python or YAML, or a path a Compose, Actions or Helm file writes; two levels deep)"]
     lines += [f"  {a} -> {b}  {count}" for (a, b), count in sorted(referenced.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]
     lines += ["", "TABLE READS BETWEEN FOLDERS (a SQL file reading a table another SQL file writes; two levels deep)"]
     lines += [f"  {a} -> {b}  {count}" for (a, b), count in sorted(table_reads.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP * 2]] or ["  none"]

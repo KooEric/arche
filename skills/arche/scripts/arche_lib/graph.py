@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import SCHEMA_VERSION, fileref, lineage
+from . import SCHEMA_VERSION, fileref, lineage, pathref
 from .errors import ParseError
 from .httpmatch import connect, join_path
 from .jsonio import inventory_digest
@@ -90,6 +90,31 @@ def _resolve_all(analyzed: List[dict], extracted: Dict[str, dict], contexts: dic
 
 def _edge_key(edge: dict) -> tuple:
     return (edge["from"], edge["evidence"]["line"], edge["to"] or "", edge.get("spec", ""))
+
+
+def _config_references(inventory: dict, extracted: Dict[str, dict]) -> Tuple[List[dict], List[dict]]:
+    """REFERENCES edges for paths a known configuration schema writes, with `via`
+    naming the schema and key, plus the remote sources those files name."""
+    with_refs = [path for path in sorted(extracted) if extracted[path].get("path_refs") or extracted[path].get("config_externals")]
+    if not with_refs:
+        return [], []
+    index = pathref.build_index((entry["path"] for entry in inventory["files"]), extracted)
+    edges: Dict[tuple, dict] = {}
+    externals: List[dict] = []
+    for path in with_refs:
+        for ref in extracted[path].get("path_refs", []):
+            result = pathref.resolve(ref, index)
+            base = {"kind": "REFERENCES", "from": _file_id(path), "origin": "script", "status": result["status"],
+                    "via": ref["via"], "evidence": {"path": path, "line": ref["line"], "quote": ref["quote"]}}
+            if result["status"] in _RESOLVED:
+                edge = {**base, "rule": result["rule"], "to": _file_id(result["to"])}
+            else:
+                edge = {**base, "to": None, "spec": result["spec"], "reason": result["reason"]}
+            if edge.get("to") != base["from"]:
+                edges.setdefault(_edge_key(edge), edge)
+        externals.extend({"from": _file_id(path), "package": item["package"], "line": item["line"]}
+                         for item in extracted[path].get("config_externals", []))
+    return list(edges.values()), externals
 
 
 def _references(analyzed: List[dict], extracted: Dict[str, dict]) -> List[dict]:
@@ -380,14 +405,15 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
     repo = inventory["repo"]
     connections, routes = _http(extracted, edges)
     reads, external_tables = _reads(analyzed, extracted)
+    config_edges, config_externals = _config_references(inventory, extracted)
     return {
         "schema_version": SCHEMA_VERSION,
         "inventory_sha256": inventory_digest(inventory),
         "repo": {"name": repo["name"], "commit": repo["commit"], "dirty": repo["dirty"]},
         "nodes": _nodes(analyzed, extracted),
-        "edges": sorted(edges + _references(analyzed, extracted) + reads,
+        "edges": sorted(edges + _references(analyzed, extracted) + config_edges + reads,
                        key=lambda edge: _edge_key(edge) + (edge.get("table", ""),)),
-        "externals": _dedupe_externals(externals),
+        "externals": _dedupe_externals(externals + config_externals),
         "external_tables": external_tables,
         "http_connections": connections,
         "http_routes": routes,
