@@ -222,23 +222,32 @@ def tables(path: str, text: str) -> dict:
                     cursor += 3
                 if is_name(cursor):
                     record(cursor, "write", temp)
-    tables_found = _apply_dbt_calls(found, calls)
-    refs = _jinja_refs(text) if "ref" in text else []
+    tables_found, written_refs = _apply_dbt_calls(found, calls)
+    refs = [ref for ref in (_jinja_refs(text) if "ref" in text else [])
+            if (ref["line"], ref["ref"]) not in written_refs]
     return {"tables": sorted(tables_found, key=lambda item: (item["line"], item["access"], item["table"])),
             "dbt_refs": sorted(refs, key=lambda item: (item["line"], item["ref"])), "degraded": unterminated}
 
 
-def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> List[dict]:
-    """Drop reads of `ref` calls (dbt_refs covers them) and turn `source` calls into table reads."""
+def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[dict], Set[Tuple[int, str]]]:
+    """Drop reads of `ref` calls (dbt_refs covers them) and turn `source` calls into table reads.
+
+    A dbt call written to (`insert into {{ ref('t') }}`) stays a run-time write, as any
+    other template in a write position does; the (line, name) of such a ref is
+    returned so it is not also counted as a read."""
     tables_found: Dict[Tuple[str, str], dict] = {}
+    written_refs: Set[Tuple[int, str]] = set()
     for item in found.values():
         match = _DBT_TOKEN.match(item["table"])
         if match is None:
             tables_found.setdefault((item["table"], item["access"]), item)
             continue
-        if item["access"] != "read":
-            continue
         kind, args = calls[int(match.group(1))]
+        if item["access"] != "read":
+            if kind == "ref" and args:
+                written_refs.add((item["line"], args[-1]))
+            tables_found.setdefault(("{}", item["access"]), {**item, "table": "{}", "dynamic": True})
+            continue
         if kind == "ref":
             continue
         if args is not None and len(args) == 2 and all(args):
@@ -246,4 +255,4 @@ def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> List[dict]:
             tables_found.setdefault((name, "read"), {**item, "table": name, "dynamic": False})
         else:
             tables_found.setdefault(("{}", "read"), {**item, "table": "{}", "dynamic": True})
-    return list(tables_found.values())
+    return list(tables_found.values()), written_refs

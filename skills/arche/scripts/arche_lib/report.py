@@ -514,6 +514,7 @@ def _file_references(edges, files, anchors):
 
 _UNRESOLVED_CONFIG = (
     ("dynamic", "Paths filled in at run time"),
+    ("ambiguous", "Paths matching several files"),
     ("not_found", "Paths matching no scanned file or folder"),
     ("target_skipped", "Paths to files that were not parsed"),
 )

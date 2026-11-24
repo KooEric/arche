@@ -20,15 +20,30 @@ Scalar = Tuple[Path, str, int]
 def _strip_comment(line: str) -> str:
     """The line without a trailing `# comment`; `#` inside quotes or a word is kept."""
     quote: Optional[str] = None
-    for index, char in enumerate(line):
+    index = 0
+    while index < len(line):
+        char = line[index]
         if quote:
-            if char == quote:
+            if quote == '"' and char == "\\":
+                index += 1  # an escaped character never closes the string
+            elif quote == "'" and char == "'" and line[index + 1:index + 2] == "'":
+                index += 1  # '' is a quote inside a single-quoted string
+            elif char == quote:
                 quote = None
         elif char in "'\"" and (index == 0 or line[index - 1] in " \t:-[{,"):
             quote = char
         elif char == "#" and (index == 0 or line[index - 1] in " \t"):
             return line[:index].rstrip()
+        index += 1
     return line.rstrip()
+
+
+def _strip_properties(text: str) -> str:
+    """The value without leading anchors (`&a`) and tags (`!Ref`); "" when nothing follows them."""
+    while text[:1] in ("&", "!"):
+        space = text.find(" ")
+        text = "" if space < 0 else text[space + 1:].lstrip()
+    return text
 
 
 def _split_key(text: str) -> Optional[Tuple[str, str]]:
@@ -184,7 +199,7 @@ def scalars(text: str) -> Tuple[List[List[Scalar]], bool]:
             index = parent[3]
             parent[3] += 1
             item_path = base + (index,)
-            rest = stripped[1:].lstrip(" ")
+            rest = _strip_properties(stripped[1:].lstrip(" "))
             item_indent = indent
             column = indent + (len(stripped) - len(rest))
             stack.append([item_indent, item_path, True, 0])
@@ -201,6 +216,7 @@ def scalars(text: str) -> Tuple[List[List[Scalar]], bool]:
                     degraded = degraded or stripped[:1] in "[{"
             continue  # a continuation line of a plain multi-line scalar
         key, rest = pair
+        rest = _strip_properties(rest)  # `web: &web` or `Script: !Sub |` opens a block like `web:`
         if "{{" in key:
             degraded = True
             continue

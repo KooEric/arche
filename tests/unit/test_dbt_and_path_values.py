@@ -187,3 +187,20 @@ def test_versioned_models_resolve_to_the_asked_or_the_highest_version():
         ("file:models/latest.sql", "inferred", "dbt_latest_version", "file:models/orders_v2.sql"),
         ("file:models/pinned.sql", "verified", "dbt_ref", "file:models/orders_v1.sql"),
     }
+
+
+def test_dbt_calls_written_to_stay_run_time_writes_and_are_not_reads():
+    source = tables("m.sql", "insert into {{ source('raw', 't') }} select 1\n")
+    ref = tables("m.sql", "insert into {{ ref('t') }} select * from {{ ref('u') }}\n")
+
+    assert [(t["table"], t["access"], t["dynamic"]) for t in source["tables"]] == [("{}", "write", True)]
+    assert [(t["table"], t["access"]) for t in ref["tables"]] == [("{}", "write")]
+    assert [r["ref"] for r in ref["dbt_refs"]] == ["u"]
+
+
+def test_report_lists_ambiguous_dbt_property_names():
+    from arche_lib.report import _config_references
+    graph = _graph({**DBT, "dbt/models/other/orders.sql": "select 2\n"})
+    anchors = {n["id"]: n["id"] for n in graph["nodes"] if n["type"] == "file"}
+
+    assert "<code>ambiguous</code>" in _config_references(graph["edges"], anchors)

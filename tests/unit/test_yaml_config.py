@@ -287,3 +287,22 @@ def test_quoted_scalar_spanning_lines_is_skipped_without_degrading():
             "after: ./kept\n")
 
     assert _flat(text) == ([(("after",), "./kept")], False)
+
+
+def test_anchored_or_tagged_key_still_opens_its_block():
+    refs, _ = _refs("docker-compose.yml", "services:\n  web: &web\n    build: ./web\n  worker:\n    <<: *web\nvolumes: !!map\n  data: {}\n")
+
+    assert refs == [("compose:services.*.build", "./web", "", "dir")]
+
+
+def test_block_scalar_after_a_tag_is_skipped():
+    flat, _ = _flat("Resources:\n  F:\n    Script: !Sub |\n      run: ./tools/run.py\n    After: ./kept\n")
+
+    assert flat == [(("Resources", "F", "After"), "./kept")]
+
+
+def test_escaped_quotes_do_not_end_a_string_before_a_hash():
+    for first in ("x: 'don''t # panic'", 'x: "say \\" # hi"'):
+        flat, _ = _flat(first + "\nafter: ./kept\n")
+        assert flat[-1] == (("after",), "./kept"), first
+        assert "#" in flat[0][1], first
