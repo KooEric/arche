@@ -68,3 +68,12 @@ def test_imports_without_an_inventory_is_an_integrity_error(run_script, tmp_path
 
     assert done.returncode == 3
     assert "missing input file" in done.stderr
+
+
+def test_summary_counts_references_to_unparsed_files_apart_from_unresolved(tmp_path):
+    from imports import _summary
+    graph = {"nodes": [], "externals": [], "skipped": [], "edges": [
+        {"status": "verified"}, {"status": "unresolved", "reason": "target_skipped"},
+        {"status": "unresolved", "reason": "not_found"}]}
+
+    assert _summary(graph, tmp_path)["edges"] == {"target_not_parsed": 1, "unresolved": 1, "verified": 1}

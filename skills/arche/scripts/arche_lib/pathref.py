@@ -15,6 +15,13 @@ resolves to the first parsed file the pattern matches, and the result carries th
 pattern (`glob`) and how many scanned files match it (`matched`). A reference with
 "inferred" gives an inferred result in place of a verified one.
 
+A reference with target "name" is a file name attached to a folder chosen at run
+time: `resolve_all` gives the file next to the referring file when there is one,
+else every parsed file whose path ends with the name (inferred, one result each,
+each carrying `matched`, the number of such files). Nothing is kept when no file
+matches. graph.py draws one edge for several matches and links each match to the
+code in its own folder.
+
 A reference may also carry "rule" (the rule name a match reports), "dynamic" (the
 path is built at run time) and "quiet" (graph.py keeps no edge when it is not found).
 
@@ -136,6 +143,22 @@ def _glob(ref: dict, joined: str, index: Index) -> dict:
     if parsed is None:
         return {**_unresolved(ref, "target_skipped"), "glob": joined, "matched": len(matches)}
     return {"status": "verified", "to": parsed, "rule": ref.get("rule", "glob"), "glob": joined, "matched": len(matches)}
+
+
+def resolve_all(ref: dict, index: Index) -> List[dict]:
+    """Results for a reference; several for a target "name", at most one otherwise."""
+    if ref["target"] != "name":
+        result = resolve(ref, index)
+        return [] if result is None else [result]
+    spec = ref["spec"].replace("\\", "/").lstrip("/")
+    rule = ref.get("rule", "same_name")
+    local = posixpath.normpath(posixpath.join(ref["base"], spec))
+    if local in index.analyzed:
+        return [{"status": "inferred", "to": local, "rule": rule}]
+    tail = "/" + spec
+    matches = [path for path in index.by_name.get(posixpath.basename(spec), [])
+               if path == spec or path.endswith(tail)]
+    return [{"status": "inferred", "to": path, "rule": rule, "matched": len(matches)} for path in matches]
 
 
 def resolve(ref: dict, index: Index) -> Optional[dict]:

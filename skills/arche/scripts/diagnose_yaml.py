@@ -47,8 +47,9 @@ def main(argv):
     if is_within(root, output):
         raise UsageError("--output must be outside the repository")
     inventory = build_inventory(root)
-    readable = [entry["path"] for entry in inventory["files"] if "sha256" in entry and entry.get("reason") != "secret"]
-    result = diagnose(readable, make_reader(inventory), _linked(Path(args.out)) if args.out else None)
+    parsed = [entry["path"] for entry in inventory["files"] if entry["status"] == "analyzed"]
+    every = [entry["path"] for entry in inventory["files"]]
+    result = diagnose(parsed, every, make_reader(inventory), _linked(Path(args.out)) if args.out else None)
     write_json(output / "yaml-diagnosis.json", result)
     write_text(output / "yaml-diagnosis.txt", render_text(result))
     return {"step": "diagnose_yaml", "report": str(output / "yaml-diagnosis.txt"),
