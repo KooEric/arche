@@ -78,3 +78,11 @@ def test_fingerprint_is_stable_and_changes_with_the_files(tmp_path):
     os.utime(root / "a.csv", ns=(1, 1))
 
     assert restat(first.files) != first.record["fingerprint"]
+
+
+def test_fingerprint_accepts_a_surrogate_escaped_name():
+    from pathlib import Path
+    from arche_lib.data.discover import DataFile, fingerprint
+    item = DataFile(os.fsdecode(b"bad\xff.csv"), Path("/x"), 1, 1, ())
+
+    assert len(fingerprint([item])) == 64

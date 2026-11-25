@@ -11,6 +11,8 @@ from decimal import Decimal, InvalidOperation
 from itertools import groupby
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import clean_text
+
 TYPE_SHARE = 0.95
 DISTINCT_LIMIT = 10_000
 TOP = 5
@@ -151,7 +153,7 @@ class ColumnStats:
             self.nulls += 1
             return
         self.types[kind] += 1
-        text = value if isinstance(value, str) else str(value)
+        text = clean_text(value if isinstance(value, str) else str(value))
         if len(self.hashes) < DISTINCT_LIMIT:
             self.hashes.add(hashlib.sha1(f"{kind}\0{text}".encode("utf-8", "replace")).digest())
         elif not self.capped:
@@ -162,7 +164,7 @@ class ColumnStats:
             self.lengths = [min(self.lengths[0], len(value)), max(self.lengths[1], len(value))] if self.lengths else [len(value), len(value)]
         if kind == "string" and isinstance(value, str):
             self.texts += 1
-            _bounded_add(self.patterns, shape(value))
+            _bounded_add(self.patterns, shape(text))
             if _EMAIL.fullmatch(value) or _is_phone(value):
                 self.shaped += 1
         if key is not None:

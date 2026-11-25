@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-from . import MAX_DATASETS, MAX_FILES
+from . import MAX_DATASETS, MAX_FILES, clean_text
 
 FORMATS = {".csv": "csv", ".tsv": "tsv", ".tab": "tsv", ".json": "json", ".jsonl": "jsonl",
            ".ndjson": "jsonl", ".parquet": "parquet", ".parq": "parquet"}
@@ -41,7 +41,7 @@ def format_of(name: str) -> Optional[str]:
 
 def fingerprint(files: List[DataFile]) -> str:
     lines = sorted(f"{item.rel}\t{item.size}\t{item.mtime_ns}" for item in files)
-    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+    return hashlib.sha256("\n".join(lines).encode("utf-8", errors="surrogateescape")).hexdigest()
 
 
 def restat(files: List[DataFile]) -> str:
@@ -71,7 +71,7 @@ def _walk(root: Path, skipped: Dict[str, int]) -> Tuple[Dict[str, _Folder], bool
             continue
         for entry in entries:
             name = entry.name
-            child = f"{rel}/{name}" if rel else name
+            child = clean_text(f"{rel}/{name}" if rel else name)
             if name == SUCCESS_MARKER:
                 success = True
             if entry.is_symlink():
@@ -149,6 +149,7 @@ def _folder_dataset(root_id: str, folders: Dict[str, _Folder], rel: str) -> Data
 
 
 def _record(root_id: str, rel: str, kind: str, fmt: str, files: List[DataFile], partitions: List[str]) -> dict:
+    rel = clean_text(rel)
     return {"id": f"{root_id}:{rel}", "root": root_id, "path": rel, "kind": kind, "format": fmt,
             "files": len(files), "bytes": sum(item.size for item in files), "partitions": partitions,
             "fingerprint": fingerprint(files)}

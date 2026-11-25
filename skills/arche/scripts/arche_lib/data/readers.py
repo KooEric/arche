@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List
 
 from ..errors import ParseError
+from . import clean_text
 
 SNIFF_CHARS = 64 * 1024
 FIELD_LIMIT = 1024 * 1024
@@ -39,7 +40,7 @@ def fix_header(names: List[str]) -> tuple:
     seen: Dict[str, int] = {}
     renamed: Dict[str, str] = {}
     for index, name in enumerate(names, 1):
-        base = name.strip() or f"column_{index}"
+        base = clean_text(name).strip() or f"column_{index}"
         seen[base] = seen.get(base, 0) + 1
         final = base if seen[base] == 1 else f"{base}_{seen[base]}"
         if final != name:
@@ -52,7 +53,7 @@ def flatten(record: dict, depth: int = 1, prefix: str = "") -> Dict[str, Any]:
     """Nested objects become a.b.c columns up to NESTING_DEPTH; deeper objects stay whole."""
     flat: Dict[str, Any] = {}
     for key, value in record.items():
-        name = f"{prefix}{key}"
+        name = clean_text(f"{prefix}{key}")
         if isinstance(value, dict) and depth < NESTING_DEPTH:
             flat.update(flatten(value, depth + 1, name + "."))
         else:

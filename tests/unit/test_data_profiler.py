@@ -85,3 +85,26 @@ def test_row_limit_hit_only_when_more_rows_exist(tmp_path):
 
     assert exact["row_limit_hit"] is False and exact["rows_read"] == 3 and exact["rows_total"] == 3
     assert short["row_limit_hit"] is True and short["rows_read"] == 2 and "rows_total" not in short
+
+
+def _jsonl_dataset(tmp_path, text):
+    root = tmp_path / "sur"
+    root.mkdir()
+    (root / "t.jsonl").write_bytes(text.encode("utf-8", "surrogatepass"))
+    return _only(root)
+
+
+def test_a_lone_surrogate_key_does_not_break_the_profile(tmp_path):
+    import json
+    result = profile_dataset(_jsonl_dataset(tmp_path, '{"a\\ud800b": 1}\n'), 10, False, None)
+
+    assert result["status"] == "profiled"
+    json.dumps(result, ensure_ascii=False).encode("utf-8")
+
+
+def test_a_lone_surrogate_value_does_not_break_show_values(tmp_path):
+    import json
+    result = profile_dataset(_jsonl_dataset(tmp_path, '{"a": "x\\ud800y"}\n{"a": "x\\ud800y"}\n'), 10, True, None)
+
+    assert result["status"] == "profiled"
+    json.dumps(result, ensure_ascii=False).encode("utf-8")
