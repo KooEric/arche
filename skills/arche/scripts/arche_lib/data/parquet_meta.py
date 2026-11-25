@@ -107,8 +107,9 @@ class _Reader:
             count = self.size(self.varint())
             if count:
                 kinds = self.byte()
-                self.skip_elements(kinds >> 4, count, depth + 1)
-                self.skip_elements(kinds & 0x0F, count, depth + 1)
+                for _ in range(count):   # entries are interleaved: key, value, key, value
+                    self.skip_element(kinds >> 4, depth + 1)
+                    self.skip_element(kinds & 0x0F, depth + 1)
         elif kind == _STRUCT:
             self.fields(depth, keep=())
         else:
@@ -119,6 +120,13 @@ class _Reader:
             self.take(count)
             return
         for _ in range(count):
+            self.skip(kind, depth)
+
+    def skip_element(self, kind: int, depth: int) -> None:
+        """One collection element: booleans take one byte here, as in element()."""
+        if kind in (_TRUE, _FALSE):
+            self.take(1)
+        else:
             self.skip(kind, depth)
 
     def element(self, kind: int, depth: int) -> Any:

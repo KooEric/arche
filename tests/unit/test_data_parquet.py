@@ -213,3 +213,24 @@ def test_an_endless_varint_is_refused(tmp_path):
 
     with pytest.raises(ParseError, match="parquet_bad_varint"):
         read_footer(path)
+
+
+def test_unused_mixed_width_map_is_skipped_key_by_value(tmp_path):
+    path = tmp_path / "a.parquet"
+    path.write_bytes(parquet_file(SCHEMA, 7, [(4, MAP, (I32, BINARY, [(1, "abc"), (2, "de"), (300, "f" * 200)]))]))
+
+    footer = read_footer(path)
+
+    assert footer["rows"] == 7 and [c["name"] for c in footer["columns"]] == ["id", "user.name", "user.born", "amount"]
+
+
+def test_skip_ends_where_value_ends_for_a_map():
+    encoded = struct([(1, MAP, (I32, BINARY, [(1, "abc"), (2, "de")]))])
+    after_header = 1  # field 1 header byte
+
+    read, skipped = parquet_meta._Reader(encoded), parquet_meta._Reader(encoded)
+    read.pos = skipped.pos = after_header
+    read.value(11, 1)
+    skipped.skip(11, 1)
+
+    assert skipped.pos == read.pos and read.pos == len(encoded) - 1
