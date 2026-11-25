@@ -7,6 +7,7 @@ exactly, and checks that planted personal values never reach profile.json, even 
 
 Usage: python3 evals/score_profile.py
 """
+import csv
 import json
 import os
 import shutil
@@ -39,28 +40,42 @@ def run_fixture(fixture: Path) -> tuple:
     return text, json.loads(text)
 
 
+REQUIRED = ("matches", "unresolved", "orphan_datasets", "tables_without_data", "datasets", "columns", "keys", "sensitive")
+PLANTED_SOURCE = "exports/customers_extract.csv"
+
+
+def planted_values(fixture: Path, sensitive: list) -> list:
+    """Every cell of the sensitive columns in the fixture's extract: none may reach profile.json."""
+    with open(fixture / "data" / PLANTED_SOURCE, newline="", encoding="utf-8") as handle:
+        return [row[name] for row in csv.DictReader(handle) for name in sensitive if row.get(name)]
+
+
 def differences(text: str, profile: dict, expected: dict) -> list:
+    missing = [key for key in REQUIRED if key not in expected]
+    if missing:
+        return [f"expected_profile.json is missing keys: {missing}"]
     found = []
     observed = {
         "matches": [[m["table"], m["dataset"], m["status"], m["rule"]] for m in profile["matches"]],
         "unresolved": [[u["dataset"], u["reason"]] for u in profile["unresolved"]],
         "orphan_datasets": profile["orphan_datasets"],
         "tables_without_data": profile["tables_without_data"],
+        "datasets": sorted(item["id"] for item in profile["datasets"]),
     }
     for key, value in observed.items():
         if value != expected[key]:
             found.append(f"{key}: expected {expected[key]}, got {value}")
-    datasets = {item["id"]: item for item in profile["datasets"]}
-    for dataset, columns in expected["columns"].items():
-        got = {column["name"]: column["type"] for column in datasets.get(dataset, {}).get("columns", [])}
-        if got != columns:
-            found.append(f"{dataset} column types: expected {columns}, got {got}")
-    for label, field in (("keys", "candidate_key"), ("sensitive", "sensitive")):
-        for dataset, names in expected[label].items():
-            got = [column["name"] for column in datasets[dataset]["columns"] if column.get(field)]
-            if got != names:
-                found.append(f"{dataset} {label}: expected {names}, got {got}")
-    found.extend(f"planted value reached profile.json: {value}" for value in expected["planted_values"] if value in text)
+    for item in sorted(profile["datasets"], key=lambda d: d["id"]):
+        dataset = item["id"]
+        got = {column["name"]: column["type"] for column in item["columns"]}
+        if got != expected["columns"].get(dataset):
+            found.append(f"{dataset} column types: expected {expected['columns'].get(dataset)}, got {got}")
+        for label, field in (("keys", "candidate_key"), ("sensitive", "sensitive")):
+            names = [column["name"] for column in item["columns"] if column.get(field)]
+            if names != expected[label].get(dataset, []):
+                found.append(f"{dataset} {label}: expected {expected[label].get(dataset, [])}, got {names}")
+    sensitive = expected["sensitive"].get(f"d0:{PLANTED_SOURCE}", [])
+    found.extend(f"planted value reached profile.json: {value}" for value in planted_values(FIXTURE, sensitive) if value in text)
     return found
 
 

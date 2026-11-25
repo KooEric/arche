@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import score
@@ -119,12 +121,50 @@ def test_score_cli_fails_when_a_gate_is_out_of_reach(capsys):
     capsys.readouterr()
 
 
-def test_the_data_profile_fixture_matches_its_expected_profile():
-    import json
-
+@pytest.fixture(scope="module")
+def data_profile_run():
     import score_profile
 
     text, profile = score_profile.run_fixture(score_profile.FIXTURE)
     expected = json.loads((score_profile.FIXTURE / "expected_profile.json").read_text(encoding="utf-8"))
+    return score_profile, text, profile, expected
+
+
+def test_the_data_profile_fixture_matches_its_expected_profile(data_profile_run):
+    score_profile, text, profile, expected = data_profile_run
 
     assert score_profile.differences(text, profile, expected) == []
+
+
+def test_the_data_profile_scorer_catches_a_changed_column_type(data_profile_run):
+    score_profile, text, profile, expected = data_profile_run
+    changed = {**expected, "columns": {**expected["columns"], "d0:segments.csv": {"id": "string", "name": "string"}}}
+
+    assert score_profile.differences(text, profile, changed) != []
+
+
+def test_the_data_profile_scorer_catches_a_dropped_match(data_profile_run):
+    score_profile, text, profile, expected = data_profile_run
+    dropped = {**profile, "matches": profile["matches"][1:]}
+
+    assert score_profile.differences(text, dropped, expected) != []
+
+
+def test_the_data_profile_scorer_catches_an_extra_dataset(data_profile_run):
+    score_profile, text, profile, expected = data_profile_run
+    extra = {**profile, "datasets": profile["datasets"] + [{"id": "d0:extra.csv", "columns": []}]}
+
+    assert score_profile.differences(text, extra, expected) != []
+
+
+def test_the_data_profile_scorer_catches_a_planted_value_in_the_text(data_profile_run):
+    score_profile, text, profile, expected = data_profile_run
+
+    assert score_profile.differences(text + " fixture.one@example.com", profile, expected) != []
+
+
+def test_the_data_profile_scorer_reports_a_missing_expected_key(data_profile_run):
+    score_profile, text, profile, expected = data_profile_run
+    incomplete = {k: v for k, v in expected.items() if k != "datasets"}
+
+    assert any("datasets" in line for line in score_profile.differences(text, profile, incomplete))
