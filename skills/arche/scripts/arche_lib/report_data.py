@@ -9,6 +9,8 @@ Link = Callable[[str], str]
 Translate = Callable[[str], str]
 MAX_COLUMNS_SHOWN = 200
 PERCENT_DIGITS = 1
+CAVEAT = ("Counts describe the rows read, up to the row limit. "
+          "A table matched by path or table name is inferred; check it before relying on it.")
 
 
 def _code(text) -> str:
@@ -16,6 +18,8 @@ def _code(text) -> str:
 
 
 def _range(column: dict) -> str:
+    if column.get("sensitive"):
+        return ""
     if "min" in column:
         return f'{_code(column["min"])} – {_code(column["max"])}'
     if column.get("length"):
@@ -40,9 +44,10 @@ def _columns(dataset: dict, T: Translate) -> str:
         null = f'{round(column["null_ratio"] * 100, PERCENT_DIGITS)}%' if "null_ratio" in column else ""
         distinct = (f'≥{column["distinct"]}' if column.get("distinct_capped") else str(column["distinct"])) if "distinct" in column else ""
         patterns = ", ".join(_code(pattern) for pattern, _ in column.get("patterns", [])[:3])
-        values = ", ".join(_code(value) for value, _ in column.get("top_values", []))
+        values = "" if column.get("sensitive") else ", ".join(_code(value) for value, _ in column.get("top_values", []))
+        shape = " · ".join(part for part in (patterns, values) if part)
         rows.append(f'<tr><td>{_code(column["name"])} {_flags(column, T)}</td><td>{escape(column["type"])}</td>'
-                    f'<td>{null}</td><td>{distinct}</td><td>{_range(column)}</td><td>{patterns or values}</td></tr>')
+                    f'<td>{null}</td><td>{distinct}</td><td>{_range(column)}</td><td>{shape}</td></tr>')
     hidden = len(columns) - MAX_COLUMNS_SHOWN
     more = f'<p class="empty">{T("+{count} more columns").format(count=hidden)}</p>' if hidden > 0 else ""
     head = "".join(f"<th>{T(name)}</th>" for name in ("Column", "Type", "Null", "Distinct", "Range", "Shape"))
@@ -75,16 +80,17 @@ def _rows(dataset: dict) -> str:
 def _table_block(table: str, found: List[tuple], writers: Dict[str, List[str]], readers: Dict[str, List[str]],
                  link: Link, T: Translate) -> str:
     match, dataset = found[0]
+    status = escape(match["status"], quote=True)
     keys = [column["name"] for column in dataset.get("columns", []) if column.get("candidate_key")]
-    summary = (f'{_code(table)} <span class="badge" data-status="{match["status"]}">{T(match["status"])}</span> '
+    summary = (f'{_code(table)} <span class="badge" data-status="{status}">{escape(T(match["status"]))}</span> '
                f'· {T("rows")} {_rows(dataset)} · {T("columns")} {len(dataset.get("columns", []))}'
                + (f' · {T("key")} {", ".join(_code(key) for key in keys[:3])}' if keys else ""))
     lineage = (f'<p>{T("Written by")}: {", ".join(link(node) for node in writers.get(table, [])) or T("none scanned")}</p>'
                f'<p>{T("Read by")}: {", ".join(link(node) for node in readers.get(table, [])) or T("none scanned")}</p>')
-    sources = "".join(f'<p>{T("Data")}: {_code(item["id"])} <span class="badge" data-status="{m["status"]}">{escape(m["rule"])}</span></p>'
-                      for m, item in found)
-    return (f'<details class="group table-data"><summary>{summary}</summary>{lineage}{sources}'
-            f'{_notes(dataset, T)}{_columns(dataset, T)}</details>')
+    sources = "".join(f'<div class="dataset"><p>{T("Data")}: {_code(item["id"])} '
+                      f'<span class="badge" data-status="{escape(m["status"], quote=True)}">{escape(str(m["rule"]))}</span></p>'
+                      f'{_notes(item, T)}{_columns(item, T)}</div>' for m, item in found)
+    return f'<details class="group table-data"><summary>{summary}</summary>{lineage}{sources}</details>'
 
 
 def table_data(graph: dict, profile: dict, link: Link, T: Translate) -> str:
@@ -112,6 +118,6 @@ def table_data(graph: dict, profile: dict, link: Link, T: Translate) -> str:
     loose = [f"<li>{_code(item)}</li>" for item in profile["orphan_datasets"]]
     loose += [f'<li>{_code(item["dataset"])} · {_code(item["reason"])} · {", ".join(_code(c) for c in item["candidates"])}</li>'
               for item in profile["unresolved"]]
-    return (f'<h3>{T("Table data")} <span class="count">{len(by_table)}</span></h3>{lead}{blocks}'
+    return (f'<h3>{T("Table data")} <span class="count">{len(by_table)}</span></h3><p>{T(CAVEAT)}</p>{lead}{blocks}'
             + (f'<h3>{T("Tables without data")} <span class="count">{len(profile["tables_without_data"])}</span></h3><ul>{missing}</ul>' if missing else "")
             + (f'<h3>{T("Datasets the code does not name")} <span class="count">{len(loose)}</span></h3><ul>{"".join(loose)}</ul>' if loose else ""))

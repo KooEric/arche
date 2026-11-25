@@ -62,3 +62,57 @@ def test_korean_report_translates_the_data_labels():
     section = _section(render(TEMPLATE, _graph(), [], "match", profile=_profile(COLUMN), lang="ko"))
 
     assert "테이블 데이터" in section and "쓰는 파일" in section
+
+
+CAVEAT = "Counts describe the rows read, up to the row limit. A table matched by path or table name is inferred; check it before relying on it."
+CAVEAT_KO = "수치는 행 상한까지 읽은 행 기준입니다. 경로나 테이블 이름으로 맞춘 테이블은 추정이므로 확인한 뒤 사용하세요."
+
+
+def test_the_sample_caveat_is_stated_in_both_languages():
+    assert CAVEAT in _section(render(TEMPLATE, _graph(), [], "match", profile=_profile(COLUMN)))
+    assert CAVEAT_KO in _section(render(TEMPLATE, _graph(), [], "match", lang="ko", profile=_profile(COLUMN)))
+
+
+def test_every_matched_dataset_shows_its_columns():
+    profile = _profile(COLUMN)
+    profile["datasets"].append({"id": "d0:acc/ledger2", "status": "profiled", "rows_read": 5, "rows_total": 5,
+                                "columns": [{**COLUMN, "name": "second_col"}]})
+    profile["matches"].append({"table": "acc.ledger", "dataset": "d0:acc/ledger2", "status": "inferred", "rule": "name"})
+
+    section = _section(render(TEMPLATE, _graph(), [], "match", profile=profile))
+
+    assert "<code>id</code>" in section and "<code>second_col</code>" in section
+    assert "<code>d0:acc/ledger2</code>" in section and "<code>d0:acc/ledger</code>" in section
+
+
+def test_patterns_and_values_show_together():
+    column = {**COLUMN, "patterns": [["AAA", 2]], "top_values": [["gold", 2]]}
+    section = _section(render(TEMPLATE, _graph(), [], "match", profile=_profile(column)))
+
+    assert "<code>AAA</code> · <code>gold</code>" in section
+
+
+def test_sensitive_columns_never_show_values_or_ranges():
+    column = {**COLUMN, "name": "email", "sensitive": True, "min": "aaa@x.com", "max": "zzz@x.com",
+              "top_values": [["secret@x.com", 2]], "patterns": []}
+    section = _section(render(TEMPLATE, _graph(), [], "match", profile=_profile(column)))
+
+    assert "<code>email</code>" in section
+    for leaked in ("aaa@x.com", "zzz@x.com", "secret@x.com"):
+        assert leaked not in section
+
+
+def test_nothing_from_data_survives_as_markup():
+    evil = "<b>evil</b>"
+    column = {**COLUMN, "name": evil, "min": evil, "max": evil, "top_values": [[evil, 1]], "patterns": [[evil, 1]]}
+    profile = _profile(column)
+    profile["datasets"][0]["id"] = "d0:" + evil
+    profile["matches"][0].update(dataset="d0:" + evil, rule=evil, status='"><i>')
+    profile["unresolved"] = [{"dataset": evil, "reason": evil, "candidates": [evil]}]
+    profile["orphan_datasets"] = [evil]
+    profile["tables_without_data"] = [evil]
+
+    section = _section(render(TEMPLATE, _graph(), [], "match", profile=profile))
+
+    assert "<b>" not in section and "<i>" not in section and "&lt;b&gt;evil&lt;/b&gt;" in section
+    assert 'data-status=""><i>' not in section

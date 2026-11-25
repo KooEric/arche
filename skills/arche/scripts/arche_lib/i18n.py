@@ -228,6 +228,8 @@ _KO = {
     "Read up to the row limit; counts describe a sample.": "행 상한까지만 읽었습니다. 수치는 표본 기준입니다.",
     "Files in this dataset have different columns.": "이 데이터셋의 파일마다 컬럼이 다릅니다.",
     "{count} malformed rows": "형식이 맞지 않는 행 {count}개",
+    "Counts describe the rows read, up to the row limit. A table matched by path or table name is inferred; check it before relying on it.":
+        "수치는 행 상한까지 읽은 행 기준입니다. 경로나 테이블 이름으로 맞춘 테이블은 추정이므로 확인한 뒤 사용하세요.",
     "+{count} more columns": "컬럼 {count}개 더",
 }
 

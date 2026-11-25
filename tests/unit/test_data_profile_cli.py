@@ -21,7 +21,7 @@ def _repo(make_repo):
 def _data(tmp_path):
     root = tmp_path / "landing"
     (root / "acc" / "ledger" / "dt=1").mkdir(parents=True)
-    (root / "acc" / "ledger" / "dt=1" / "part-0.csv").write_text("id,email\n1,a@x.com\n2,b@y.org\n", encoding="utf-8")
+    (root / "acc" / "ledger" / "dt=1" / "part-0.csv").write_text("id,email,tier\n1,a@x.com,gold\n2,b@y.org,silver\n", encoding="utf-8")
     (root / "raw").mkdir()
     (root / "raw" / "events.jsonl").write_text('{"id": 1}\n{"id": 2}\n', encoding="utf-8")
     (root / "tmp.csv").write_text("x\n1\n", encoding="utf-8")

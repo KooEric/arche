@@ -42,14 +42,24 @@ def module_summary(inventory, graph):
     return [modules[name] for name in sorted(modules)]
 
 
+PROFILE_SECTIONS = ("datasets", "matches", "unresolved", "orphan_datasets", "tables_without_data")
+
+
 def read_profile(out, graph):
     """profile.json of this snapshot, or None when the run has no data profile."""
     path = out / "profile.json"
     if not path.exists():
         return None
     profile = read_json(path)
-    if profile.get("profile_version") != 1 or profile.get("inventory_sha256") != graph["inventory_sha256"]:
+    if not isinstance(profile, dict):
+        raise IntegrityError("profile.json is not a JSON object; run data_profile.py again")
+    if profile.get("profile_version") != 1:
+        raise IntegrityError("profile.json has an unsupported profile_version; run data_profile.py again")
+    if profile.get("inventory_sha256") != graph["inventory_sha256"]:
         raise IntegrityError("profile.json describes a different snapshot; run data_profile.py again")
+    missing = [key for key in PROFILE_SECTIONS if not isinstance(profile.get(key), list)]
+    if missing:
+        raise IntegrityError(f"profile.json lacks {', '.join(missing)}; run data_profile.py again")
     return profile
 
 
