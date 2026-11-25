@@ -5,6 +5,8 @@ from collections import defaultdict
 from html import escape
 from typing import Callable, Dict, List
 
+from .data import MAX_COLUMNS
+
 Link = Callable[[str], str]
 Translate = Callable[[str], str]
 MAX_COLUMNS_SHOWN = 200
@@ -67,6 +69,10 @@ def _notes(dataset: dict, T: Translate) -> str:
         notes.append(T("Read up to the row limit; counts describe a sample."))
     if dataset.get("schema_drift"):
         notes.append(T("Files in this dataset have different columns."))
+    if dataset.get("header_suspect"):
+        notes.append(T("The first row or some keys looked like data, so columns were renamed column_N or key_N."))
+    if dataset.get("columns_truncated"):
+        notes.append(T("Only the first {count} columns were profiled.").format(count=MAX_COLUMNS))
     if dataset.get("malformed_rows"):
         notes.append(T("{count} malformed rows").format(count=dataset["malformed_rows"]))
     return "".join(f'<p class="callout" data-tone="warn">{note}</p>' for note in notes)

@@ -229,6 +229,9 @@ _KO = {
         "파일·데이터셋 상한에서 찾기를 멈췄습니다. 데이터 없는 테이블로 나온 것도 읽지 못한 데이터가 있을 수 있습니다.",
     "Read up to the row limit; counts describe a sample.": "행 상한까지만 읽었습니다. 수치는 표본 기준입니다.",
     "Files in this dataset have different columns.": "이 데이터셋의 파일마다 컬럼이 다릅니다.",
+    "The first row or some keys looked like data, so columns were renamed column_N or key_N.":
+        "첫 행이나 일부 키가 데이터처럼 보여 컬럼 이름을 column_N·key_N으로 바꿨습니다.",
+    "Only the first {count} columns were profiled.": "앞쪽 컬럼 {count}개만 프로파일했습니다.",
     "{count} malformed rows": "형식이 맞지 않는 행 {count}개",
     "Counts describe the rows read, up to the row limit. A table matched by path or table name is inferred; check it before relying on it.":
         "수치는 행 상한까지 읽은 행 기준입니다. 경로나 테이블 이름으로 맞춘 테이블은 추정이므로 확인한 뒤 사용하세요.",
