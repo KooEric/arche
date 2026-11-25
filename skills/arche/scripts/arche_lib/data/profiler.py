@@ -55,6 +55,7 @@ def _scan(dataset: Dataset, limit: int, show_values: bool, parquet: Optional[Row
     stats = readers.ReadStats()
     columns: Dict[str, ColumnStats] = {}
     read, hit = 0, False
+    # ask for limit + 1 rows: the extra one tells a dataset of exactly `limit` rows from a longer one
     for row in _rows(dataset.files, fmt, stats, parquet, limit + 1):
         if read >= limit:
             hit = True  # one more row exists past the limit
@@ -80,17 +81,19 @@ def profile_dataset(dataset: Dataset, limit: int, show_values: bool,
             total, schema, drift = _parquet_schema(dataset.files)
             if parquet is None:
                 return _schema_only(record, schema, total, drift, "no_reader")
-            name, reader = parquet
+            reader = parquet[1]  # the library name belongs in run.json, not here
             try:
                 scanned = _scan(dataset, limit, show_values, reader)
-            except Exception as exc:  # a third-party reader may raise anything
+            except (OSError, ParseError):
+                raise
+            except Exception as exc:  # a third-party reader may raise anything else
                 return {**_schema_only(record, schema, total, drift, "reader_failed"), "error": type(exc).__name__}
             types = {column["name"]: column for column in schema}
             for column in scanned["columns"]:
                 if column["name"] in types:
                     column["physical_type"] = types[column["name"]]["physical_type"]
                     column["logical_type"] = types[column["name"]]["logical_type"]
-            result = {**record, "status": "profiled", "reader": name, "rows_total": total,
+            result = {**record, "status": "profiled", "reader": "library", "rows_total": total,
                       **scanned, "schema_drift": drift or scanned["schema_drift"]}
         else:
             scanned = _scan(dataset, limit, show_values, None)

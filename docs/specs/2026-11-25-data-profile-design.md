@@ -155,7 +155,7 @@ scan → imports → data_profile(신규, 선택) → map → render
 
 - `pyarrow.parquet`이 있으면 `ParquetFile(path).iter_batches(batch_size=8192)`로 읽는다. 없고 `duckdb`가 있으면 `duckdb.connect(":memory:")`에서 `SELECT * FROM read_parquet(?, hive_partitioning=false) LIMIT ?`를 실행하고 `fetchmany`로 받는다. 파티션 값은 Arche가 폴더 이름에서 직접 더한다.
 - 둘 다 없으면 메타데이터만으로 `status: "schema_only"`, `reason: "no_reader"`를 기록한다. 컬럼 이름, 타입, 전체 행 수는 그대로 보인다.
-- 어느 리더를 썼는지 `reader: "stdlib" | "pyarrow" | "duckdb"`로 남긴다.
+- 어느 리더를 썼는지 `reader: "stdlib" | "library"`로 남긴다. 정확한 라이브러리 이름은 같은 입력이면 같은 profile.json이 나오도록 run.json에만 기록한다.
 
 ## 컬럼 지표 (`stats`)
 

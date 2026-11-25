@@ -1,5 +1,14 @@
 """data_profile.py end to end, and arche.py --data."""
 import json
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/arche/scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from arche_lib.data.parquet_rows import find_reader
+from parquet_footer import BINARY, I32, parquet_file
 
 
 def _repo(make_repo):
@@ -17,7 +26,8 @@ def _data(tmp_path):
     (root / "raw" / "events.jsonl").write_text('{"id": 1}\n{"id": 2}\n', encoding="utf-8")
     (root / "tmp.csv").write_text("x\n1\n", encoding="utf-8")
     (root / "broken.json").write_text("{", encoding="utf-8")
-    (root / "cols.parquet").write_bytes(b"PAR1" + b"\x15\x02\x00" + (3).to_bytes(4, "little") + b"PAR1")
+    (root / "cols.parquet").write_bytes(parquet_file(
+        [[(4, BINARY, "schema"), (5, I32, 1)], [(1, I32, 2), (4, BINARY, "id")]], 3))
     return root
 
 
@@ -48,6 +58,8 @@ def test_profile_writes_matches_and_stays_deterministic(make_repo, run_script, t
 
 
 def test_parquet_without_a_reader_is_schema_only(make_repo, run_script, tmp_path):
+    if find_reader() is not None:
+        pytest.skip("a Parquet library is installed here")
     repo, out, data = _repo(make_repo), tmp_path / "out", _data(tmp_path)
     _imports(run_script, repo, out)
 
@@ -55,7 +67,7 @@ def test_parquet_without_a_reader_is_schema_only(make_repo, run_script, tmp_path
                       env={"PYTHONPATH": str(tmp_path / "nothing")}).returncode == 0
 
     parquet = {d["id"]: d for d in json.loads((out / "profile.json").read_text())["datasets"]}["d0:cols.parquet"]
-    assert parquet["status"] in ("schema_only", "error")
+    assert parquet["status"] == "schema_only" and parquet["reason"] == "no_reader"
 
 
 def test_data_inside_the_repository_or_output_is_refused(make_repo, run_script, tmp_path):
