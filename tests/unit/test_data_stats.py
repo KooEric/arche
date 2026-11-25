@@ -103,7 +103,7 @@ GLUED = ["customerphone", "userphone", "homephone", "workphone", "contactphone",
          "officetel", "faxtel", "mytel", "contacttel", "custtel", "creditcard", "debitcard", "cardholder", "cardholder_name",
          "cardid", "cardtype", "fullpan", "panhash", "devicetoken", "pushtoken", "fcmtoken", "jwttoken", "sessiontoken",
          "bankiban", "userdob", "dobyear", "ssnumber", "phones", "user_phones", "phonenumbers", "cards", "tokens", "TELS",
-         "telefon", "discard_card", "TelNo", "pan_last4", "ssns", "dobDate"]
+         "telefon", "discard_card", "TelNo", "pan_last4", "ssns", "dobDate", "spanssn", "hotelssecret", "panelssn"]
 
 
 @pytest.mark.parametrize("name", GLUED)
@@ -112,7 +112,7 @@ def test_glued_and_plural_names_stay_sensitive(name):
 
 
 @pytest.mark.parametrize("name", ["intel", "phonetic", "phonetic_spelling", "tokenizer", "cardinality", "discarded",
-                                  "tokenization_ms", "phonetics"])
+                                  "tokenization_ms", "phonetics", "spans", "hotels", "panels", "pandas"])
 def test_known_harmless_words_are_not_sensitive(name):
     assert sensitive_name(name) is False
 

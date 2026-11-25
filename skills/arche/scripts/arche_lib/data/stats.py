@@ -32,13 +32,15 @@ SENSITIVE_NAMES = ("email", "phone", "mobile", "tel", "ssn", "passport", "passwo
                    "apikey", "card", "pan", "ccnum", "cardno", "iban", "accountno", "birth", "dob", "address",
                    "socialsecurity", "주민", "전화", "휴대", "생년", "주소", "계좌", "여권")
 HARMLESS_WORDS = (
-    "company", "companies", "span", "spans", "spanish", "japan", "japanese", "panel", "panels", "pandas", "panda",
+    "company", "companies", "span", "spanish", "japan", "japanese", "panel", "panda",
     "expand", "expanded", "pancake",
-    "hotel", "hotels", "intel", "telemetry", "television", "teleport", "motel", "cartel", "pastel",
+    "hotel", "intel", "telemetry", "television", "teleport", "motel", "cartel", "pastel",
     "adobe",
     "discard", "discarded", "scorecard", "wildcard",
-    "phonetic", "phonetics", "tokenize", "tokenizer", "tokenized", "tokenization", "cardinal", "cardinality",
+    "phonetic", "tokenize", "tokenizer", "tokenized", "tokenization", "cardinal", "cardinality",
 )
+# No plain plurals (spans, hotels): blanking the singular leaves a harmless "s", while blanking the plural could
+# swallow the "s" that starts the next entry (spanssn would lose "ssn").
 _HARMLESS_LONGEST_FIRST = tuple(sorted(HARMLESS_WORDS, key=len, reverse=True))
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])")
 _INTEGER = re.compile(r"[+-]?\d{1,18}")
