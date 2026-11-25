@@ -85,6 +85,19 @@ def test_sensitive_names(name):
     assert sensitive_name(name) is True
 
 
+@pytest.mark.parametrize("name", ["pan", "card_pan", "tel", "dob", "card", "cardNo", "credit_card", "ssn", "user_email",
+                                  "emailAddress", "phone_number", "phoneNumber", "api-key", "birth_date", "고객주소",
+                                  "telno", "TEL_NO", "access_token", "accessToken", "userPAN"])
+def test_short_names_match_whole_tokens(name):
+    assert sensitive_name(name) is True
+
+
+@pytest.mark.parametrize("name", ["company", "span", "japan", "hotel", "telemetry", "adobe", "discard", "intel",
+                                  "tokenizer", "cardinality", "panel", "phonetic", "vibrant"])
+def test_short_names_inside_longer_words_are_not_sensitive(name):
+    assert sensitive_name(name) is False
+
+
 def test_sensitive_columns_never_carry_values_or_ranges():
     by_name = _summary("birth_date", ["2000-01-01", "1990-05-05"], show_values=True)
     assert "min" not in by_name and "top_values" not in by_name and by_name["sensitive"] is True

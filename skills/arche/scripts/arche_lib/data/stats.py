@@ -24,9 +24,17 @@ RATIO_DIGITS = 4
 TRACKED_KEYS = 10_000
 RANGED = ("integer", "decimal", "date", "timestamp")
 NULL_TEXT = frozenset({"", "NULL", "null", "\\N", "NaN", "nan"})
-SENSITIVE_NAMES = ("email", "phone", "mobile", "tel", "ssn", "passport", "password", "passwd", "secret",
-                   "token", "apikey", "card", "pan", "ccnum", "cardno", "iban", "accountno", "birth", "dob", "address",
+# Entries of 4 characters or fewer, and card/token/phone, match only a whole token of the name (card_pan, cardNo)
+# or one of the joined forms below; the rest match anywhere in the name with separators removed.
+SENSITIVE_TOKENS = frozenset({
+    "tel", "ssn", "pan", "dob", "iban", "card", "token", "phone",
+    "telno", "telnum", "panno", "cardnum", "cardnumber", "phoneno", "phonenum", "phonenumber",
+    "accesstoken", "authtoken", "apitoken", "idtoken", "refreshtoken", "bearertoken",
+})
+SENSITIVE_NAMES = ("email", "mobile", "passport", "password", "passwd", "secret", "apikey", "ccnum", "cardno",
+                   "accountno", "birth", "address", "telephone",
                    "주민", "전화", "휴대", "생년", "주소", "계좌", "여권")
+_NAME_TOKEN = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+|[^\x00-\x7f]+")
 _INTEGER = re.compile(r"[+-]?\d{1,18}")
 _LEADING_ZERO = re.compile(r"[+-]?0\d+")
 _DECIMAL = re.compile(r"[+-]?(\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?")
@@ -116,7 +124,9 @@ def classify(value: Any) -> Tuple[str, Any]:
 
 def sensitive_name(name: str) -> bool:
     normalized = re.sub(r"[\s_.\-]", "", name.lower())
-    return any(part in normalized for part in SENSITIVE_NAMES)
+    if any(part in normalized for part in SENSITIVE_NAMES):
+        return True
+    return any(token.lower() in SENSITIVE_TOKENS for token in _NAME_TOKEN.findall(re.sub(r"[\s_.\-]+", " ", name)))
 
 
 def _is_phone(text: str) -> bool:
