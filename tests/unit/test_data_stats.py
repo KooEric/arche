@@ -92,3 +92,32 @@ def test_sensitive_columns_never_carry_values_or_ranges():
     by_value = _summary("contact", ["a@x.com", "b@y.org", "010-1234-5678", "n/a"], show_values=True)
     assert by_value["sensitive"] is True and "top_values" not in by_value
     assert all("@x.com" not in pattern for pattern, _ in by_value["patterns"])
+
+
+CARDS = ["4111111111111111", "5500000000000004"]
+
+
+def test_a_card_named_column_has_no_range():
+    summary = _summary("pan", CARDS)
+
+    assert summary["sensitive"] is True and "min" not in summary and "max" not in summary
+
+
+def test_card_numbers_are_sensitive_by_value_whatever_the_name():
+    summary = _summary("ref", CARDS * 5)
+
+    assert summary["type"] == "integer"
+    assert summary["sensitive"] is True and "min" not in summary
+
+
+def test_ordinary_integers_are_not_sensitive():
+    assert _summary("id", [str(n) for n in range(1, 101)])["sensitive"] is False
+    orders = [str(1234567000 + n) for n in range(1, 41)]   # 10 digits, no contact name, not Luhn
+    assert not any(module.luhn(order) for order in orders)
+    assert _summary("order_no", orders)["sensitive"] is False
+
+
+def test_digit_only_phone_numbers_count_only_by_name():
+    assert _summary("contact", ["0212345678"] * 3)["sensitive"] is True    # leading zero: a string shaped like a phone
+    assert _summary("order_no", ["1234567891"] * 3)["sensitive"] is False   # an integer; the rule leaves it alone
+    assert _summary("tel_no", ["1234567891"] * 3)["sensitive"] is True

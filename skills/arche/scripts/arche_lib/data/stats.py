@@ -25,7 +25,7 @@ TRACKED_KEYS = 10_000
 RANGED = ("integer", "decimal", "date", "timestamp")
 NULL_TEXT = frozenset({"", "NULL", "null", "\\N", "NaN", "nan"})
 SENSITIVE_NAMES = ("email", "phone", "mobile", "tel", "ssn", "passport", "password", "passwd", "secret",
-                   "token", "apikey", "card", "iban", "accountno", "birth", "dob", "address",
+                   "token", "apikey", "card", "pan", "ccnum", "cardno", "iban", "accountno", "birth", "dob", "address",
                    "주민", "전화", "휴대", "생년", "주소", "계좌", "여권")
 _INTEGER = re.compile(r"[+-]?\d{1,18}")
 _LEADING_ZERO = re.compile(r"[+-]?0\d+")
@@ -123,6 +123,19 @@ def _is_phone(text: str) -> bool:
     return bool(_PHONE.fullmatch(text)) and 9 <= sum(char.isdigit() for char in text) <= 15
 
 
+def luhn(text: str) -> bool:
+    """A 13-19 digit text that passes the Luhn check: the shape of a payment card number."""
+    if not (13 <= len(text) <= 19 and text.isascii() and text.isdigit()):
+        return False
+    total = 0
+    for index, char in enumerate(reversed(text)):
+        digit = int(char)
+        if index % 2:
+            digit = digit * 2 - 9 if digit > 4 else digit * 2
+        total += digit
+    return total % 10 == 0
+
+
 def _bounded_add(counter: Counter, key: str) -> None:
     if key in counter or len(counter) < TRACKED_KEYS:
         counter[key] += 1
@@ -142,8 +155,8 @@ class ColumnStats:
         self.lengths: Optional[List[int]] = None
         self.patterns: Counter = Counter()
         self.top: Counter = Counter()
-        self.texts = 0
-        self.shaped = 0
+        self.checked = 0   # non-null values examined for a sensitive shape
+        self.shaped = 0    # of those, card-, email- or phone-shaped
         self.extremes: Dict[str, list] = {}   # group -> [min key, min text, max key, max text]
 
     def add(self, value: Any) -> None:
@@ -153,6 +166,7 @@ class ColumnStats:
             self.nulls += 1
             return
         self.types[kind] += 1
+        self.checked += 1
         text = clean_text(value if isinstance(value, str) else str(value))
         if len(self.hashes) < DISTINCT_LIMIT:
             self.hashes.add(hashlib.sha1(f"{kind}\0{text}".encode("utf-8", "replace")).digest())
@@ -162,11 +176,15 @@ class ColumnStats:
             _bounded_add(self.top, text[:VALUE_CHARS])
         if isinstance(value, str):
             self.lengths = [min(self.lengths[0], len(value)), max(self.lengths[1], len(value))] if self.lengths else [len(value), len(value)]
-        if kind == "string" and isinstance(value, str):
-            self.texts += 1
+        is_text = kind == "string" and isinstance(value, str)
+        if is_text:
             _bounded_add(self.patterns, shape(text))
-            if _EMAIL.fullmatch(value) or _is_phone(value):
-                self.shaped += 1
+        # Digit-only 9-15 digit integers are not treated as phones (an id or an amount looks the same);
+        # a phone is a string, or sits in a column whose name says so. Card numbers are caught by Luhn.
+        counts = (is_text and (_EMAIL.fullmatch(value) or _is_phone(value))) or (
+            (isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))) and luhn(text))
+        if counts:
+            self.shaped += 1
         if key is not None:
             group = "number" if kind in ("integer", "decimal") else kind
             current = self.extremes.get(group)
@@ -194,7 +212,7 @@ class ColumnStats:
         kind, mix = self._type()
         nulls = self.nulls + (rows_read - self.present)
         distinct = len(self.hashes)
-        sensitive = sensitive_name(self.name) or (self.texts > 0 and self.shaped / self.texts >= SENSITIVE_SHARE)
+        sensitive = sensitive_name(self.name) or (self.checked > 0 and self.shaped / self.checked >= SENSITIVE_SHARE)
         result = {
             "name": self.name, "type": kind,
             "null_ratio": round(nulls / rows_read, RATIO_DIGITS) if rows_read else 0.0,
