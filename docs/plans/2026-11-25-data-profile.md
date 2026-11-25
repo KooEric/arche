@@ -20,7 +20,7 @@
 - 같은 입력이면 `graph.json`과 `profile.json`이 바이트 단위로 같아야 한다. 시간과 리더 이름은 `run.json`에만 남긴다.
 - `graph.json`의 `SCHEMA_VERSION`은 `"1.0"` 그대로이다. `written_tables`는 추가 키이다. `profile.json`은 `profile_version: 1`이다.
 - 스크립트 이름은 `data_profile.py`이다. `profile.py`는 표준 라이브러리 `profile` 모듈을 가리므로 쓰지 않는다.
-- 상한값: 행 `DEFAULT_MAX_ROWS = 100_000`, 데이터셋 `MAX_DATASETS = 2_000`, 파일 `MAX_FILES = 100_000`, distinct `DISTINCT_LIMIT = 10_000`, JSON 파일 64MB, CSV 필드 1MB, Parquet 푸터 16MB, Thrift 깊이 64, 리포트 컬럼 표 200개.
+- 상한값: 행 `DEFAULT_MAX_ROWS = 100_000`, 데이터셋 `MAX_DATASETS = 2_000`, 파일 `MAX_FILES = 100_000`, distinct `DISTINCT_LIMIT = 10_000`, 데이터셋당 컬럼 `MAX_COLUMNS = 1_000`, JSON 파일 64MB, CSV 필드 1MB, Parquet 푸터 16MB, Thrift 깊이 64, 리포트 컬럼 표 200개.
 - fixture에 사내 코드와 실제 개인정보를 넣지 않는다. 모두 합성이다.
 - 커밋 메시지는 이 저장소의 관례대로 영어 한 문장으로 쓰고, 귀속(Co-Authored-By) 줄은 붙이지 않는다.
 - 모든 명령은 worktree 루트에서 실행한다.

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Dict, Iterator, List, Optional, Tuple
 
 from ..errors import ParseError
-from . import parquet_meta, readers
+from . import MAX_COLUMNS, parquet_meta, readers
 from .discover import Dataset, DataFile, restat
 from .parquet_rows import RowReader
 from .stats import ColumnStats
@@ -54,7 +54,7 @@ def _scan(dataset: Dataset, limit: int, show_values: bool, parquet: Optional[Row
     record, fmt = dataset.record, dataset.record["format"]
     stats = readers.ReadStats()
     columns: Dict[str, ColumnStats] = {}
-    read, hit = 0, False
+    read, hit, cut = 0, False, False
     # ask for limit + 1 rows: the extra one tells a dataset of exactly `limit` rows from a longer one
     for row in _rows(dataset.files, fmt, stats, parquet, limit + 1):
         if read >= limit:
@@ -64,9 +64,13 @@ def _scan(dataset: Dataset, limit: int, show_values: bool, parquet: Optional[Row
         for name, value in row.items():
             column = columns.get(name)
             if column is None:
+                if len(columns) >= MAX_COLUMNS:
+                    cut = True
+                    continue
                 column = columns[name] = ColumnStats(name, show_values)
             column.add(value)
-    extra = {"header_suspect": True} if stats.header_suspect else {}
+    extra = {**({"header_suspect": True} if stats.header_suspect else {}),
+             **({"columns_truncated": True} if cut else {})}
     return {**extra, "rows_read": read, "row_limit_hit": hit, "malformed_rows": stats.malformed_rows,
             "encoding_errors": stats.encoding_errors, "schema_drift": stats.schema_drift,
             "header_fixed": dict(sorted(stats.header_fixed.items())),

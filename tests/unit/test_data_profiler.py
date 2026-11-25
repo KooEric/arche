@@ -154,3 +154,18 @@ def test_a_normal_header_is_untouched(tmp_path):
 
     assert [c["name"] for c in result["columns"]] == ["id", "name"]
     assert "header_suspect" not in result and result["rows_read"] == 2
+
+
+def test_columns_stop_at_the_cap(tmp_path, monkeypatch):
+    from arche_lib.data import profiler
+    monkeypatch.setattr(profiler, "MAX_COLUMNS", 2)
+
+    result = profile_dataset(_text_dataset(tmp_path, "t.csv", "a,b,c,d\nx,y,z,w\n"), 10, False, None)
+
+    assert [c["name"] for c in result["columns"]] == ["a", "b"] and result["columns_truncated"] is True
+
+
+def test_columns_under_the_cap_are_not_marked(tmp_path):
+    result = profile_dataset(_text_dataset(tmp_path, "t.csv", "a,b\nx,y\n"), 10, False, None)
+
+    assert "columns_truncated" not in result
