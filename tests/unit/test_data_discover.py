@@ -86,3 +86,26 @@ def test_fingerprint_accepts_a_surrogate_escaped_name():
     item = DataFile(os.fsdecode(b"bad\xff.csv"), Path("/x"), 1, 1, ())
 
     assert len(fingerprint([item])) == 64
+
+
+def test_an_entry_that_fails_midwalk_is_counted_as_unreadable(tmp_path, monkeypatch):
+    root = _tree(tmp_path / "d", {"a.csv": "x\n1\n", "b.csv": "x\n1\n"})
+    real = os.scandir
+
+    class Broken:
+        def __init__(self, entry):
+            self._entry, self.name, self.path = entry, entry.name, entry.path
+
+        def stat(self, **kwargs):
+            if self.name == "b.csv":
+                raise PermissionError("denied")
+            return self._entry.stat(**kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._entry, name)
+
+    monkeypatch.setattr(module.os, "scandir", lambda path: [Broken(entry) for entry in real(path)])
+
+    ids, skipped, _ = _ids(root)
+
+    assert ids == ["d0:a.csv"] and skipped == {"unreadable": 1}

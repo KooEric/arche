@@ -74,3 +74,14 @@ def test_bad_map_entries_name_the_table(tmp_path, tables, roots, message):
 def test_a_map_of_another_version_is_refused(tmp_path):
     with pytest.raises(UsageError, match="version"):
         load_map(_map(tmp_path, {}, version=2), ["d0"], [])
+
+
+def test_a_map_that_cannot_be_read_is_a_usage_error(tmp_path):
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    binary = tmp_path / "bad.json"
+    binary.write_bytes(b"\xff\xfe\x00{")
+
+    for path in (folder, binary, tmp_path / "missing.json"):
+        with pytest.raises(UsageError, match="data map"):
+            load_map(path, ["d0"], [])

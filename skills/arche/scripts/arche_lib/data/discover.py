@@ -74,24 +74,27 @@ def _walk(root: Path, skipped: Dict[str, int]) -> Tuple[Dict[str, _Folder], bool
             child = clean_text(f"{rel}/{name}" if rel else name)
             if name == SUCCESS_MARKER:
                 success = True
-            if entry.is_symlink():
-                skipped["symlink"] = skipped.get("symlink", 0) + 1
-            elif name.startswith((".", "_")):
-                skipped["hidden"] = skipped.get("hidden", 0) + 1
-            elif entry.is_dir(follow_symlinks=False):
-                subfolders.append(name)
-            elif format_of(name) is None:
-                skipped["unsupported"] = skipped.get("unsupported", 0) + 1
-            else:
-                info = entry.stat(follow_symlinks=False)
-                if info.st_size == 0:
-                    skipped["empty"] = skipped.get("empty", 0) + 1
-                    continue
-                if count >= MAX_FILES:
-                    folders[rel] = _Folder(files, subfolders, success)
-                    return folders, True
-                count += 1
-                files.append(DataFile(child, Path(entry.path), info.st_size, info.st_mtime_ns, ()))
+            try:
+                if entry.is_symlink():
+                    skipped["symlink"] = skipped.get("symlink", 0) + 1
+                elif name.startswith((".", "_")):
+                    skipped["hidden"] = skipped.get("hidden", 0) + 1
+                elif entry.is_dir(follow_symlinks=False):
+                    subfolders.append(name)
+                elif format_of(name) is None:
+                    skipped["unsupported"] = skipped.get("unsupported", 0) + 1
+                else:
+                    info = entry.stat(follow_symlinks=False)
+                    if info.st_size == 0:
+                        skipped["empty"] = skipped.get("empty", 0) + 1
+                        continue
+                    if count >= MAX_FILES:
+                        folders[rel] = _Folder(files, subfolders, success)
+                        return folders, True
+                    count += 1
+                    files.append(DataFile(child, Path(entry.path), info.st_size, info.st_mtime_ns, ()))
+            except OSError:
+                skipped["unreadable"] = skipped.get("unreadable", 0) + 1
         folders[rel] = _Folder(files, subfolders, success)
         pending.extend(f"{rel}/{name}" if rel else name for name in reversed(subfolders))
     return folders, False

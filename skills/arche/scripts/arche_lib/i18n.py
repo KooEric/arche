@@ -225,6 +225,8 @@ _KO = {
     "Shape": "모양",
     "Schema only: install pyarrow or duckdb to read rows.": "스키마만 읽었습니다. 행을 읽으려면 pyarrow나 duckdb를 설치하세요.",
     "Not read": "읽지 못함",
+    "Discovery stopped at the file or dataset limit; tables listed without data may have data that was not read.":
+        "파일·데이터셋 상한에서 찾기를 멈췄습니다. 데이터 없는 테이블로 나온 것도 읽지 못한 데이터가 있을 수 있습니다.",
     "Read up to the row limit; counts describe a sample.": "행 상한까지만 읽었습니다. 수치는 표본 기준입니다.",
     "Files in this dataset have different columns.": "이 데이터셋의 파일마다 컬럼이 다릅니다.",
     "{count} malformed rows": "형식이 맞지 않는 행 {count}개",

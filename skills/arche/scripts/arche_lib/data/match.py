@@ -16,7 +16,7 @@ def load_map(path: Path, root_ids: List[str], dataset_ids: Iterable[str]) -> Dic
     """data-map.json -> {dataset id: [tables]}. A wrong key or path is a UsageError naming it."""
     try:
         data = read_json(path)
-    except IntegrityError as exc:
+    except (IntegrityError, OSError, UnicodeDecodeError) as exc:
         raise UsageError(f"cannot read the data map {path}: {exc}") from None
     if not isinstance(data, dict) or data.get("version") != MAP_VERSION or not isinstance(data.get("tables"), dict):
         raise UsageError('the data map must be {"version": 1, "tables": {"schema.table": "d0:path"}}')

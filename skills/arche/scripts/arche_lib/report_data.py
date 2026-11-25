@@ -12,6 +12,9 @@ PERCENT_DIGITS = 1
 CAVEAT = ("Counts describe the rows read, up to the row limit. "
           "A table matched by path or table name is inferred; check it before relying on it.")
 
+TRUNCATED = ("Discovery stopped at the file or dataset limit; "
+             "tables listed without data may have data that was not read.")
+
 
 def _code(text) -> str:
     return f"<code>{escape(str(text))}</code>"
@@ -118,6 +121,7 @@ def table_data(graph: dict, profile: dict, link: Link, T: Translate) -> str:
     loose = [f"<li>{_code(item)}</li>" for item in profile["orphan_datasets"]]
     loose += [f'<li>{_code(item["dataset"])} · {_code(item["reason"])} · {", ".join(_code(c) for c in item["candidates"])}</li>'
               for item in profile["unresolved"]]
-    return (f'<h3>{T("Table data")} <span class="count">{len(by_table)}</span></h3><p>{T(CAVEAT)}</p>{lead}{blocks}'
+    cut = (f'<p class="callout" data-tone="warn">{T(TRUNCATED)}</p>' if profile.get("truncated") else "")
+    return (f'<h3>{T("Table data")} <span class="count">{len(by_table)}</span></h3><p>{T(CAVEAT)}</p>{cut}{lead}{blocks}'
             + (f'<h3>{T("Tables without data")} <span class="count">{len(profile["tables_without_data"])}</span></h3><ul>{missing}</ul>' if missing else "")
             + (f'<h3>{T("Datasets the code does not name")} <span class="count">{len(loose)}</span></h3><ul>{"".join(loose)}</ul>' if loose else ""))
