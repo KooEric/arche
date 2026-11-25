@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills/arche/scripts"))
 from arche_lib.data import stats as module
-from arche_lib.data.stats import ColumnStats, classify, sensitive_name, shape
+from arche_lib.data.stats import HARMLESS_WORDS, SENSITIVE_NAMES, ColumnStats, classify, sensitive_name, shape
 
 
 def _summary(name, values, rows=None, show_values=False):
@@ -135,12 +135,32 @@ SENSITIVE_LOOKING = GLUED + ["email", "User_Email", "emailAddress", "phone_no", 
                              "계좌번호", "여권번호", "access_token", "accessToken", "auth_token", "tel_no", "telephone"]
 
 
-def test_the_new_rule_flags_everything_the_old_substring_rule_flagged_except_known_false_positives():
-    names = SENSITIVE_LOOKING + sorted(EXPECTED_FALSE_POSITIVES)
+GLUED_MORE = ["patientdob", "empdob", "childdob", "parentdob", "rawdob", "dobmonth", "dobday", "dobtext", "dobyyyy",
+              "empssn", "payerssn", "patientssn", "encryptedssn", "ssnenc", "primarypan", "bankpan", "taxpan",
+              "guardiantel", "parenttel", "emergencytel", "shoptel", "companytel", "telnos", "company_tel", "companyTel"]
+
+
+@pytest.mark.parametrize("name", GLUED_MORE)
+def test_any_glue_around_a_short_name_stays_sensitive(name):
+    assert sensitive_name(name) is True
+
+
+@pytest.mark.parametrize("word", HARMLESS_WORDS)
+def test_each_harmless_word_alone_is_not_sensitive(word):
+    assert sensitive_name(word) is False and sensitive_name(word.upper()) is False
+
+
+@pytest.mark.parametrize("word", HARMLESS_WORDS)
+def test_each_harmless_word_contains_a_sensitive_entry(word):
+    assert any(entry in word for entry in SENSITIVE_NAMES)
+
+
+def test_the_new_rule_equals_the_old_substring_rule_minus_names_made_only_of_harmless_words():
+    names = SENSITIVE_LOOKING + GLUED_MORE + sorted(EXPECTED_FALSE_POSITIVES) + list(HARMLESS_WORDS)
     assert len(SENSITIVE_LOOKING) >= 60
-    missed = [n for n in names if _old_rule(n) and n not in EXPECTED_FALSE_POSITIVES and not sensitive_name(n)]
-    assert missed == []
-    assert [n for n in EXPECTED_FALSE_POSITIVES if sensitive_name(n)] == []
+    harmless_only = EXPECTED_FALSE_POSITIVES | set(HARMLESS_WORDS)
+    mismatched = [n for n in names if sensitive_name(n) != (_old_rule(n) and n not in harmless_only)]
+    assert mismatched == []
 
 
 def test_sensitive_columns_never_carry_values_or_ranges():
