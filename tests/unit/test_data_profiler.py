@@ -123,7 +123,8 @@ def test_a_headerless_csv_keeps_no_email_or_phone_text(tmp_path):
 
     result = profile_dataset(dataset, 10, True, None)
 
-    dumped = json.dumps(result)
+    # The fingerprint is a hash of sizes and mtimes; its hex digits can contain any fragment by chance.
+    dumped = json.dumps({key: value for key, value in result.items() if key != "fingerprint"})
     for text in ("kim", "lee", "x.com", "y.org", "1234", "5678", "8888"):
         assert text not in dumped
     assert [c["name"] for c in result["columns"]] == ["column_1", "column_2"]
@@ -164,7 +165,8 @@ def test_json_keyed_by_emails_does_not_keep_them_as_column_names(tmp_path):
 
     result = profile_dataset(dataset, 10, True, None)
 
-    dumped = json.dumps(result)
+    # The fingerprint is a hash of sizes and mtimes; its hex digits can contain any fragment by chance.
+    dumped = json.dumps({key: value for key, value in result.items() if key != "fingerprint"})
     for text in ("kim", "x.com", "1234", "5678"):
         assert text not in dumped
     assert [c["name"] for c in result["columns"]] == ["key_1", "key_2", "name"]
