@@ -18,7 +18,7 @@ def _rows(files: List[DataFile], fmt: str, stats: readers.ReadStats,
         source = parquet(item.path, limit) if fmt == "parquet" else readers.rows(item.path, fmt, stats)
         for row in source:
             if fmt == "parquet":
-                row = readers.flatten(row)
+                row = readers.flatten(row, stats=stats)
             for key, value in item.partition:
                 row.setdefault(key, value)
             yield row
@@ -66,7 +66,8 @@ def _scan(dataset: Dataset, limit: int, show_values: bool, parquet: Optional[Row
             if column is None:
                 column = columns[name] = ColumnStats(name, show_values)
             column.add(value)
-    return {"rows_read": read, "row_limit_hit": hit, "malformed_rows": stats.malformed_rows,
+    extra = {"header_suspect": True} if stats.header_suspect else {}
+    return {**extra, "rows_read": read, "row_limit_hit": hit, "malformed_rows": stats.malformed_rows,
             "encoding_errors": stats.encoding_errors, "schema_drift": stats.schema_drift,
             "header_fixed": dict(sorted(stats.header_fixed.items())),
             "columns": [column.summary(read) for column in columns.values()]}

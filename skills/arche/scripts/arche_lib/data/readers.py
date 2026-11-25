@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Optional
 
 from ..errors import ParseError
 from . import clean_text
+from .stats import classify_text, contact_shaped
 
 SNIFF_CHARS = 64 * 1024
 FIELD_LIMIT = 1024 * 1024
@@ -15,6 +17,9 @@ JSON_MAX_BYTES = 64 * 1024 * 1024
 NESTING_DEPTH = 3
 DELIMITERS = ",;|\t"
 REPLACEMENT = "�"
+JSONL_LINE_LIMIT = 1024 * 1024
+HEADER_VALUE_SHARE = 0.5
+VALUE_TYPES = frozenset({"integer", "decimal", "date", "timestamp"})
 
 
 class ReadStats:
@@ -26,6 +31,8 @@ class ReadStats:
         self.schema_drift = False
         self.header_fixed: Dict[str, str] = {}
         self.headers: List[List[str]] = []
+        self.header_suspect = False   # a header or key that looked like data was renamed
+        self.suspect_keys: Dict[str, int] = {}
 
     def note_header(self, names: List[str], renamed: Dict[str, str]) -> None:
         if self.headers and names != self.headers[0]:
@@ -49,16 +56,34 @@ def fix_header(names: List[str]) -> tuple:
     return fixed, renamed
 
 
-def flatten(record: dict, depth: int = 1, prefix: str = "") -> Dict[str, Any]:
+def _key(key: Any, stats: Optional[ReadStats]) -> str:
+    """A JSON key as a column name part; an email- or phone-shaped key is a value, so it becomes key_<n>."""
+    text = clean_text(str(key))
+    if stats is None or not contact_shaped(text):
+        return text
+    stats.header_suspect = True
+    return f"key_{stats.suspect_keys.setdefault(text, len(stats.suspect_keys) + 1)}"
+
+
+def flatten(record: dict, depth: int = 1, prefix: str = "", stats: Optional[ReadStats] = None) -> Dict[str, Any]:
     """Nested objects become a.b.c columns up to NESTING_DEPTH; deeper objects stay whole."""
     flat: Dict[str, Any] = {}
     for key, value in record.items():
-        name = clean_text(f"{prefix}{key}")
+        name = f"{prefix}{_key(key, stats)}"
         if isinstance(value, dict) and depth < NESTING_DEPTH:
-            flat.update(flatten(value, depth + 1, name + "."))
+            flat.update(flatten(value, depth + 1, name + ".", stats))
         else:
             flat[name] = value
     return flat
+
+
+def header_is_data(fields: List[str]) -> bool:
+    """A first row that looks like values: a contact-shaped field, or mostly numbers and dates."""
+    present = [field.strip() for field in fields if field.strip()]
+    if any(contact_shaped(field) for field in present):
+        return True
+    typed = sum(1 for field in present if classify_text(field)[0] in VALUE_TYPES)
+    return bool(present) and typed / len(present) > HEADER_VALUE_SHARE
 
 
 def _delimiter(sample: str, fmt: str) -> str:
@@ -80,9 +105,15 @@ def read_csv(path: Path, fmt: str, stats: ReadStats) -> Iterator[Dict[str, Any]]
             header = next(reader, None)
             if header is None:
                 return
-            names, renamed = fix_header(header)
+            leading = []
+            if header_is_data(header):
+                names, renamed = [f"column_{index}" for index in range(1, len(header) + 1)], {}
+                stats.header_suspect = True
+                leading = [header]
+            else:
+                names, renamed = fix_header(header)
             stats.note_header(names, renamed)
-            for row in reader:
+            for row in itertools.chain(leading, reader):
                 if not row:
                     continue
                 if len(row) != len(names):
@@ -109,7 +140,7 @@ def read_json(path: Path, stats: ReadStats) -> Iterator[Dict[str, Any]]:
     else:
         raise ParseError("not_records")
     for record in records:
-        yield flatten(record)
+        yield flatten(record, stats=stats)
 
 
 def read_jsonl(path: Path, stats: ReadStats) -> Iterator[Dict[str, Any]]:
@@ -126,7 +157,7 @@ def read_jsonl(path: Path, stats: ReadStats) -> Iterator[Dict[str, Any]]:
             if not isinstance(record, dict):
                 stats.malformed_rows += 1
                 continue
-            yield flatten(record)
+            yield flatten(record, stats=stats)
 
 
 def rows(path: Path, fmt: str, stats: ReadStats) -> Iterator[Dict[str, Any]]:

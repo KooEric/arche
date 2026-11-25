@@ -119,7 +119,7 @@ scan → imports → data_profile(신규, 선택) → map → render
 
 - `path`는 데이터 폴더 기준 POSIX 상대 경로이다. 파일 데이터셋이면 확장자까지 포함한다.
 - `fingerprint`는 포함 파일의 `(상대 경로, 크기, mtime_ns)`를 정렬해 이은 문자열의 SHA-256이다. 내용 해시는 만들지 않는다. 큰 데이터를 두 번 읽지 않기 위해서이다.
-- 데이터셋은 최대 2,000개, 파일은 최대 100,000개까지 센다. 넘으면 멈추고 `truncated: true`와 함께 기록한다.
+- 데이터셋은 최대 2,000개, 파일은 최대 100,000개까지 센다. 넘으면 멈추고 `truncated: true`와 함께 기록한다. 데이터셋 하나의 컬럼은 최대 `MAX_COLUMNS = 1,000`개이고, 넘는 새 컬럼 이름은 무시하며 레코드에 `columns_truncated: true`를 적는다.
 
 ## 읽기 (`readers`, `parquet_meta`, `parquet_rows`)
 
@@ -133,6 +133,7 @@ scan → imports → data_profile(신규, 선택) → map → render
 - 필드 수가 헤더와 다른 행은 `malformed_rows`로 센다. 그런 행도 앞쪽 필드는 집계한다.
 - 필드 하나의 최대 길이는 1MB(`csv.field_size_limit`)이다. 넘으면 그 파일은 `status: "error"`, `reason: "field_too_large"`이다.
 - 묶음 데이터셋에서 파일마다 헤더가 다르면 컬럼을 합집합으로 만들고 `schema_drift: true`를 기록한다.
+- 첫 행이 값처럼 보이면 헤더로 쓰지 않는다. 이메일·전화번호 모양인 필드가 있거나, 비어 있지 않은 필드의 절반 넘게 정수·소수·날짜·타임스탬프이면 헤더 의심이다. 이때 컬럼 이름은 `column_1..N`으로 하고 원래 이름은 `header_fixed`에도 남기지 않으며, 첫 행은 데이터 행으로 읽는다. 데이터셋 레코드에는 `header_suspect: true`를 적는다. JSON 계열도 같다. 키가 이메일·전화번호 모양이면 `key_<n>`(리더마다 처음 본 순서)으로 바꾸고 `header_suspect`를 적는다. 이름이 값을 실어 나르는 경우를 막기 위한 결정이다.
 
 **JSON.**
 

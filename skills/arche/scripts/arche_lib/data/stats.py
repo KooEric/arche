@@ -123,6 +123,11 @@ def _is_phone(text: str) -> bool:
     return bool(_PHONE.fullmatch(text)) and 9 <= sum(char.isdigit() for char in text) <= 15
 
 
+def contact_shaped(text: str) -> bool:
+    """An email address or a phone number."""
+    return bool(_EMAIL.fullmatch(text)) or _is_phone(text)
+
+
 def luhn(text: str) -> bool:
     """A 13-19 digit text that passes the Luhn check: the shape of a payment card number."""
     if not (13 <= len(text) <= 19 and text.isascii() and text.isdigit()):
@@ -181,7 +186,7 @@ class ColumnStats:
             _bounded_add(self.patterns, shape(text))
         # Digit-only 9-15 digit integers are not treated as phones (an id or an amount looks the same);
         # a phone is a string, or sits in a column whose name says so. Card numbers are caught by Luhn.
-        counts = (is_text and (_EMAIL.fullmatch(value) or _is_phone(value))) or (
+        counts = (is_text and contact_shaped(value)) or (
             (isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))) and luhn(text))
         if counts:
             self.shaped += 1

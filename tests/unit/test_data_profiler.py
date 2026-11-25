@@ -108,3 +108,49 @@ def test_a_lone_surrogate_value_does_not_break_show_values(tmp_path):
 
     assert result["status"] == "profiled"
     json.dumps(result, ensure_ascii=False).encode("utf-8")
+
+
+def _text_dataset(tmp_path, name, text):
+    root = tmp_path / "hdr"
+    root.mkdir()
+    (root / name).write_text(text, encoding="utf-8")
+    return _only(root)
+
+
+def test_a_headerless_csv_keeps_no_email_or_phone_text(tmp_path):
+    import json
+    dataset = _text_dataset(tmp_path, "t.csv", "kim@x.com,02-1234-5678\nlee@y.org,02-9999-8888\n")
+
+    result = profile_dataset(dataset, 10, True, None)
+
+    dumped = json.dumps(result)
+    for text in ("kim", "lee", "x.com", "y.org", "1234", "5678", "8888"):
+        assert text not in dumped
+    assert [c["name"] for c in result["columns"]] == ["column_1", "column_2"]
+    assert result["rows_read"] == 2 and result["header_suspect"] is True and result["header_fixed"] == {}
+
+
+def test_a_headerless_csv_of_numbers_is_suspect_too(tmp_path):
+    result = profile_dataset(_text_dataset(tmp_path, "t.csv", "1,2.5,2026-01-01\n3,4.5,2026-01-02\n"), 10, False, None)
+
+    assert result["header_suspect"] is True and result["rows_read"] == 2
+
+
+def test_json_keyed_by_emails_does_not_keep_them_as_column_names(tmp_path):
+    import json
+    dataset = _text_dataset(tmp_path, "t.json", '[{"kim@x.com": 1, "02-1234-5678": 2, "name": "a"}, {"kim@x.com": 3}]')
+
+    result = profile_dataset(dataset, 10, True, None)
+
+    dumped = json.dumps(result)
+    for text in ("kim", "x.com", "1234", "5678"):
+        assert text not in dumped
+    assert [c["name"] for c in result["columns"]] == ["key_1", "key_2", "name"]
+    assert result["header_suspect"] is True
+
+
+def test_a_normal_header_is_untouched(tmp_path):
+    result = profile_dataset(_text_dataset(tmp_path, "t.csv", "id,name\n1,a\n2,b\n"), 10, False, None)
+
+    assert [c["name"] for c in result["columns"]] == ["id", "name"]
+    assert "header_suspect" not in result and result["rows_read"] == 2
