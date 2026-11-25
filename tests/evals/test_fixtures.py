@@ -117,3 +117,14 @@ def test_score_cli_passes_with_the_default_gates(capsys):
 def test_score_cli_fails_when_a_gate_is_out_of_reach(capsys):
     assert score.main(["--min-recall", "1.0"]) == 1
     capsys.readouterr()
+
+
+def test_the_data_profile_fixture_matches_its_expected_profile():
+    import json
+
+    import score_profile
+
+    text, profile = score_profile.run_fixture(score_profile.FIXTURE)
+    expected = json.loads((score_profile.FIXTURE / "expected_profile.json").read_text(encoding="utf-8"))
+
+    assert score_profile.differences(text, profile, expected) == []
