@@ -42,6 +42,17 @@ def module_summary(inventory, graph):
     return [modules[name] for name in sorted(modules)]
 
 
+def read_profile(out, graph):
+    """profile.json of this snapshot, or None when the run has no data profile."""
+    path = out / "profile.json"
+    if not path.exists():
+        return None
+    profile = read_json(path)
+    if profile.get("profile_version") != 1 or profile.get("inventory_sha256") != graph["inventory_sha256"]:
+        raise IntegrityError("profile.json describes a different snapshot; run data_profile.py again")
+    return profile
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory holding inventory.json and graph.json")
@@ -107,7 +118,8 @@ def main(argv):
                 raise IntegrityError("base audit and graph snapshots do not match")
             base_findings = base_audit["findings"]
             finding_delta = delta(base_findings, findings)
-        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang,
+        profile = read_profile(out, graph)
+        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang, profile=profile,
                         **({"lazy_file_limit": float("inf")} if args.full_details else {}))
         atlas_path = out / "atlas.json"
         atlas = read_json(atlas_path) if atlas_path.exists() else None
