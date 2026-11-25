@@ -89,3 +89,12 @@ def test_profile_needs_imports_first(make_repo, run_script, tmp_path):
     done = run_script("data_profile.py", "--out", out, "--data", _data(tmp_path))
 
     assert done.returncode == 2 and "imports.py" in done.stderr
+
+
+def test_nested_data_folders_are_refused(make_repo, run_script, tmp_path):
+    repo, out, data = _repo(make_repo), tmp_path / "out", _data(tmp_path)
+    _imports(run_script, repo, out)
+
+    done = run_script("data_profile.py", "--out", out, "--data", data, "--data", data / "raw")
+
+    assert done.returncode == 2 and "nested" in done.stderr

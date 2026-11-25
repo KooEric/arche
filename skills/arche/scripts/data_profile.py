@@ -47,6 +47,9 @@ def _roots(data_dirs, repo_root: Path, out_dir: Path):
             raise UsageError(f"--data must be outside the repository: {directory}")
         if is_within(out_dir, path) or is_within(path, out_dir):
             raise UsageError(f"--data must not overlap the output directory: {directory}")
+        for earlier in roots:
+            if is_within(Path(earlier["path"]), path) or is_within(path, Path(earlier["path"])):
+                raise UsageError(f"--data folders must not be nested: {directory}")
         roots.append({"id": f"d{index}", "path": str(path), "name": path.name})
     return roots
 

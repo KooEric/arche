@@ -79,3 +79,12 @@ def test_different_headers_in_one_dataset_are_drift():
     stats.note_header(["a", "c"], {})
 
     assert stats.schema_drift is True
+
+
+def test_a_jsonl_line_over_the_limit_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(readers, "JSONL_LINE_LIMIT", 20)
+    path = tmp_path / "a.jsonl"
+    path.write_text('{"a": 1}\n{"a": "' + "x" * 40 + '"}\n', encoding="utf-8")
+
+    with pytest.raises(ParseError, match="line_too_large"):
+        list(rows(path, "jsonl", ReadStats()))

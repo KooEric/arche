@@ -140,7 +140,7 @@ scan → imports → data_profile(신규, 선택) → map → render
 - 파일이 64MB를 넘으면 `status: "skipped"`, `reason: "json_too_large"`이다. 큰 데이터는 JSONL을 쓰라고 안내한다.
 - 최상위가 객체의 배열이면 원소 하나가 행 하나이다. 최상위가 객체 하나이면 행 하나이다. 그 밖의 경우는 `reason: "not_records"`이다.
 
-**JSONL.** 줄 하나가 객체 하나이다. 빈 줄은 건너뛰고, 객체가 아니거나 해석되지 않는 줄은 `malformed_rows`로 센다.
+**JSONL.** 줄 하나가 객체 하나이다. 한 줄은 1MB까지이고, 넘으면 그 파일은 `status: "error"`, `reason: "line_too_large"`이다. 빈 줄은 건너뛰고, 객체가 아니거나 해석되지 않는 줄은 `malformed_rows`로 센다.
 
 **중첩.** JSON 계열의 중첩 객체는 `a.b.c`로 펼친다. 깊이는 3까지이고, 더 깊은 값은 `object` 타입 하나로 본다. 배열은 펼치지 않고 `array` 타입으로 본다.
 

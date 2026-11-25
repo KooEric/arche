@@ -145,7 +145,12 @@ def read_json(path: Path, stats: ReadStats) -> Iterator[Dict[str, Any]]:
 
 def read_jsonl(path: Path, stats: ReadStats) -> Iterator[Dict[str, Any]]:
     with open(path, encoding="utf-8-sig", errors="replace") as handle:
-        for line in handle:
+        while True:
+            line = handle.readline(JSONL_LINE_LIMIT + 1)
+            if not line:
+                return
+            if len(line) > JSONL_LINE_LIMIT:
+                raise ParseError("line_too_large")
             if not line.strip():
                 continue
             if REPLACEMENT in line:
