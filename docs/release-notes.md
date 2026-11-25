@@ -1,5 +1,13 @@
 # Arche 릴리스 노트
 
+## 1.1.0
+
+- 로컬 데이터 프로파일: `data_profile.py --out RUN --data DIR`(또는 `arche.py REPO --data DIR`)이 레포 밖 폴더의 CSV·TSV·JSON·JSONL·Parquet을 읽어 `profile.json`을 쓰고, 리포트의 **테이블** 구역에 테이블별 데이터(쓰는 파일, 읽는 파일, 컬럼, 타입, null 비율, 고윳값 수, 범위, 키 후보)를 보여 줍니다. `key=value` 파티션 폴더, `part-*` 조각 파일, `_SUCCESS`가 있는 폴더는 데이터셋 하나로 묶습니다. 데이터셋마다 10만 행(`--max-rows`)까지 읽습니다.
+- 테이블 맞추기: `data-map.json`에 적은 것은 확정, 폴더·파일 이름이 `schema.table`과 맞으면 추정(`rule: path`), 테이블 이름만 하나와 맞으면 추정(`rule: table_name`), 여럿과 맞으면 모호로 남깁니다. 데이터가 없는 테이블과 코드가 모르는 데이터셋도 따로 보여 줍니다.
+- 값 보호: 기본 출력에는 문자열 값이 들어가지 않고 모양(`Aa9`)과 길이만 들어갑니다. `--show-values`를 주면 자주 나오는 값 5개를 보여 주지만, 이름(email, phone, 주민, 계좌 등)이나 값 모양(이메일·전화번호)으로 민감해 보이는 컬럼은 그때도 값과 범위를 숨깁니다.
+- Parquet: 스키마와 행 수는 표준 라이브러리로 푸터를 읽어 항상 보여 줍니다. 행 단위 프로파일은 pyarrow나 duckdb가 이미 설치돼 있을 때만 하고, 없으면 `schema_only`로 표시합니다.
+- `graph.json`에 `written_tables`(쓰는 파일이 있는 테이블, 첫 줄)를 추가했습니다. 아무도 읽지 않는 최종 테이블도 이제 보입니다.
+
 ## 1.0 출시 후보
 
 - 공통 로더의 YAML 관례: 실행 시점에 정해지는 폴더에 붙는 YAML 파일 이름(`dag_dir / 'dag_config.yaml'`, `os.path.join(d, 'x.yaml')`, `f'{d}/x.yaml'`, `CONF = 'x.yaml'`)은 로더 옆에 그 파일이 없으면 같은 이름의 레포 파일을 가리킵니다(`python:yaml_name`, 추정). 여러 파일이면 로더에서 첫 파일로 연결 하나(`glob: **/이름`, `matched`)만 긋고, 각 파일은 자기 폴더의 Python 파일과 연결합니다(`rule: same_folder_name`, 증거는 로더의 줄). 변경 분석은 그 이름의 모든 파일을 로더의 의존으로 셉니다. apache/airflow에서 `provider.yaml`처럼 이름 하나가 111개 파일과 맞는 경우도 연결선 수가 파일 수 이상으로 늘지 않습니다.
