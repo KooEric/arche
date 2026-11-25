@@ -136,6 +136,28 @@ def test_a_headerless_csv_of_numbers_is_suspect_too(tmp_path):
     assert result["header_suspect"] is True and result["rows_read"] == 2
 
 
+def test_a_numeric_header_is_real_when_text_sits_over_numbers(tmp_path):
+    result = profile_dataset(_text_dataset(tmp_path, "t.csv", "id,2024,2025\n1,100,200\n2,300,400\n"), 10, False, None)
+
+    columns = {c["name"]: c for c in result["columns"]}
+    assert list(columns) == ["id", "2024", "2025"]
+    assert "header_suspect" not in result and result["rows_read"] == 2
+    assert columns["id"]["type"] == "integer"
+
+
+def test_a_headerless_all_numeric_csv_stays_suspect(tmp_path):
+    result = profile_dataset(_text_dataset(tmp_path, "t.csv", "1,100,200\n2,300,400\n"), 10, False, None)
+
+    assert result["header_suspect"] is True and result["rows_read"] == 2
+    assert [c["name"] for c in result["columns"]] == ["column_1", "column_2", "column_3"]
+
+
+def test_a_contact_shaped_header_is_suspect_whatever_the_next_row_says(tmp_path):
+    result = profile_dataset(_text_dataset(tmp_path, "t.csv", "kim@x.com,id\nabc,1\n"), 10, False, None)
+
+    assert result["header_suspect"] is True
+
+
 def test_json_keyed_by_emails_does_not_keep_them_as_column_names(tmp_path):
     import json
     dataset = _text_dataset(tmp_path, "t.json", '[{"kim@x.com": 1, "02-1234-5678": 2, "name": "a"}, {"kim@x.com": 3}]')

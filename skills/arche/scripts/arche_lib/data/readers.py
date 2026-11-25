@@ -77,11 +77,20 @@ def flatten(record: dict, depth: int = 1, prefix: str = "", stats: Optional[Read
     return flat
 
 
-def header_is_data(fields: List[str]) -> bool:
-    """A first row that looks like values: a contact-shaped field, or mostly numbers and dates."""
+def _is_value(field: str) -> bool:
+    return bool(field.strip()) and classify_text(field.strip())[0] in VALUE_TYPES
+
+
+def header_is_data(fields: List[str], second: Optional[List[str]] = None) -> bool:
+    """A first row that looks like values: a contact-shaped field, or mostly numbers and dates.
+
+    The numeric rule yields when the next row shows a number or date under a field that is text in the first row."""
     present = [field.strip() for field in fields if field.strip()]
     if any(contact_shaped(field) for field in present):
         return True
+    if second and any(field.strip() and not _is_value(field) and _is_value(under)
+                      for field, under in zip(fields, second)):
+        return False
     typed = sum(1 for field in present if classify_text(field)[0] in VALUE_TYPES)
     return bool(present) and typed / len(present) > HEADER_VALUE_SHARE
 
@@ -106,14 +115,16 @@ def read_csv(path: Path, fmt: str, stats: ReadStats) -> Iterator[Dict[str, Any]]
             if header is None:
                 return
             leading = []
-            if header_is_data(header):
+            second = next(reader, None)
+            pending = [second] if second is not None else []
+            if header_is_data(header, second):
                 names, renamed = [f"column_{index}" for index in range(1, len(header) + 1)], {}
                 stats.header_suspect = True
                 leading = [header]
             else:
                 names, renamed = fix_header(header)
             stats.note_header(names, renamed)
-            for row in itertools.chain(leading, reader):
+            for row in itertools.chain(leading, pending, reader):
                 if not row:
                     continue
                 if len(row) != len(names):
