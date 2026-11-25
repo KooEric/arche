@@ -200,6 +200,42 @@ _KO = {
     "Generated file": "생성된 파일",
     "Vendored code": "vendor 코드",
     "Oversized file": "너무 큰 파일",
+    # Table data
+    "Table data": "테이블 데이터",
+    "Datasets": "데이터셋",
+    "profiled": "프로파일함",
+    "matched tables": "맞춘 테이블",
+    "tables without data": "데이터 없는 테이블",
+    "datasets the code does not name": "코드가 모르는 데이터셋",
+    "Tables without data": "데이터 없는 테이블",
+    "Datasets the code does not name": "코드가 모르는 데이터셋",
+    "rows": "행",
+    "columns": "컬럼",
+    "key": "키",
+    "sensitive": "민감",
+    "Written by": "쓰는 파일",
+    "Read by": "읽는 파일",
+    "none scanned": "스캔한 파일 없음",
+    "Data": "데이터",
+    "Column": "컬럼",
+    "Type": "타입",
+    "Null": "Null",
+    "Distinct": "고윳값",
+    "Range": "범위",
+    "Shape": "모양",
+    "Schema only: install pyarrow or duckdb to read rows.": "스키마만 읽었습니다. 행을 읽으려면 pyarrow나 duckdb를 설치하세요.",
+    "Not read": "읽지 못함",
+    "Discovery stopped at the file or dataset limit; tables listed without data may have data that was not read.":
+        "파일·데이터셋 상한에서 찾기를 멈췄습니다. 데이터 없는 테이블로 나온 것도 읽지 못한 데이터가 있을 수 있습니다.",
+    "Read up to the row limit; counts describe a sample.": "행 상한까지만 읽었습니다. 수치는 표본 기준입니다.",
+    "Files in this dataset have different columns.": "이 데이터셋의 파일마다 컬럼이 다릅니다.",
+    "The first row or some keys looked like data, so columns were renamed column_N or key_N.":
+        "첫 행이나 일부 키가 데이터처럼 보여 컬럼 이름을 column_N·key_N으로 바꿨습니다.",
+    "Only the first {count} columns were profiled.": "앞쪽 컬럼 {count}개만 프로파일했습니다.",
+    "{count} malformed rows": "형식이 맞지 않는 행 {count}개",
+    "Counts describe the rows read, up to the row limit. A table matched by path or table name is inferred; check it before relying on it.":
+        "수치는 행 상한까지 읽은 행 기준입니다. 경로나 테이블 이름으로 맞춘 테이블은 추정이므로 확인한 뒤 사용하세요.",
+    "+{count} more columns": "컬럼 {count}개 더",
 }
 
 _TABLES = {"ko": _KO}

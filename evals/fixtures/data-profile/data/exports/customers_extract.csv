@@ -1,0 +1,4 @@
+customer_id,email,phone,signup_date,tier
+101,fixture.one@example.com,010-5550-0101,2025-01-04,gold
+102,fixture.two@example.com,010-5550-0102,2025-03-15,silver
+103,fixture.three@example.com,010-5550-0103,2025-06-30,gold

@@ -11,11 +11,13 @@ import tempfile
 from pathlib import Path
 
 import carry as carry_step
+import data_profile
 import imports
 import map as atlas_map
 import render
 import scan
 from arche_lib import cli
+from arche_lib.errors import UsageError
 from arche_lib.i18n import LANGUAGES
 from arche_lib.paths import arche_home
 
@@ -29,6 +31,24 @@ def _writable_home():
     return True
 
 
+def _profile_args(out, args):
+    options = ["--out", out, *[arg for directory in args.data for arg in ("--data", directory)]]
+    if args.data_map:
+        options += ["--map", args.data_map]
+    if args.max_rows is not None:
+        options += ["--max-rows", str(args.max_rows)]
+    if args.show_values:
+        options.append("--show-values")
+    return options
+
+
+def _drop_profile(out):
+    try:
+        (Path(out) / data_profile.PROFILE_FILE).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", nargs="?", default=".", help="directory to analyze (default: current directory)")
@@ -40,7 +60,17 @@ def main(argv):
                         help="opt in a repository-relative internal directory for explicit Python export checks")
     parser.add_argument("--jpath", action="append", default=[], metavar="DIR",
                         help="repository-relative Jsonnet library directory, as given to jsonnet -J (repeatable)")
+    parser.add_argument("--data", action="append", default=[], metavar="DIR",
+                        help="data folder outside the repository to profile and match to tables (repeatable)")
+    parser.add_argument("--data-map", metavar="FILE", help="data-map.json naming the dataset of a table")
+    parser.add_argument("--max-rows", type=int, help="rows read per dataset when profiling")
+    parser.add_argument("--show-values", action="store_true", help="show common values of columns that do not look sensitive")
     args = parser.parse_args(argv)
+    if not args.data:
+        for flag, given in (("--data-map", args.data_map), ("--max-rows", args.max_rows is not None),
+                            ("--show-values", args.show_values)):
+            if given:
+                raise UsageError(f"{flag} needs --data")
 
     out = args.out
     if out is None and not _writable_home():
@@ -48,6 +78,10 @@ def main(argv):
     scanned = scan.main([args.repo, *(["--out", out] if out else [])])
     out = scanned["out"]
     resolved = imports.main(["--out", out, *[arg for directory in args.jpath for arg in ("--jpath", directory)]])
+    profiled = data_profile.main(_profile_args(out, args)) if args.data else None
+    if not args.data:
+        # a profile left by an earlier --data run describes data this run was not given
+        _drop_profile(out)
     # Rebuild the atlas for this snapshot: from OUT/map.json when the agent wrote one, else from folders.
     carried = carry_step.main(["--out", out, "--from", args.source]) if args.source else None
     mapped = atlas_map.main(["--out", out])
@@ -71,6 +105,7 @@ def main(argv):
         "map_source": mapped["source"],
         **({"carried": {key: value for key, value in carried.items() if key != "step"}} if carried else {}),
         "map_warnings": mapped["warnings"],
+        **({"profile": {key: value for key, value in profiled.items() if key != "step"}} if profiled else {}),
     }
 
 

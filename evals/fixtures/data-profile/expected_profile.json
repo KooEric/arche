@@ -1,0 +1,30 @@
+{
+  "matches": [
+    ["accounting.ledger_daily", "d0:accounting/ledger_daily", "inferred", "path"],
+    ["crm.customers", "d0:exports/customers_extract.csv", "verified", "map"],
+    ["raw.events", "d0:raw/events.jsonl", "inferred", "path"]
+  ],
+  "unresolved": [
+    ["d0:segments.csv", "ambiguous"]
+  ],
+  "orphan_datasets": ["d0:scratch/notes.csv"],
+  "tables_without_data": ["crm.segments", "mart.revenue", "ops.segments"],
+  "datasets": ["d0:accounting/ledger_daily", "d0:exports/customers_extract.csv", "d0:raw/events.jsonl", "d0:scratch/notes.csv", "d0:segments.csv"],
+  "columns": {
+    "d0:accounting/ledger_daily": {"customer_id": "integer", "amount": "decimal", "event_date": "date", "dt": "date"},
+    "d0:raw/events.jsonl": {"event_id": "string", "customer_id": "integer", "amount": "decimal", "event_date": "date"},
+    "d0:exports/customers_extract.csv": {"customer_id": "integer", "email": "string", "phone": "string", "signup_date": "date", "tier": "string"},
+    "d0:segments.csv": {"id": "integer", "name": "string"},
+    "d0:scratch/notes.csv": {"x": "integer"}
+  },
+  "keys": {
+    "d0:accounting/ledger_daily": ["customer_id"],
+    "d0:exports/customers_extract.csv": ["customer_id", "email", "phone", "signup_date"],
+    "d0:raw/events.jsonl": ["event_id", "customer_id", "amount"],
+    "d0:segments.csv": ["id", "name"],
+    "d0:scratch/notes.csv": []
+  },
+  "sensitive": {
+    "d0:exports/customers_extract.csv": ["email", "phone"]
+  }
+}

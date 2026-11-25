@@ -11,6 +11,7 @@ from string import Template
 
 from .focus import select_steps
 from .i18n import translator
+from .report_data import table_data
 
 KEY_FILE_LIMIT = 8
 LAZY_FILE_LIMIT = 500
@@ -579,18 +580,19 @@ def _readers(links):
     return f'{shown}, {T("+{count} more").format(count=hidden)}' if hidden > 0 else shown
 
 
-def _tables(graph, anchors):
-    """Tables read here and written nowhere scanned, and table names that were not followed."""
+def _tables(graph, anchors, profile=None):
+    """Profiled table data, tables read here and written nowhere scanned, and names not followed."""
     external = graph.get("external_tables", [])
     reads = [edge for edge in graph["edges"] if edge.get("kind") == "READS"]
-    if not external and not reads:
+    if not external and not reads and not profile:
         return ""
     by_reason = defaultdict(list)
     for edge in reads:
         if not edge["to"]:
             by_reason[edge["reason"]].append(f'{_code(edge["spec"])} · {_evidence(edge)}')
     count = len({item["table"] for item in external})
-    body = (f'<h3>{T("External tables")} <span class="count">{count}</span></h3>'
+    data = table_data(graph, profile, lambda node: _file_link(node, anchors), T) if profile else ""
+    body = data + (f'<h3>{T("External tables")} <span class="count">{count}</span></h3>'
             + (_external_tables(external, anchors) or f'<p class="empty">{T("Every table read here is written by a scanned SQL file.")}</p>'))
     for reason, title in _UNRESOLVED_READS:
         if by_reason[reason]:
@@ -624,16 +626,16 @@ def _section(section_id, title, body, lead=""):
 
 
 def render(template, graph, commits, readonly_check, *, modules=None, tour=None, changes=None, findings=None, finding_delta=None, lang="en",
-           lazy_file_limit=LAZY_FILE_LIMIT):
+           lazy_file_limit=LAZY_FILE_LIMIT, profile=None):
     global _translate
     previous, _translate = _translate, translator(lang)
     try:
-        return _render(template, graph, commits, readonly_check, modules, tour, changes, findings or [], finding_delta, lang, lazy_file_limit)
+        return _render(template, graph, commits, readonly_check, modules, tour, changes, findings or [], finding_delta, lang, lazy_file_limit, profile)
     finally:
         _translate = previous
 
 
-def _render(template, graph, commits, readonly_check, modules, tour, changes, findings, finding_delta, lang, lazy_file_limit):
+def _render(template, graph, commits, readonly_check, modules, tour, changes, findings, finding_delta, lang, lazy_file_limit, profile=None):
     repo = graph["repo"]
     files = [node for node in graph["nodes"] if node["type"] == "file"]
     anchors = {file["id"]: f"file-{index}" for index, file in enumerate(files)}
@@ -690,7 +692,7 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
          sum(1 for edge in edges if edge.get("kind") == "REFERENCES" and edge["to"] and "via" in edge) or None,
          _config_references(edges, anchors)),
         ("tables", T("Tables"), len({item["table"] for item in graph.get("external_tables", [])}) or None,
-         _tables(graph, anchors)),
+         _tables(graph, anchors, profile)),
         ("files", T("Dependencies"), len(files), _section("files", T("File dependencies"), file_list)),
         ("changes", T("Changes"), len(changes["files"]) if changes else None, _section("changes", T("Changes and impact"), _changes(changes, anchors))),
         ("audit", T("Audit"), (len(findings) + cycle_count) or None,

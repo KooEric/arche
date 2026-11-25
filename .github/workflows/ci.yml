@@ -25,3 +25,5 @@ jobs:
         run: python -m pytest -q
       - name: Fixture scores
         run: python evals/score.py
+      - name: Data profile score
+        run: python evals/score_profile.py

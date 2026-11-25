@@ -201,6 +201,16 @@ def _written_tables(paths: List[str], extracted: Dict[str, dict]) -> dict:
         if item["access"] == "write" and not item["temp"] and not item["dynamic"])
 
 
+def _written_table_list(analyzed: List[dict], extracted: Dict[str, dict]) -> List[dict]:
+    """Every table a SQL file writes for others to read, at its first line in that file."""
+    first: Dict[tuple, int] = {}
+    for entry in analyzed:
+        for item in extracted.get(entry["path"], {}).get("tables", []):
+            if item["access"] == "write" and not item["temp"] and not item["dynamic"]:
+                first.setdefault((item["table"], entry["path"]), item["line"])
+    return [{"table": table, "from": _file_id(path), "line": line} for (table, path), line in sorted(first.items())]
+
+
 def _reads(analyzed: List[dict], extracted: Dict[str, dict]) -> Tuple[List[dict], List[dict]]:
     """(READS edges from a file to the files writing a table it reads, tables nothing scanned writes)."""
     paths = [entry["path"] for entry in analyzed if "tables" in extracted.get(entry["path"], {})]
@@ -470,6 +480,7 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
                        key=lambda edge: _edge_key(edge) + (edge.get("table", ""),)),
         "externals": _dedupe_externals(externals + config_externals + dbt_externals),
         "external_tables": external_tables,
+        "written_tables": _written_table_list(analyzed, extracted),
         "http_connections": connections,
         "http_routes": routes,
         "skipped": _skipped(inventory, failures),
