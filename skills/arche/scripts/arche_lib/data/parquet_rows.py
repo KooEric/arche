@@ -14,19 +14,25 @@ RowReader = Callable[[Path, int], Iterator[dict]]
 def _load(name: str):
     try:
         return importlib.import_module(name)
-    except ImportError:
+    except Exception:   # a broken install can fail at import with more than ImportError
         return None
 
 
 def _pyarrow(parquet) -> RowReader:
     def read(path: Path, limit: int) -> Iterator[dict]:
+        handle = parquet.ParquetFile(str(path))
         produced = 0
-        for batch in parquet.ParquetFile(str(path)).iter_batches(batch_size=BATCH_ROWS):
-            for row in batch.to_pylist():
+        try:
+            for batch in handle.iter_batches(batch_size=BATCH_ROWS):
                 if produced >= limit:
                     return
-                produced += 1
-                yield row
+                for row in batch.slice(0, limit - produced).to_pylist():
+                    produced += 1
+                    yield row
+        finally:
+            close = getattr(handle, "close", None)
+            if close is not None:
+                close()
     return read
 
 

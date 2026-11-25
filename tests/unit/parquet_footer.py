@@ -1,5 +1,5 @@
 """A tiny Thrift compact writer, enough to build Parquet footers in tests."""
-BINARY, LIST, STRUCT, I32, I64 = 8, 9, 12, 5, 6
+BOOL, BINARY, LIST, MAP, STRUCT, I32, I64 = 1, 8, 9, 11, 12, 5, 6
 
 
 def _varint(value):
@@ -23,13 +23,22 @@ def struct(fields):
     out, last = bytearray(), 0
     for field, kind, value in fields:
         delta = field - last
-        out += bytes([(delta << 4) | kind]) if 0 < delta <= 15 else bytes([kind]) + _zigzag(field)
-        out += _value(kind, value)
+        wire = (1 if value else 2) if kind == BOOL else kind
+        out += bytes([(delta << 4) | wire]) if 0 < delta <= 15 else bytes([wire]) + _zigzag(field)
+        out += b"" if kind == BOOL else _value(kind, value)
         last = field
     return bytes(out + b"\x00")
 
 
 def _value(kind, value):
+    if kind == BOOL:
+        return b"\x01" if value else b"\x02"
+    if kind == MAP:
+        key, item, pairs = value
+        if not pairs:
+            return b"\x00"
+        return _varint(len(pairs)) + bytes([(key << 4) | item]) + b"".join(
+            _value(key, k) + _value(item, v) for k, v in pairs)
     if kind in (I32, I64):
         return _zigzag(value)
     if kind == BINARY:
@@ -44,7 +53,11 @@ def _value(kind, value):
     raise ValueError(kind)
 
 
-def parquet_file(schema, rows):
+def parquet_file(schema, rows, extra=()):
     """Bytes of a Parquet file with no data pages: magic, footer, length, magic."""
-    footer = struct([(1, I32, 1), (2, LIST, (STRUCT, schema)), (3, I64, rows)])
+    footer = struct([(1, I32, 1), (2, LIST, (STRUCT, schema)), (3, I64, rows)] + list(extra))
+    return wrap(footer)
+
+
+def wrap(footer):
     return b"PAR1" + footer + len(footer).to_bytes(4, "little") + b"PAR1"

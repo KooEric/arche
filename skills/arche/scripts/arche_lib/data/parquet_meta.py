@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import struct
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List, Optional
 
 from ..errors import ParseError
 
@@ -85,11 +85,48 @@ class _Reader:
             return self.fields(depth)
         raise ParseError("parquet_bad_type")
 
+    def skip(self, kind: int, depth: int) -> None:
+        """Advance past a value of any kind without building it; same bounds checks as value()."""
+        if depth > MAX_DEPTH:
+            raise ParseError("parquet_too_deep")
+        if kind == _BYTE:
+            self.take(1)
+        elif kind in (_I16, _I32, _I64):
+            self.varint()
+        elif kind == _DOUBLE:
+            self.take(8)
+        elif kind == _BINARY:
+            self.take(self.varint())
+        elif kind in (_LIST, _SET):
+            header = self.byte()
+            count, element = header >> 4, header & 0x0F
+            if count == 15:
+                count = self.varint()
+            self.skip_elements(element, self.size(count), depth + 1)
+        elif kind == _MAP:
+            count = self.size(self.varint())
+            if count:
+                kinds = self.byte()
+                self.skip_elements(kinds >> 4, count, depth + 1)
+                self.skip_elements(kinds & 0x0F, count, depth + 1)
+        elif kind == _STRUCT:
+            self.fields(depth, keep=())
+        else:
+            raise ParseError("parquet_bad_type")
+
+    def skip_elements(self, kind: int, count: int, depth: int) -> None:
+        if kind in (_TRUE, _FALSE):
+            self.take(count)
+            return
+        for _ in range(count):
+            self.skip(kind, depth)
+
     def element(self, kind: int, depth: int) -> Any:
         """A collection element: booleans take one byte here, unlike in a field header."""
         return self.byte() == 1 if kind in (_TRUE, _FALSE) else self.value(kind, depth)
 
-    def fields(self, depth: int) -> Dict[int, Any]:
+    def fields(self, depth: int, keep: Optional[Iterable[int]] = None) -> Dict[int, Any]:
+        """Read a struct. With keep, only those field ids are built; every other field is skipped."""
         found: Dict[int, Any] = {}
         last = 0
         while True:
@@ -99,7 +136,11 @@ class _Reader:
                 return found
             delta = header >> 4
             field = last + delta if delta else self.zigzag()
-            found[field] = (kind == _TRUE) if kind in (_TRUE, _FALSE) else self.value(kind, depth + 1)
+            if keep is not None and field not in keep:
+                if kind not in (_TRUE, _FALSE):
+                    self.skip(kind, depth + 1)
+            else:
+                found[field] = (kind == _TRUE) if kind in (_TRUE, _FALSE) else self.value(kind, depth + 1)
             last = field
 
     def collection(self, depth: int) -> List[Any]:
@@ -177,9 +218,9 @@ def read_footer(path: Path) -> dict:
             raise ParseError("not_parquet")
         handle.seek(size - 8 - length)
         footer = handle.read(length)
-    meta = _Reader(footer).fields(0)
+    meta = _Reader(footer).fields(0, keep=(2, 3))   # row groups and statistics are never built
     rows = meta.get(3, 0)
     schema = meta.get(2, [])
-    if not isinstance(rows, int) or not isinstance(schema, list):
+    if not isinstance(rows, int) or isinstance(rows, bool) or rows < 0 or not isinstance(schema, list):
         raise ParseError("parquet_bad_schema")
     return {"rows": rows, "columns": leaves(schema)}

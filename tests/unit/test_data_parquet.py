@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from arche_lib.data import parquet_meta, parquet_rows
 from arche_lib.data.parquet_meta import column_type, read_footer
 from arche_lib.errors import ParseError
-from parquet_footer import BINARY, I32, STRUCT, parquet_file
+from parquet_footer import BINARY, BOOL, I32, I64, LIST, MAP, STRUCT, parquet_file, struct, wrap
 
 SCHEMA = [
     [(4, BINARY, "schema"), (5, I32, 3)],
@@ -72,13 +72,58 @@ def test_no_library_means_no_row_reader(monkeypatch):
 
 
 def test_pyarrow_is_preferred_and_stops_at_the_limit(monkeypatch):
-    batch = types.SimpleNamespace(to_pylist=lambda: [{"a": 1}, {"a": 2}, {"a": 3}])
-    parquet = types.SimpleNamespace(ParquetFile=lambda path: types.SimpleNamespace(iter_batches=lambda batch_size: [batch]))
+    converted = []
+
+    class Batch:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def slice(self, offset, length):
+            return Batch(self.rows[offset:offset + length])
+
+        def to_pylist(self):
+            converted.append(len(self.rows))
+            return self.rows
+
+    closed = []
+    handle = types.SimpleNamespace(iter_batches=lambda batch_size: [Batch([{"a": 1}, {"a": 2}, {"a": 3}])],
+                                   close=lambda: closed.append(True))
+    parquet = types.SimpleNamespace(ParquetFile=lambda path: handle)
     monkeypatch.setattr(parquet_rows, "_load", lambda name: parquet if name == "pyarrow.parquet" else object())
 
     name, read = parquet_rows.find_reader()
 
     assert name == "pyarrow" and list(read(Path("x.parquet"), 2)) == [{"a": 1}, {"a": 2}]
+    assert converted == [2] and closed == [True]
+
+
+def test_pyarrow_file_is_closed_when_the_reader_stops_early(monkeypatch):
+    closed = []
+    batch = types.SimpleNamespace(slice=lambda o, n: batch, to_pylist=lambda: [{"a": 1}, {"a": 2}])
+    handle = types.SimpleNamespace(iter_batches=lambda batch_size: iter([batch, batch]),
+                                   close=lambda: closed.append(True))
+    parquet = types.SimpleNamespace(ParquetFile=lambda path: handle)
+    monkeypatch.setattr(parquet_rows, "_load", lambda name: parquet if name == "pyarrow.parquet" else None)
+
+    _, read = parquet_rows.find_reader()
+    rows = read(Path("x.parquet"), 5)
+    next(rows)
+    rows.close()
+
+    assert closed == [True]
+
+
+def test_a_broken_pyarrow_install_falls_back_to_duckdb(monkeypatch):
+    def broken(name):
+        if name == "pyarrow.parquet":
+            raise RuntimeError("binary incompatibility")
+        return object()
+
+    monkeypatch.setattr(parquet_rows.importlib, "import_module", broken)
+
+    name, _ = parquet_rows.find_reader()
+
+    assert name == "duckdb"
 
 
 def test_duckdb_gets_the_path_as_a_parameter(monkeypatch):
@@ -118,3 +163,53 @@ def test_real_pyarrow_reads_rows(tmp_path):
 
     assert list(read(path, 10)) == [{"a": 1}, {"a": 2}]
     assert read_footer(path)["rows"] == 2
+
+
+def test_unused_fields_are_skipped_without_being_built(tmp_path):
+    extra = [
+        (4, LIST, (STRUCT, [[]] * 200000)),
+        (5, LIST, (BOOL, [True, False, True])),
+        (6, MAP, (I32, BOOL, [(1, True), (2, False)])),
+        (7, MAP, (I32, I32, [])),
+        (8, BOOL, True),
+    ]
+    path = tmp_path / "a.parquet"
+    path.write_bytes(parquet_file(SCHEMA, 42, extra))
+
+    footer = read_footer(path)
+    data = path.read_bytes()
+    length = int.from_bytes(data[-8:-4], "little")
+    parsed = parquet_meta._Reader(data[-8 - length:-8]).fields(0, keep=(2, 3))
+
+    assert footer["rows"] == 42 and [c["name"] for c in footer["columns"]] == ["id", "user.name", "user.born", "amount"]
+    assert sorted(parsed) == [2, 3]
+
+
+def test_deeply_nested_skipped_fields_are_still_refused(tmp_path):
+    nested = (STRUCT, [[]])
+    for _ in range(100):
+        nested = (LIST, [nested])
+    path = tmp_path / "a.parquet"
+    path.write_bytes(parquet_file(SCHEMA, 1, [(4, LIST, nested)]))
+
+    with pytest.raises(ParseError, match="parquet_too_deep"):
+        read_footer(path)
+
+
+@pytest.mark.parametrize("rows", [-1, True])
+def test_bad_row_counts_are_a_schema_error(tmp_path, rows):
+    fields = [(2, LIST, (STRUCT, SCHEMA)), (3, BOOL, True)] if rows is True else [(2, LIST, (STRUCT, SCHEMA)), (3, I64, rows)]
+    path = tmp_path / "a.parquet"
+    path.write_bytes(wrap(struct(fields)))
+
+    with pytest.raises(ParseError, match="parquet_bad_schema"):
+        read_footer(path)
+
+
+def test_an_endless_varint_is_refused(tmp_path):
+    footer = bytes([0x15]) + b"\xff" * 11 + b"\x01"
+    path = tmp_path / "a.parquet"
+    path.write_bytes(wrap(footer))
+
+    with pytest.raises(ParseError, match="parquet_bad_varint"):
+        read_footer(path)
