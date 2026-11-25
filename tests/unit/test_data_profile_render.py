@@ -76,3 +76,23 @@ def test_render_refuses_a_profile_missing_sections(make_repo, run_script, tmp_pa
     done = run_script("render.py", "--out", out)
 
     assert done.returncode == 3 and "matches" in done.stderr and "Traceback" not in done.stderr
+
+
+def test_a_run_without_data_drops_the_stale_profile(make_repo, run_script, tmp_path):
+    repo, out, data = _repo(make_repo), tmp_path / "out", _data(tmp_path)
+    assert run_script("arche.py", repo, "--out", out, "--data", data).returncode == 0
+    assert (out / "profile.json").is_file()
+    (repo / "sql" / "load.sql").write_text("INSERT INTO acc.ledger SELECT * FROM raw.other;\n", encoding="utf-8")
+
+    done = run_script("arche.py", repo, "--out", out)
+
+    assert done.returncode == 0, done.stderr
+    assert not (out / "profile.json").exists()
+    assert "Table data" not in (out / "report.html").read_text(encoding="utf-8")
+
+
+def test_data_options_without_data_are_a_usage_error(make_repo, run_script, tmp_path):
+    repo = _repo(make_repo)
+    for option in (("--data-map", tmp_path / "m.json"), ("--max-rows", 5), ("--show-values",)):
+        done = run_script("arche.py", repo, "--out", tmp_path / "out", *option)
+        assert done.returncode == 2 and "--data" in done.stderr, option

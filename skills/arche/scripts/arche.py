@@ -17,6 +17,7 @@ import map as atlas_map
 import render
 import scan
 from arche_lib import cli
+from arche_lib.errors import UsageError
 from arche_lib.i18n import LANGUAGES
 from arche_lib.paths import arche_home
 
@@ -41,6 +42,13 @@ def _profile_args(out, args):
     return options
 
 
+def _drop_profile(out):
+    try:
+        (Path(out) / data_profile.PROFILE_FILE).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", nargs="?", default=".", help="directory to analyze (default: current directory)")
@@ -58,6 +66,11 @@ def main(argv):
     parser.add_argument("--max-rows", type=int, help="rows read per dataset when profiling")
     parser.add_argument("--show-values", action="store_true", help="show common values of columns that do not look sensitive")
     args = parser.parse_args(argv)
+    if not args.data:
+        for flag, given in (("--data-map", args.data_map), ("--max-rows", args.max_rows is not None),
+                            ("--show-values", args.show_values)):
+            if given:
+                raise UsageError(f"{flag} needs --data")
 
     out = args.out
     if out is None and not _writable_home():
@@ -66,6 +79,9 @@ def main(argv):
     out = scanned["out"]
     resolved = imports.main(["--out", out, *[arg for directory in args.jpath for arg in ("--jpath", directory)]])
     profiled = data_profile.main(_profile_args(out, args)) if args.data else None
+    if not args.data:
+        # a profile left by an earlier --data run describes data this run was not given
+        _drop_profile(out)
     # Rebuild the atlas for this snapshot: from OUT/map.json when the agent wrote one, else from folders.
     carried = carry_step.main(["--out", out, "--from", args.source]) if args.source else None
     mapped = atlas_map.main(["--out", out])
