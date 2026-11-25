@@ -71,6 +71,18 @@ def test_bad_map_entries_name_the_table(tmp_path, tables, roots, message):
         load_map(_map(tmp_path, tables), roots, ["d0:a/b"])
 
 
+@pytest.mark.parametrize("tables, entry", [
+    ({"ok.t": "a/b", "bad\ud800.t": "a/b"}, "data map entry 2"),
+    ({"s.t": "a/b\x07"}, "data map entry 1"),
+    ({"s.t": "a/b", "t\u202ex.t": "a/b"}, "data map entry 2"),
+])
+def test_unprintable_table_names_and_targets_are_refused_without_echo(tmp_path, tables, entry):
+    with pytest.raises(UsageError, match=entry) as caught:
+        load_map(_map(tmp_path, tables), ["d0"], ["d0:a/b"])
+
+    assert "\x07" not in str(caught.value) and "\ud800" not in str(caught.value)
+
+
 def test_a_map_of_another_version_is_refused(tmp_path):
     with pytest.raises(UsageError, match="version"):
         load_map(_map(tmp_path, {}, version=2), ["d0"], [])

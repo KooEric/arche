@@ -20,6 +20,11 @@ def load_map(path: Path, root_ids: List[str], dataset_ids: Iterable[str]) -> Dic
         raise UsageError(f"cannot read the data map {path}: {exc}") from None
     if not isinstance(data, dict) or data.get("version") != MAP_VERSION or not isinstance(data.get("tables"), dict):
         raise UsageError('the data map must be {"version": 1, "tables": {"schema.table": "d0:path"}}')
+    for position, (table, target) in enumerate(data["tables"].items(), 1):
+        for text in (table, target):
+            if isinstance(text, str) and not text.isprintable():
+                raise UsageError(f"data map entry {position} has a table name or target with a character that is not "
+                                 f"printable (such as a control character or a lone surrogate): {ascii(text)[:80]}")
     known = set(dataset_ids)
     mapped: Dict[str, List[str]] = {}
     for table, target in sorted(data["tables"].items()):
