@@ -1,5 +1,6 @@
 """Column aggregates: types, nulls, distinct counts, ranges, shapes and sensitivity."""
 import datetime as dt
+import re
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -96,6 +97,50 @@ def test_short_names_match_whole_tokens(name):
                                   "tokenizer", "cardinality", "panel", "phonetic", "vibrant"])
 def test_short_names_inside_longer_words_are_not_sensitive(name):
     assert sensitive_name(name) is False
+
+
+GLUED = ["customerphone", "userphone", "homephone", "workphone", "contactphone", "cellphone", "CUSTOMERPHONE", "hometel",
+         "officetel", "faxtel", "mytel", "contacttel", "custtel", "creditcard", "debitcard", "cardholder", "cardholder_name",
+         "cardid", "cardtype", "fullpan", "panhash", "devicetoken", "pushtoken", "fcmtoken", "jwttoken", "sessiontoken",
+         "bankiban", "userdob", "dobyear", "ssnumber", "phones", "user_phones", "phonenumbers", "cards", "tokens", "TELS",
+         "telefon", "discard_card", "TelNo", "pan_last4", "ssns", "dobDate"]
+
+
+@pytest.mark.parametrize("name", GLUED)
+def test_glued_and_plural_names_stay_sensitive(name):
+    assert sensitive_name(name) is True
+
+
+@pytest.mark.parametrize("name", ["intel", "phonetic", "phonetic_spelling", "tokenizer", "cardinality", "discarded",
+                                  "tokenization_ms", "phonetics"])
+def test_known_harmless_words_are_not_sensitive(name):
+    assert sensitive_name(name) is False
+
+
+def _old_rule(name):
+    old = ("email", "phone", "mobile", "tel", "ssn", "passport", "password", "passwd", "secret", "token", "apikey", "card",
+           "pan", "ccnum", "cardno", "iban", "accountno", "birth", "dob", "address", "주민", "전화", "휴대", "생년", "주소",
+           "계좌", "여권")
+    normalized = re.sub(r"[\s_.\-]", "", name.lower())
+    return any(part in normalized for part in old)
+
+
+EXPECTED_FALSE_POSITIVES = {"company", "span", "japan", "hotel", "intel", "telemetry", "adobe", "discard", "phonetic",
+                            "tokenizer", "cardinality", "panel", "spanish", "company_name", "hotel_id", "adobe_id",
+                            "telemetry_ms", "japan_region", "phonetic_spelling", "discarded"}
+SENSITIVE_LOOKING = GLUED + ["email", "User_Email", "emailAddress", "phone_no", "phone_number", "phoneNumber", "api-key",
+                             "api_key", "birth_date", "고객주소", "card", "cardNo", "credit_card", "ssn", "pan", "card_pan",
+                             "tel", "dob", "password", "passwd", "secret_key", "passport_no", "address_line", "iban",
+                             "account_no", "ccnum", "mobile", "mobile_no", "주민번호", "전화번호", "휴대폰", "생년월일",
+                             "계좌번호", "여권번호", "access_token", "accessToken", "auth_token", "tel_no", "telephone"]
+
+
+def test_the_new_rule_flags_everything_the_old_substring_rule_flagged_except_known_false_positives():
+    names = SENSITIVE_LOOKING + sorted(EXPECTED_FALSE_POSITIVES)
+    assert len(SENSITIVE_LOOKING) >= 60
+    missed = [n for n in names if _old_rule(n) and n not in EXPECTED_FALSE_POSITIVES and not sensitive_name(n)]
+    assert missed == []
+    assert [n for n in EXPECTED_FALSE_POSITIVES if sensitive_name(n)] == []
 
 
 def test_sensitive_columns_never_carry_values_or_ranges():

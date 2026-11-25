@@ -24,16 +24,18 @@ RATIO_DIGITS = 4
 TRACKED_KEYS = 10_000
 RANGED = ("integer", "decimal", "date", "timestamp")
 NULL_TEXT = frozenset({"", "NULL", "null", "\\N", "NaN", "nan"})
-# Entries of 4 characters or fewer, and card/token/phone, match only a whole token of the name (card_pan, cardNo)
-# or one of the joined forms below; the rest match anywhere in the name with separators removed.
-SENSITIVE_TOKENS = frozenset({
-    "tel", "ssn", "pan", "dob", "iban", "card", "token", "phone",
-    "telno", "telnum", "panno", "cardnum", "cardnumber", "phoneno", "phonenum", "phonenumber",
-    "accesstoken", "authtoken", "apitoken", "idtoken", "refreshtoken", "bearertoken",
-})
-SENSITIVE_NAMES = ("email", "mobile", "passport", "password", "passwd", "secret", "apikey", "ccnum", "cardno",
-                   "accountno", "birth", "address", "telephone",
+# Entries of 4+ characters match anywhere in the normalized name (lower-case, separators removed), after the known
+# harmless words below are blanked out. The short entries pan, tel, dob and ssn match only a whole token: the entry,
+# its plural, or the entry glued to a GLUE word (hometel, panhash), or one of the joined forms.
+SENSITIVE_NAMES = ("email", "phone", "mobile", "telephone", "telefon", "password", "passwd", "secret", "passport",
+                   "address", "apikey", "accountno", "birth", "ccnum", "cardno", "card", "token", "iban", "socialsecurity",
                    "주민", "전화", "휴대", "생년", "주소", "계좌", "여권")
+HARMLESS_WORDS = ("tokenization", "tokenizer", "tokenized", "tokenize", "phonetics", "phonetic", "discarded", "discard",
+                  "cardinality", "cardinal")
+SHORT_NAMES = ("pan", "tel", "dob", "ssn")
+GLUE = ("home", "work", "office", "cell", "mobile", "fax", "contact", "cust", "customer", "user", "my", "full", "hash",
+        "no", "num", "number", "year", "date", "masked", "last", "first", "last4", "first6")
+JOINED_FORMS = frozenset({"ssnumber"})
 _NAME_TOKEN = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+|[^\x00-\x7f]+")
 _INTEGER = re.compile(r"[+-]?\d{1,18}")
 _LEADING_ZERO = re.compile(r"[+-]?0\d+")
@@ -122,11 +124,20 @@ def classify(value: Any) -> Tuple[str, Any]:
     return "string", None
 
 
+def _short_name_token(token: str) -> bool:
+    if token in JOINED_FORMS:
+        return True
+    return any(token in (entry, entry + "s") or token in {entry + glue for glue in GLUE} | {glue + entry for glue in GLUE}
+               for entry in SHORT_NAMES)
+
+
 def sensitive_name(name: str) -> bool:
     normalized = re.sub(r"[\s_.\-]", "", name.lower())
+    for word in HARMLESS_WORDS:
+        normalized = normalized.replace(word, " ")
     if any(part in normalized for part in SENSITIVE_NAMES):
         return True
-    return any(token.lower() in SENSITIVE_TOKENS for token in _NAME_TOKEN.findall(re.sub(r"[\s_.\-]+", " ", name)))
+    return any(_short_name_token(token.lower()) for token in _NAME_TOKEN.findall(re.sub(r"[\s_.\-]+", " ", name)))
 
 
 def _is_phone(text: str) -> bool:
