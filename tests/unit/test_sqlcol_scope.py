@@ -178,3 +178,34 @@ def test_a_qualify_alias_reference_uses_the_columns_behind_it():
     text = "SELECT ROW_NUMBER() OVER (ORDER BY id) AS rn FROM orders QUALIFY rn = 1"
 
     assert ("order_key", "db.orders", "id", "verified", "listed") in usages(text)
+
+
+# -- which source a qualifier names (fix round 1) ----------------------------------------
+QUALIFIED = {**TABLES, "x.t": known("db.xt", "c"), "u": known("db.u", "c"), "v": known("db.v", "c")}
+
+
+def test_a_qualifier_matching_the_alias_wins_over_a_table_of_that_name():
+    found = derived("SELECT t.c FROM x.t JOIN u AS t ON 1 = 1", QUALIFIED).outputs[0].leaves
+
+    assert [(l.table, l.status) for l in found] == [("db.u", "verified")]
+
+
+def test_a_table_with_an_alias_is_not_named_by_its_table_name():
+    found = derived("SELECT u.c FROM u AS a JOIN x.t AS u ON 1 = 1", QUALIFIED).outputs[0].leaves
+
+    assert [l.table for l in found] == ["db.xt"]
+
+
+def test_an_aliased_table_named_by_its_table_name_is_an_unknown_qualifier():
+    found = derived("SELECT u.c FROM u AS a", QUALIFIED).outputs[0]
+
+    assert (found.leaves, [m.reason for m in found.misses]) == ((), ["unknown_qualifier"])
+
+
+def test_two_tables_of_one_name_without_aliases_are_ambiguous():
+    tables = {**QUALIFIED, "y.t": known("db.yt", "c")}
+
+    found = derived("SELECT t.c FROM x.t, y.t", tables).outputs[0]
+
+    assert found.leaves == ()
+    assert [(m.reason, m.candidates) for m in found.misses] == [("ambiguous", ("x.t", "y.t"))]

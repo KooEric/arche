@@ -9,7 +9,7 @@ from . import MAX_DEPTH, MAX_SELECT_ITEMS
 from .ast import AGG, CONDITION, ORDER, WINDOW, Expr, Query, QuerySource, Select, SetOp, Statement, \
     TableName, TableSource, Values
 from .scope import KIND_RANK, FunctionRelation, Leaf, Miss, Output, QueryRelation, Relation, Result, Scope, \
-    TableInfo, TableRelation, cap, dedupe
+    TableInfo, TableRelation, cap, dedupe, named
 
 Lookup = Callable[[TableName], TableInfo]
 
@@ -50,11 +50,29 @@ class _Env:
         return None
 
 
+class _TooDeep(Relation):
+    """A source past the depth limit: its columns are unknown, and reading one reports the limit once."""
+
+    def __init__(self, label: str, spec: str, start: int) -> None:
+        self.label, self.miss = label, Miss("too_deep", (), spec, start)
+
+    def has(self, name: str) -> Optional[bool]:
+        return None
+
+    def names(self) -> Optional[Tuple[str, ...]]:
+        return None
+
+    def column(self, name: str, determined: bool, rule: str = "qualified") -> Result:
+        return [], self.miss
+
+
 class Deriver:
     def __init__(self, text: str, lookup: Lookup, temps: Dict[str, QueryRelation], newlines: List[int]) -> None:
         self.text, self.lookup, self.temps, self.newlines = text, lookup, temps, newlines
         self.usages: List[Usage] = []
         self.missed: List[Missed] = []
+        self.reported: set = set()  # (reason, start) of each unmatched table or depth limit already reported
+        self.reading: Dict[int, bool] = {}  # recursive CTEs whose later branches are being read: read itself?
         self.depth = 0
 
     def line(self, position: int) -> int:
@@ -87,7 +105,10 @@ class Deriver:
         return self.set_op(body, scope, env)
 
     def set_op(self, body: SetOp, scope: Optional[Scope], env: Optional[_Env]) -> Tuple[List[Output], List[Relation]]:
-        branches = [self.body(branch, scope, env) for branch in body.branches]
+        return self.merge([self.body(branch, scope, env) for branch in body.branches])
+
+    @staticmethod
+    def merge(branches: List[Tuple[List[Output], List[Relation]]]) -> Tuple[List[Output], List[Relation]]:
         first, stars = branches[0][0], [star for _, branch_stars in branches for star in branch_stars]
         merged = []
         for index, output in enumerate(first):
@@ -115,16 +136,13 @@ class Deriver:
             dynamic = False
             for row in body.rows:
                 if index < len(row):
-                    found, missed = self.value(row[index], self.scope_of([], (), scope))
+                    found, missed = self.value(row[index], Scope([], (), scope), env)
                     leaves.extend(found)
                     misses.extend(missed)
                     dynamic = dynamic or row[index].dynamic
             outputs.append(Output(None, None, tuple(leaves), tuple(misses), body.start, body.start, not leaves,
                                   dynamic))
         return outputs
-
-    def scope_of(self, sources, using, parent) -> Scope:
-        return Scope(sources, using, parent)
 
     def select(self, select: Select, parent: Optional[Scope], env: Optional[_Env], orders: Tuple[Expr, ...] = ()
                ) -> Tuple[List[Output], List[Relation]]:
@@ -134,13 +152,13 @@ class Deriver:
         outputs: List[Output] = []
         stars: List[Relation] = []
         for item in select.items:
-            if len(outputs) > MAX_SELECT_ITEMS:
+            if len(outputs) >= MAX_SELECT_ITEMS:
                 self.missed.append(Missed(Miss("too_many_columns"), "*", item.start))
                 break
             if item.star is not None:
-                outputs.extend(self.expand(item.star, scope, stars, MAX_SELECT_ITEMS - len(outputs)))
+                outputs.extend(self.expand(item.star, scope, env, stars, MAX_SELECT_ITEMS - len(outputs)))
                 continue
-            leaves, misses = self.value(item.expr, scope)
+            leaves, misses = self.value(item.expr, scope, env)
             leaves = dedupe(leaves)
             expr = item.expr
             constant = not expr.refs and not expr.subqueries and not expr.dynamic and not expr.calls
@@ -162,9 +180,10 @@ class Deriver:
 
     def source(self, source, scope: Scope, parent: Optional[Scope], env: Optional[_Env]
                ) -> Tuple[str, Relation, Optional[str]]:
+        if isinstance(source, TableSource):  # a CTE it names counts its own level in cte()
+            return self._source(source, scope, parent, env)
         if self.depth >= MAX_DEPTH:
-            self.missed.append(Missed(Miss("too_deep"), "", getattr(source, "start", 0)))
-            return "", QueryRelation("", [], []), None
+            return source.alias or "", self.too_deep("", source.start), None
         self.depth += 1
         try:
             return self._source(source, scope, parent, env)
@@ -182,9 +201,9 @@ class Deriver:
                 relation = QueryRelation(label, [output._replace(name=name, display=name) for output, name
                                                  in zip(relation.outputs, source.columns)], relation.stars)
             return source.alias or "", relation, None
-        inputs = source.inputs
         label = f"function:{self.line(source.start)}"
-        relation = FunctionRelation(label, source.columns, lambda: self.inputs(inputs, scope))
+        before = Scope(list(scope.sources), scope.using, scope.parent)  # not the function itself
+        relation = FunctionRelation(label, source.columns, self.inputs(source.inputs, before, env))
         return source.alias or "", relation, None
 
     def table(self, table: TableName, env: Optional[_Env]) -> Relation:
@@ -194,37 +213,83 @@ class Deriver:
                 return self.cte(entry)
             if table.name in self.temps:
                 return self.temps[table.name]
+        return self.catalog(table)
+
+    def catalog(self, table: TableName) -> TableRelation:
+        """A table the catalog knows, placed where it is read so a failed match is reported there."""
         info = self.lookup(table)
         spec = self.spec(table.start, table.end) if table.end > table.start else (table.name or "{}")
         return TableRelation(info._replace(spec=spec, start=table.start))
 
+    def too_deep(self, spec: str, start: int) -> Relation:
+        relation = _TooDeep(spec, spec, start)
+        self.record(relation.miss, spec, start)
+        return relation
+
     def cte(self, entry: list) -> Relation:
         cte, relation, env = entry
-        if relation is None and self.depth >= MAX_DEPTH:
-            self.missed.append(Missed(Miss("too_deep"), cte.name, cte.start))
-            return QueryRelation(f"cte:{cte.name}", [], [])
-        if relation is None and cte.query is None:
+        if relation is not None:
+            if id(entry) in self.reading:
+                self.reading[id(entry)] = True
+            return relation
+        if cte.query is None:
             entry[1] = TableRelation(TableInfo(None, "unresolved", None, None, False, False, "dynamic", (),
                                                f"cte:{cte.name}", cte.start))
             return entry[1]
-        if relation is None:
-            self.depth += 1
-            label = f"cte:{cte.name}"
-            entry[1] = QueryRelation(label, [], [])  # a CTE reading itself sees no columns while it is read
-            body = cte.query.body
-            if cte.recursive and isinstance(body, SetOp):
-                first, stars = self.body(body.branches[0], None, env)
-                entry[1] = QueryRelation(label, self.rename(first, cte.columns), stars)
-            relation = self.query(cte.query, None, env, label)
-            relation = QueryRelation(label, self.rename(relation.outputs, cte.columns), relation.stars)
-            entry[1] = relation
+        if self.depth >= MAX_DEPTH:
+            return self.too_deep(f"cte:{cte.name}", cte.start)
+        label = f"cte:{cte.name}"
+        entry[1] = QueryRelation(label, [], [])  # a CTE reading itself sees no columns while it is read
+        self.depth += 1
+        try:
+            if cte.recursive and isinstance(cte.query.body, SetOp):
+                outputs, stars = self.recursive(entry, cte.query, env, label)
+            else:
+                found = self.query(cte.query, None, env, label)
+                outputs, stars = found.outputs, found.stars
+        finally:
             self.depth -= 1
-        return relation
+        entry[1] = QueryRelation(label, self.rename(outputs, cte.columns), stars)
+        return entry[1]
 
-    def inputs(self, expr: Expr, scope: Scope) -> Result:
-        """The leaves behind a table function's arguments, as one relation column."""
-        leaves, misses = self.value(expr, scope, record=False)
-        return leaves, misses[0] if misses and not leaves else None
+    def recursive(self, entry: list, query: Query, env: Optional[_Env], label: str
+                  ) -> Tuple[List[Output], List[Relation]]:
+        """A recursive CTE's columns come from its first branch. A later branch that reads the CTE itself
+        is left out with everything it would record; a later branch that does not is an ordinary branch."""
+        if query.ctes:
+            env = _Env(env)
+            for inner in query.ctes:
+                env.entries[inner.name] = [inner, None, env]
+        first = self.body(query.body.branches[0], None, env)
+        entry[1] = QueryRelation(label, self.rename(first[0], entry[0].columns), first[1])
+        kept = [first]
+        for branch in query.body.branches[1:]:
+            usages, missed = len(self.usages), len(self.missed)
+            self.reading[id(entry)] = False
+            try:
+                result = self.body(branch, None, env)
+            finally:
+                reads_itself = self.reading.pop(id(entry))
+            if reads_itself:
+                del self.usages[usages:], self.missed[missed:]
+                self.reported = {(m.miss.reason, m.start) for m in self.missed}
+                continue
+            kept.append(result)
+        outputs, stars = self.merge(kept)
+        self.uses(query.orders, Scope([], (), None), env, "order_key", outputs)
+        return outputs, stars
+
+    def inputs(self, expr: Expr, scope: Scope, env: Optional[_Env]) -> Callable[[], Result]:
+        """The leaves behind a table function's arguments, as one relation column: read the first time
+        a column of the function is, and only once."""
+        memo: List[Result] = []
+
+        def read() -> Result:
+            if not memo:
+                leaves, misses = self.value(expr, scope, env, record=False)
+                memo.append((leaves, misses[0] if misses and not leaves else None))
+            return memo[0]
+        return read
 
     @staticmethod
     def rename(outputs: List[Output], columns: Tuple[str, ...]) -> List[Output]:
@@ -232,11 +297,16 @@ class Deriver:
             return outputs
         return [output._replace(name=name, display=name) for output, name in zip(outputs, columns)]
 
-    def expand(self, star, scope: Scope, stars: List[Relation], room: int) -> List[Output]:
+    def expand(self, star, scope: Scope, env: Optional[_Env], stars: List[Relation], room: int) -> List[Output]:
         chosen = scope.sources
         if star.qualifier is not None:
-            qualifier = ".".join(star.qualifier)
-            chosen = [s for s in scope.sources if s[0] == qualifier or (s[2] or "").endswith(qualifier)]
+            chosen = named(scope.sources, ".".join(star.qualifier))
+            if len(chosen) > 1:  # which source the star reads is unknown: its columns are too
+                stars.extend(relation for _, relation, _ in chosen)
+                candidates = tuple(sorted(full or relation.label or alias for alias, relation, full in chosen))
+                self.missed.append(Missed(Miss("ambiguous", candidates), self.spec(star.start, star.end),
+                                          star.start))
+                return []
         outputs: List[Output] = []
         replace = dict(star.replace)
         rename = {old: (new, written) for old, new, written in star.rename}
@@ -254,7 +324,7 @@ class Deriver:
                 if name in star.except_:
                     continue
                 if name in replace:
-                    leaves, misses = self.value(replace[name], scope)
+                    leaves, misses = self.value(replace[name], scope, env)
                     outputs.append(Output(name, name, tuple(leaves), tuple(misses), star.start, star.end, False, False))
                     continue
                 leaves, miss = relation.column(name, True)
@@ -264,7 +334,8 @@ class Deriver:
         return outputs
 
     # -- expressions -----------------------------------------------------------------
-    def value(self, expr: Expr, scope: Scope, record: bool = True) -> Tuple[List[Leaf], List[Miss]]:
+    def value(self, expr: Expr, scope: Scope, env: Optional[_Env], record: bool = True
+              ) -> Tuple[List[Leaf], List[Miss]]:
         """Leaves behind an expression's value; window keys inside it become order_key uses."""
         leaves: List[Leaf] = []
         misses: List[Miss] = []
@@ -282,16 +353,14 @@ class Deriver:
                 if record:
                     self.record(miss, ".".join(ref.parts), ref.start)
         for query, context in expr.subqueries:
-            relation = self.query(query, scope, None, f"subquery:{self.line(query.start)}")
+            relation = self.query(query, scope, env, f"subquery:{self.line(query.start)}")
             kind = "window" if context & WINDOW else "aggregate" if context & AGG else "transform"
             for output in relation.outputs[:1]:
                 leaves.extend(_combine(leaf, kind, bool(context & CONDITION)) for leaf in output.leaves)
         return leaves, misses
 
-    def uses(self, exprs, scope: Optional[Scope], env: Optional[_Env], kind: str, outputs: List[Output]) -> None:
+    def uses(self, exprs, scope: Scope, env: Optional[_Env], kind: str, outputs: List[Output]) -> None:
         for expr in exprs:
-            if scope is None:
-                continue
             if not expr.refs and not expr.subqueries and self.text[expr.start:expr.end].isdigit():
                 index = int(self.text[expr.start:expr.end]) - 1  # GROUP BY 1
                 if 0 <= index < len(outputs):
@@ -319,8 +388,12 @@ class Deriver:
             self.record(miss, ".".join(ref.parts), ref.start)
 
     def record(self, miss: Miss, spec: str, start: int) -> None:
-        """A table that cannot be matched is reported once, where it is read, not for each column."""
-        if miss.reason.startswith("table_") and miss.start >= 0:
+        """A table that cannot be matched, or the depth limit, is reported once where it is read,
+        not for each column."""
+        if (miss.reason.startswith("table_") or miss.reason == "too_deep") and miss.start >= 0:
+            if (miss.reason, miss.start) in self.reported:
+                return
+            self.reported.add((miss.reason, miss.start))
             spec, start = miss.source or "", miss.start
         self.missed.append(Missed(miss, spec, start))
 
@@ -358,7 +431,7 @@ def derive(text: str, statement: Statement, lookup: Lookup, temps: Dict[str, Que
 
 def _merge(deriver: Deriver, statement: Statement) -> List[Output]:
     merge = statement.merge
-    target = TableRelation(deriver.lookup(statement.target))
+    target = deriver.catalog(statement.target)
     scope = Scope([(merge.target_alias or (statement.target.name or "").rsplit(".", 1)[-1], target,
                     statement.target.name)], (), None)
     scope.sources.append(deriver.source(merge.source, scope, None, None))
@@ -366,7 +439,7 @@ def _merge(deriver: Deriver, statement: Statement) -> List[Output]:
     deriver.uses(merge.conditions, scope, None, "filter", [])
     outputs = []
     for assignment in merge.updates + merge.inserts:
-        leaves, misses = deriver.value(assignment.expr, scope)
+        leaves, misses = deriver.value(assignment.expr, scope, None)
         expr = assignment.expr
         outputs.append(Output(assignment.column, assignment.display, tuple(leaves), tuple(misses), expr.start,
                               expr.end, not expr.refs and not expr.dynamic, expr.dynamic))

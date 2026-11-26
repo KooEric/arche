@@ -71,6 +71,23 @@ def dedupe(leaves: List[Leaf]) -> List[Leaf]:
     return list(best.values())
 
 
+Source = Tuple[str, "Relation", Optional[str]]  # (alias, relation, full table name or None)
+
+
+def named(sources: List[Source], qualifier: str) -> List[Source]:
+    """The sources a qualifier names. An alias written in FROM wins; a table that has such an alias
+    is not named by its table name; a table without one is named by its full name or a "."-suffix."""
+    by_alias, by_name = [], []
+    for source in sources:
+        alias, _, full = source
+        explicit = full is None or alias != full.rsplit(".", 1)[-1]
+        if explicit:
+            if alias and alias == qualifier:
+                by_alias.append(source)
+        elif full == qualifier or full.endswith("." + qualifier):
+            by_name.append(source)
+    return by_alias or by_name
+
 
 class Relation:
     """Columns a source offers. `has` is True, False, or None when the list is unknown."""
@@ -223,9 +240,11 @@ class Scope:
         qualifier, name = ".".join(parts[:-1]), parts[-1]
         scope: Optional[Scope] = self
         while scope is not None:
-            for alias, relation, full in scope.sources:
-                if alias == qualifier or (full is not None and (full == qualifier or full.endswith("." + qualifier))):
-                    return relation.column(name, True)
+            found = named(scope.sources, qualifier)
+            if len(found) == 1:
+                return found[0][1].column(name, True)
+            if found:
+                return [], Miss("ambiguous", tuple(sorted(_source_name(s) for s in found)))
             scope = scope.parent
         return None
 

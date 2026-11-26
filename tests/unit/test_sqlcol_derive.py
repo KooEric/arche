@@ -178,7 +178,7 @@ def test_an_unmatched_table_is_reported_once_where_it_is_read():
 
     found = derived("SELECT b.x, b.y FROM bad b WHERE b.z = 1", tables).missed
 
-    assert {(m.miss.reason, m.spec, m.start) for m in found} == {("table_ambiguous", "bad", 21)}
+    assert [(m.miss.reason, m.spec, m.start) for m in found] == [("table_ambiguous", "bad", 21)]
 
 
 # -- set operations, CTEs, temporary tables ---------------------------------------------
@@ -323,3 +323,95 @@ def test_merge_assignments_trace_to_the_source_and_on_is_a_join_key():
         ("status", ["name"]), ("cust", ["cust"]), ("status", ["name"])]
     assert sorted((u.kind, u.leaf.table, u.leaf.column) for u in found.usages) == [
         ("filter", "db.cust", "region"), ("join_key", "db.cust", "cust"), ("join_key", "db.orders", "cust")]
+
+
+# -- fix round 1 ------------------------------------------------------------------------
+def test_a_qualified_star_does_not_expand_a_table_whose_name_ends_like_the_qualifier():
+    assert list(_outputs("SELECT s.* FROM cust s JOIN orders ON s.cust = orders.cust")) == ["cust", "name", "region"]
+
+
+def test_a_qualified_star_by_alias_wins_over_a_table_of_that_name():
+    tables = {**TABLES, "x.t": known("db.xt", "c"), "u": known("db.u", "d")}
+
+    assert list(_outputs("SELECT t.* FROM x.t JOIN u AS t ON 1 = 1", tables)) == ["d"]
+
+
+def test_a_scalar_subquery_sees_the_ctes_of_its_query():
+    tables = {**TABLES, "c": known("db.realc", "a")}
+    text = "WITH c AS (SELECT amt AS a FROM orders) SELECT (SELECT max(a) FROM c) AS m FROM cust"
+
+    assert [(leaf[0], leaf[1], leaf[6]) for leaf in _outputs(text, tables)["m"]] == [("db.orders", "amt", ("cte:c",))]
+
+
+def test_a_table_function_input_sees_the_ctes_of_its_query():
+    tables = {**TABLES, "c": known("db.realc", "a")}
+    text = "WITH c AS (SELECT amt AS a FROM orders) SELECT u.v FROM cust, UNNEST((SELECT max(a) FROM c)) u(v)"
+
+    assert [(leaf[0], leaf[1]) for leaf in _outputs(text, tables)["v"]] == [("db.orders", "amt")]
+
+
+RECURSIVE = "WITH RECURSIVE r AS (SELECT id AS n FROM orders WHERE amt > 0 UNION ALL " \
+            "SELECT p.pid FROM r JOIN people p ON p.pid = r.n) SELECT n FROM r"
+
+
+def test_a_recursive_branch_reading_another_table_adds_no_leaves():
+    assert {(leaf[0], leaf[1]) for leaf in _outputs(RECURSIVE)["n"]} == {("db.orders", "id")}
+
+
+def test_a_recursive_cte_records_the_first_branch_once_and_not_the_recursive_branch():
+    assert _uses(RECURSIVE) == [("filter", "db.orders", "amt")]
+
+
+def test_a_union_branch_of_a_recursive_cte_that_does_not_read_it_is_kept():
+    text = "WITH RECURSIVE r AS (SELECT id AS n FROM orders UNION ALL SELECT pid FROM people) SELECT n FROM r"
+
+    assert {(leaf[0], leaf[1]) for leaf in _outputs(text)["n"]} == {("db.orders", "id"), ("db.people", "pid")}
+
+
+def test_a_table_function_reading_a_column_of_its_own_name_reads_the_sources_before_it():
+    found = _outputs("SELECT v FROM raw, UNNEST(v) AS u(v)")["v"]
+
+    assert [(leaf[0], leaf[1], leaf[5]) for leaf in found] == [("raw.ev", "v", "table_function")]
+
+
+def test_table_function_inputs_are_evaluated_once():
+    text = "SELECT u.v, u.v AS w, u.v AS z FROM orders o, " \
+           "UNNEST((SELECT max(amt) FROM orders WHERE status = 'a')) u(v)"
+
+    assert _uses(text) == [("filter", "db.orders", "status")]
+
+
+def _chain(count):
+    ctes = ", ".join(f"c{i} AS (SELECT x FROM c{i - 1})" for i in range(1, count))
+    return f"WITH c0 AS (SELECT amt AS x FROM orders), {ctes} SELECT x FROM c{count - 1}"
+
+
+def test_a_chain_of_127_ctes_is_followed():
+    found = derived(_chain(127))
+
+    assert (found.missed, [l.column for l in found.outputs[0].leaves]) == ((), ["amt"])
+
+
+def test_a_chain_of_200_ctes_is_too_deep_once_without_unknown_columns():
+    found = derived(_chain(200))
+
+    assert [m.miss.reason for m in found.missed] == ["too_deep"]
+
+
+def test_outputs_never_exceed_the_item_limit():
+    names = tuple(f"c{i}" for i in range(1999))
+    tables = {**TABLES, "big": known("db.big", *names)}
+
+    found = derived("SELECT b.*, 1 AS p, 2 AS q FROM big b", tables)
+
+    assert len(found.outputs) == 2000
+    assert [m.miss.reason for m in found.missed] == ["too_many_columns"]
+
+
+def test_an_unmatched_merge_target_is_reported_once_where_it_is_read():
+    tables = {**TABLES, "bad": TableInfo(None, "unresolved", None, None, False, False, reason="ambiguous")}
+    text = "MERGE INTO bad t USING cust s ON t.cust = s.cust WHEN MATCHED THEN UPDATE SET a = t.x, b = t.y"
+
+    found = derived(text, tables).missed
+
+    assert [(m.miss.reason, m.spec, m.start) for m in found] == [("table_ambiguous", "bad", 11)]
