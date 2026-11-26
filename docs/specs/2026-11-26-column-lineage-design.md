@@ -119,7 +119,8 @@ SELECT 하나마다 FROM 순서대로 소스 목록을 두고, 컬럼 참조를 
   - 테이블: 카탈로그(아래 "컬럼 목록")가 아는 컬럼 목록이 있거나 없다.
   - CTE·파생 테이블·같은 파일의 임시 테이블: 출력 컬럼이 그대로 컬럼 목록이다. 노드를 만들지 않고, 지나간 경로를 `via`에 `cte:<이름>`, `subquery:<줄>`, `temp:<이름>`으로 남긴다.
   - 테이블 함수(`UNNEST`, `LATERAL VIEW`, `FLATTEN`): 어느 컬럼이든 입력 식의 컬럼에서 온다(`transform`, `inferred`, `rule: table_function`).
-- **이름 가림.** 한정자 없는 테이블 이름은 CTE, 같은 파일의 임시 테이블, 카탈로그 순서로 찾는다. 안쪽 CTE가 바깥 CTE와 실제 테이블을 가린다. CTE는 처음 읽힐 때 계산한다. 쓰이지 않는 CTE의 필터는 기록하지 않는다. `RECURSIVE` CTE는 첫 분기의 컬럼만 따른다.
+- **한정자가 가리키는 소스.** 명시한 별칭이 맞으면 그 소스이다. 별칭이 있는 테이블은 테이블 이름으로 가리킬 수 없다. 별칭이 없는 테이블은 전체 이름이나 `.` 경계의 뒷부분(`orders`, `billing.orders`)으로 가리킨다. 둘 이상이 맞으면 `ambiguous`이다. `t.*`도 같은 규칙이다.
+- **이름 가림.** 한정자 없는 테이블 이름은 CTE, 같은 파일의 임시 테이블, 카탈로그 순서로 찾는다. 안쪽 CTE가 바깥 CTE와 실제 테이블을 가린다. CTE는 처음 읽힐 때 계산한다. 쓰이지 않는 CTE의 필터는 기록하지 않는다. `RECURSIVE` CTE는 첫 분기의 컬럼만 따르고, 그 CTE 자신을 읽는 분기는 출력·사용처·미해결 모두 기록하지 않는다(보수적). 스칼라 서브쿼리와 표 함수의 입력도 바깥 쿼리의 CTE를 본다. 표 함수의 입력은 그 함수보다 앞에 나온 소스만 보고, 한 번만 계산한다.
 - **한정자 있는 참조**(`o.amt`, `billing.orders.amt`). 별칭이나 테이블 전체 이름, 또는 그 뒷부분과 맞는 소스를 안쪽부터 찾는다. 맞는 소스가 없고 첫 부분이 컬럼으로 찾아지면 구조체 접근으로 보고 그 컬럼에 잇는다(`inferred`, `rule: struct_field`). 아니면 `unknown_qualifier`이다.
 - **한정자 없는 참조.** 같은 SELECT의 소스를 다음 순서로 본다.
 
@@ -183,17 +184,18 @@ Q4 권장안대로 열 가지를 쓴다. 참조마다 맥락으로 정하고, CT
 | `PARTITION (dt = '…')` | 대상 이름 | 정적 값은 `constant` edge |
 | `MERGE` | 대상 이름 | `UPDATE SET c = e`와 `INSERT (c) VALUES (e)`의 각 짝 |
 | `CREATE TABLE t (…)` DDL | — | 컬럼 목록만 기록한다. edge는 없다. |
-| `CREATE TEMP TABLE` | 노드 없음 | 같은 파일의 뒤 문장에서 `temp:<이름>`으로 지나간다. |
+| `CREATE TEMP TABLE` | 노드 없음 | 같은 파일의 뒤 문장에서 `temp:<이름>`으로 지나간다. 임시 테이블 문장의 사용처(`filter` 등)와 미해결 참조는 그 임시 테이블을 (다른 임시 테이블을 거쳐서라도) 읽는 뒤 문장들이 쓰는 테이블로 간다. 읽는 문장이 없으면 `table:temp:<이름>`으로 간다. |
 | 대상이 런타임 이름(`ledger.daily_{}`, `insert into {{ ref() }}`) | — | 문장은 `partial`(`dynamic`), `unresolved`에 남긴다. |
 
 ## 컬럼 목록
 
 `SELECT *` 펼치기, 한정자 없는 참조, 위치 맞추기에 쓰는 테이블별 컬럼 목록이다. Q5대로 출처의 우선순위는 다음과 같다.
 
-1. `sql_output`: 레포 SQL이 그 테이블을 정의하며 만든 출력 컬럼(`CREATE … AS`, dbt 모델, 열 목록 있는 `INSERT`). 같은 테이블을 여러 문장이 정의하면 (경로, 문장 번호) 순으로 첫 것을 쓴다.
+1. `sql_output`: 레포 SQL이 그 테이블을 정의하며 만든 출력 컬럼(`CREATE … AS`, dbt 모델). 같은 테이블을 여러 문장이 정의하면 (경로, 문장 번호) 순으로 첫 것을 쓴다.
 2. `ddl`: `CREATE TABLE (…)`의 컬럼과 `PARTITIONED BY` 컬럼
-3. `documented`: 1.2.0 `dbt_models[].columns`, `dbt_sources[].columns`(`status: resolved`만). 열린 목록이다.
-4. `insert_alias`: 위 셋이 없을 때 열 목록 없는 INSERT의 별칭. `verified` 근거가 되지 않는다.
+3. 열 목록 있는 `INSERT`(내부 이름 `insert_list`): 그 테이블에 쓰는 일부 컬럼일 수 있으므로 열린 목록이다. 같은 테이블의 여러 INSERT 목록은 (경로, 문장 번호) 순으로 합친다. `verified` 근거가 되지 않고 위치 맞추기에도 쓰지 않는다. 이 INSERT가 쓰는 컬럼 노드의 `known_from`은 `sql_output`이다. (구현 리뷰에서 정함: 처음 설계는 이것을 1에 넣었는데, 일부 컬럼만 쓰는 INSERT가 테이블의 다른 컬럼을 감추는 문제가 있었다.)
+4. `documented`: 1.2.0 `dbt_models[].columns`, `dbt_sources[].columns`(`status: resolved`만). 열린 목록이다.
+5. `insert_alias`: 위 넷이 없을 때 열 목록 없는 INSERT의 별칭. `verified` 근거가 되지 않는다.
 
 - 목록을 정의한 문장의 SELECT에 컬럼을 모르는 `*`가 있으면 그 목록은 열린 목록이다. 아는 이름만 담고, 다른 이름도 "있을 수 있음"으로 본다.
 - 출처가 여럿이고 서로 다르면 위 순서대로 고르고, 그 차이를 `column_sources_disagree`에 남긴다.
@@ -282,7 +284,9 @@ Q9 권장안 (c)대로 한다. 기존 `files[].impact`는 바꾸지 않는다. `
     - `added`: 반대 경우
     - `redefined`: 들어오는 edge 집합(`from`, `kind`, `role`, `expression`)이 다르다.
   - 스냅샷이 하나뿐이면 바뀐 SQL 파일이 쓰는 모든 출력 컬럼을 씨앗으로 삼는다(`seed: file`). 거친 추정이다.
-- **따라가기.** `removed`는 base의 edge로, 나머지는 head의 edge로 하류를 BFS로 따라간다. 출력 컬럼 edge는 계속 따라가고, 사용처 edge(`filter` 등)는 `used_by`에서 멈춘다.
+- **따라가기.** `removed`는 base의 edge로, 나머지는 head의 edge로 하류를 BFS로 따라간다. 출력 컬럼 edge는 계속 따라가고, 사용처 edge(`filter` 등)는 `used_by`에서 멈춘다. 같은 컬럼에 더 좋은 상태의 경로로 다시 닿으면 그 하류도 다시 따라간다(상태가 셋뿐이라 선형이다). 5,000개를 넘으면 `affected`와 `used_by`를 합쳐 깊이가 얕은 것부터 남긴다.
+- **기준에 컬럼 lineage가 없을 때.** base 그래프에 SQL 파일이 있는데 base 실행에 `columns.json`이 없으면, base가 1.3.0 이전 스캔이라는 뜻이다. `column_impact`는 `available: false`, `reason: "base_without_columns"`이다. base에 SQL 파일이 없으면 빈 문서로 보고 head의 컬럼은 모두 `added`이다.
+- **입력 검사.** `columns.json`의 모양이 틀리면 `IntegrityError`이다. 값의 형식이 틀린 항목은 건너뛴다.
 - **경로의 상태.** 지나간 edge 중 가장 낮은 상태이다. 결과가 5,000개를 넘으면 멈추고 `truncated: true`로 둔다.
 - **결과가 없을 때.** `columns.json`이 없으면 `column_impact` 키를 넣지 않는다. 그래서 기존 출력이 그대로이다.
 - **안내 문구.** 리포트에 "컬럼 단위로 정확한 결과는 두 스냅샷을 비교할 때만 나온다"를 적고, `seed` 값을 화면에 보인다.
