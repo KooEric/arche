@@ -121,6 +121,8 @@ SELECT 하나마다 FROM 순서대로 소스 목록을 두고, 컬럼 참조를 
   - 테이블 함수(`UNNEST`, `LATERAL VIEW`, `FLATTEN`): 어느 컬럼이든 입력 식의 컬럼에서 온다(`transform`, `inferred`, `rule: table_function`).
 - **한정자가 가리키는 소스.** 명시한 별칭이 맞으면 그 소스이다. 별칭이 있는 테이블은 테이블 이름으로 가리킬 수 없다. 별칭이 없는 테이블은 전체 이름이나 `.` 경계의 뒷부분(`orders`, `billing.orders`)으로 가리킨다. 둘 이상이 맞으면 `ambiguous`이다. `t.*`도 같은 규칙이다.
 - **이름 가림.** 한정자 없는 테이블 이름은 CTE, 같은 파일의 임시 테이블, 카탈로그 순서로 찾는다. 안쪽 CTE가 바깥 CTE와 실제 테이블을 가린다. CTE는 처음 읽힐 때 계산한다. 쓰이지 않는 CTE의 필터는 기록하지 않는다. `RECURSIVE` CTE는 첫 분기의 컬럼만 따르고, 그 CTE 자신을 읽는 분기는 출력·사용처·미해결 모두 기록하지 않는다(보수적). 스칼라 서브쿼리와 표 함수의 입력도 바깥 쿼리의 CTE를 본다. 표 함수의 입력은 그 함수보다 앞에 나온 소스만 보고, 한 번만 계산한다.
+- **컬럼을 다 모르는 `*` 뒤의 자리.** 출력 목록은 컬럼을 다 알지 못하는 첫 `*`(목록을 모르거나 열린 목록)의 자리를 기억한다. 자리로 맞추는 곳(CTE·파생 테이블의 열 목록, 재귀 CTE, `CREATE`·`INSERT`의 열 목록과 위치 맞추기, 집합 연산, `GROUP BY 1`, 스칼라 서브쿼리)은 그 자리 앞의 출력만 맞춘다. 열 목록에서 그 뒤의 이름은 출처 없이 `unknown_star`로 남기고, 열 목록이 있는 CTE·파생 테이블은 닫힌 목록이 된다. 쓰는 문장이면 `partial(unknown_star)`이다. 집합 연산은 첫 분기를 포함한 모든 분기의 그 자리 중 가장 앞까지만 맞추고, 그 뒤 첫 분기의 출력에는 `unknown_star`를 더한다. 분기의 열 수가 맞을 수 없으면 그 분기를 빼고 문장에 `arity`를 한 번 남기며, 테이블에 쓰면 `partial(arity)`이다. (구현 리뷰에서 정함)
+- **일부만 따라간 컬럼.** 출처가 있는 출력 컬럼에도 닿지 못한 참조가 있으면 그 컬럼 id로 `unresolved`를 남긴다. 리포트의 행 상태는 낮은 쪽이다. 위치나 SELECT 별칭으로 맞춘 상수는 그 `rule`로 `inferred`이다.
 - **한정자 있는 참조**(`o.amt`, `billing.orders.amt`). 별칭이나 테이블 전체 이름, 또는 그 뒷부분과 맞는 소스를 안쪽부터 찾는다. 맞는 소스가 없고 첫 부분이 컬럼으로 찾아지면 구조체 접근으로 보고 그 컬럼에 잇는다(`inferred`, `rule: struct_field`). 아니면 `unknown_qualifier`이다.
 - **한정자 없는 참조.** 같은 SELECT의 소스를 다음 순서로 본다.
 
@@ -144,6 +146,7 @@ Q2 권장안을 따른다. 애매하면 낮은 쪽을 고른다. 경로 하나�
 |---|---|
 | `verified` | 참조가 한정자로 소스 하나에 붙거나(`rule: qualified`) 컬럼 목록으로 하나가 정해지고(`rule: listed`), 그 소스가 다음 중 하나이다. ① 같은 파일의 CTE·파생·임시 테이블, ② 테이블 lineage가 `verified`로 맞춘 테이블(`rule: name`, dbt `ref()`는 `dbt_ref`)이고 그 컬럼 목록을 **레포 SQL**(출력 컬럼 또는 DDL)이 알며 컬럼이 목록에 있음, ③ 외부 테이블이고 한정자로 붙음 |
 | `inferred` | 한정자 없이 소스가 하나뿐임(`single_source`), 목록을 모르는 소스가 섞임(`known_source`, `only_open_source`), 목록이 1.2.0 문서에서 옴(`documented`), 목록에 없는 컬럼(`unlisted_column`), `SELECT *` 펼치기(`star`), 같은 이름 통과(`star_passthrough`), 위치로 맞춘 INSERT(`positional`, `alias_mismatch`), SELECT 별칭으로 맞춘 INSERT(`select_alias`), 같은 출력 이름이 둘(`duplicate_name`, Jinja 분기), 테이블 lineage가 `inferred`(`table_name`), 대상이 dynamic 모델(`dynamic_model`), `USING`, 구조체 접근, 테이블 함수 |
+| `rule` 값 | `qualified`(한정자), `listed`(목록에 이름이 있는 소스 하나), `single_source`, `known_source`, `only_open_source`, `documented`(dbt 문서 목록), `insert_alias`(INSERT 별칭 목록), `open_list`(열린 목록), `unlisted_column`, `star`, `star_passthrough`, `positional`, `alias_mismatch`, `select_alias`, `duplicate_name`, `table_name`, `dbt_ref`(`table_rule`로만), `dynamic_model`, `using`, `struct_field`, `table_function`, `select_alias_ref`(WHERE·GROUP BY의 SELECT 별칭), `literal`(상수) |
 | unresolved | `unresolved` 목록에 사유와 함께 남긴다: `ambiguous`, `unknown_star`, `unknown_column`, `unknown_qualifier`, `dynamic`, `arity`, `unnamed`, `too_deep`, `too_many_columns`, 테이블을 맞추지 못함(`table_dynamic`, `table_ambiguous`, `table_not_found` 등. 테이블 하나에 한 번만) |
 
 Q2를 적용하며 정한 해석 세 가지. 사용자 검토 대상이다.
@@ -286,7 +289,8 @@ Q9 권장안 (c)대로 한다. 기존 `files[].impact`는 바꾸지 않는다. `
   - 스냅샷이 하나뿐이면 바뀐 SQL 파일이 쓰는 모든 출력 컬럼을 씨앗으로 삼는다(`seed: file`). 거친 추정이다.
 - **따라가기.** `removed`는 base의 edge로, 나머지는 head의 edge로 하류를 BFS로 따라간다. 출력 컬럼 edge는 계속 따라가고, 사용처 edge(`filter` 등)는 `used_by`에서 멈춘다. 같은 컬럼에 더 좋은 상태의 경로로 다시 닿으면 그 하류도 다시 따라간다(상태가 셋뿐이라 선형이다). 5,000개를 넘으면 `affected`와 `used_by`를 합쳐 깊이가 얕은 것부터 남긴다.
 - **기준에 컬럼 lineage가 없을 때.** base 그래프에 SQL 파일이 있는데 base 실행에 `columns.json`이 없으면, base가 1.3.0 이전 스캔이라는 뜻이다. `column_impact`는 `available: false`, `reason: "base_without_columns"`이다. base에 SQL 파일이 없으면 빈 문서로 보고 head의 컬럼은 모두 `added`이다.
-- **입력 검사.** `columns.json`의 모양이 틀리면 `IntegrityError`이다. 값의 형식이 틀린 항목은 건너뛴다.
+- **그래프가 맞지 않을 때.** 그래프가 dirty이거나 두 커밋 어느 쪽과도 맞지 않으면 `available: false`, `reason: "graph_mismatch"`이다.
+- **입력 검사.** `columns.json`의 모양이나 `columns_version`이 틀리거나, 너무 깊이 중첩되었거나 UTF-8이 아니면 `IntegrityError`이다. 값의 형식이 틀린 항목은 건너뛴다.
 - **경로의 상태.** 지나간 edge 중 가장 낮은 상태이다. 결과가 5,000개를 넘으면 멈추고 `truncated: true`로 둔다.
 - **결과가 없을 때.** `columns.json`이 없으면 `column_impact` 키를 넣지 않는다. 그래서 기존 출력이 그대로이다.
 - **안내 문구.** 리포트에 "컬럼 단위로 정확한 결과는 두 스냅샷을 비교할 때만 나온다"를 적고, `seed` 값을 화면에 보인다.

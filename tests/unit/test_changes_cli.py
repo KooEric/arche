@@ -184,8 +184,8 @@ def test_column_impact_is_unavailable_when_the_graph_matches_neither_commit(make
 
     assert result.returncode == 0, result.stderr
     impact = json.loads((out / "changes.json").read_text())["column_impact"]
-    assert impact == {"available": False, "seeds": [], "affected": [], "used_by": [], "affected_files": [],
-                      "affected_tables": [], "truncated": False}
+    assert impact == {"available": False, "reason": "graph_mismatch", "seeds": [], "affected": [], "used_by": [],
+                      "affected_files": [], "affected_tables": [], "truncated": False}
 
 
 def _edit_load(repo, git_cmd, old, new):
@@ -302,3 +302,18 @@ def test_a_malformed_columns_json_is_an_integrity_error_not_a_traceback(make_rep
         result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
         assert result.returncode == 3, result.stderr
         assert "Traceback" not in result.stderr and "columns.json" in result.stderr
+
+
+def test_a_columns_json_of_another_version_is_rejected(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    head = _edit_load(repo, git_cmd, "r.c", "r.c AS d")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    columns = json.loads((out / "columns.json").read_text())
+    (out / "columns.json").write_text(json.dumps({**columns, "columns_version": 2}))
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 3
+    assert "columns.json has an unsupported columns_version; run imports.py again" in result.stderr

@@ -129,7 +129,7 @@ def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str, base_gr
 
 def _column_impact(files: list, valid: bool, columns: dict, base_columns) -> dict:
     """Column-level impact; absent from the output when the run has no columns.json."""
-    if not valid:
-        return column_impact.empty()
+    if not valid:  # the graph is dirty or matches neither commit
+        return {**column_impact.empty(), "reason": "graph_mismatch"}
     changed = sorted({path for item in files for path in (item["path"], item.get("old_path")) if path})
     return column_impact.build(columns, changed, base_columns)

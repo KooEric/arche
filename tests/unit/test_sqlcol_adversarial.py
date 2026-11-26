@@ -178,13 +178,14 @@ def test_fifty_thousand_statements_in_a_repository_end_with_statuses():
 
 def test_a_long_star_chain_across_files_ends_with_statuses():
     sources = {f"q/c{i:03}.sql": f"CREATE TABLE s.t{i} AS SELECT * FROM s.t{i - 1};\n" for i in range(1, 200)}
-    sources["q/c000.sql"] = "CREATE TABLE s.t0 AS SELECT * FROM raw.r;\n"
+    sources["q/c000.sql"] = "CREATE TABLE s.t0 AS SELECT r.a, r.b FROM raw.r r;\n"  # a list each round passes one step
     sources["q/read.sql"] = "SELECT t.a, t.b FROM s.t199 t;\n"
 
     columns, seconds = _build(sources)
 
     assert _statuses(columns) == {"parsed:None": 201}
     assert any(e["to"] == "col:s.t199.a" for e in columns["edges"])
+    assert columns["truncated"] is True  # the column lists do not settle within the round limit
     assert seconds < 10
 
 

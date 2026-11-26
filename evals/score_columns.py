@@ -60,8 +60,9 @@ def gate(got: list, expected: list, min_precision: float, min_recall: float) -> 
 
 
 def _git(repo: Path, *args: str) -> str:
+    inherited = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
-                            env={**os.environ, **_GIT_ENV})
+                            env={**inherited, **_GIT_ENV})
     return result.stdout.strip()
 
 

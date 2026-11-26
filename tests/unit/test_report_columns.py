@@ -198,6 +198,20 @@ def test_unavailable_column_impact_says_why():
     assert "기준 스냅샷에 컬럼 lineage가 없습니다. 기준에서 imports.py를 다시 실행하세요." in ko
 
 
+def test_unavailable_column_impact_explains_a_graph_that_matches_neither_commit():
+    reason = "The graph snapshot is dirty or matches neither compared commit; scan a clean checkout of one again."
+    assert reason in impact({"available": False, "reason": "graph_mismatch"})
+    ko = impact({"available": False, "reason": "graph_mismatch"}, T=lambda text: TRANSLATIONS_KO.get(text, text))
+    assert TRANSLATIONS_KO[reason] in ko and reason not in ko
+
+
+def test_the_truncation_note_names_both_the_edge_limit_and_unsettled_column_lists():
+    section = ColumnLineage(_doc(truncated=True)).section()
+    assert "edge limit" in section and "did not settle" in section
+    ko = ColumnLineage(_doc(truncated=True), T=lambda text: TRANSLATIONS_KO.get(text, text)).section()
+    assert "edge 상한" in ko and "정해지지" in ko
+
+
 def test_a_cut_walk_with_nothing_hidden_says_it_stopped_at_the_limit(monkeypatch):
     columns = [_column("t", name) for name in "abcd"]
     edges = [_edge("col:t.a", "col:t.b"), _edge("col:t.b", "col:t.c"), _edge("col:t.c", "col:t.d")]

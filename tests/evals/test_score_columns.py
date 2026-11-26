@@ -33,3 +33,25 @@ def test_observed_rows_are_sorted_and_carry_the_role():
     view = score_columns.observed(columns)
     assert view["verified"] == [[None, "col:u.a", "constant"], ["col:t.b", "col:u.c", "transform", "condition"]]
     assert view["inferred"] == [["col:t.a", "col:u.a", "direct", "star"]]
+
+
+def test_git_runs_without_the_callers_git_variables(monkeypatch, tmp_path):
+    seen = {}
+
+    def run(command, **options):
+        seen.update(options["env"])
+
+        class Done:
+            stdout = ""
+        return Done()
+
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "index"))
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "someone")
+    monkeypatch.setattr(score_columns.subprocess, "run", run)
+
+    score_columns._git(tmp_path, "status")
+
+    assert "GIT_DIR" not in seen and "GIT_INDEX_FILE" not in seen
+    assert seen["GIT_AUTHOR_NAME"] == "fixture" and seen["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert seen.get("PATH") == score_columns.os.environ.get("PATH")

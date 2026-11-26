@@ -21,7 +21,8 @@ STATEMENT_ORDER = ("parsed", "partial", "unsupported", "parse_error", "too_large
 CAVEATS = ("Column lineage reads only SELECT statements in SQL files. It does not follow SQL inside views or Python, "
            "names changed by ALTER, PIVOT, or macro output.",
            "An inferred link needs checking before you rely on it.")
-TRUNCATED = "Column lineage stopped at an edge limit; some columns may have more sources and uses than shown."
+TRUNCATED = ("Column lineage stopped at an edge limit, or its column lists did not settle within the round limit; "
+             "some columns may have more sources and uses than shown.")
 REASONS = {
     "ambiguous": "Columns matching several sources",
     "unknown_star": "SELECT * from tables with unknown columns",
@@ -294,6 +295,8 @@ def _unavailable(column_impact: dict, T: Translate) -> str:
     reason = column_impact.get("reason")
     if reason == "base_without_columns":
         why = T("The base snapshot has no column lineage; run imports.py on the base again.")
+    elif reason == "graph_mismatch":
+        why = T("The graph snapshot is dirty or matches neither compared commit; scan a clean checkout of one again.")
     else:
         why = f'{T("Reason")}: {_code(reason)}' if reason else ""
     return f'<p class="empty">{T("Column impact was not computed.")}</p>' + (f'<p class="empty">{why}</p>' if why else "")

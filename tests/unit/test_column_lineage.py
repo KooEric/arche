@@ -314,6 +314,16 @@ def test_a_column_partly_unresolved_records_its_miss_on_the_column():
     assert _column_misses(columns) == [("col:m.t.v", "ambiguous")]
 
 
+def test_a_create_of_the_wrong_width_offers_an_open_column_list():
+    columns = _columns({"q/a.sql": "CREATE TABLE m.t (a, b) AS SELECT r.x FROM raw.x r;\n",
+                        "q/b.sql": "CREATE TABLE m.u AS SELECT z FROM m.t;\n",
+                        "q/c.sql": "CREATE TABLE m.v AS SELECT * FROM m.t;\n"})
+
+    assert _states(columns) == [("partial", "arity")]
+    assert _edges(columns, to="col:m.u.z") == [("col:m.t.z", "col:m.u.z", "direct", "inferred", "single_source")]
+    assert ("table:m.v", "unknown_star") in [(u["to"], u["reason"]) for u in columns["unresolved"]]
+
+
 def test_an_insert_into_an_unlisted_table_matches_by_select_alias():
     columns = _columns({"q/load.sql": "INSERT INTO m.t SELECT r.id FROM raw.x r;\n"})
 
