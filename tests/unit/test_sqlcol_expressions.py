@@ -320,3 +320,58 @@ def test_a_typed_array_and_struct_constructor_are_not_columns():
 
 def test_a_column_named_like_a_constructor_is_still_a_column():
     assert _refs("map + 1") == [("map", 0)]
+
+
+# -- fix round 2 -------------------------------------------------------------------------
+def _item_refs(text):
+    (statement,) = parse(list(tokens(text)))
+    return statement, [(item.name, [r.parts for r in item.expr.refs]) for item in statement.query.body.items]
+
+
+def test_a_double_arrow_json_operator_keeps_its_column():
+    statement, items = _item_refs("SELECT payload->>'k' AS v, d FROM t")
+
+    assert items == [("v", [("payload",)]), ("d", [("d",)])]
+    assert statement.tail is False
+
+
+def test_a_double_arrow_with_a_number_keeps_the_columns():
+    assert _refs("amt + xs->>0") == [("amt", 0), ("xs", 0)]
+
+
+def test_a_spaced_arrow_then_greater_than_is_still_read():
+    assert _refs("transform(arr, x -> x > k)") == [("arr", 0), ("k", 0)]
+
+
+def test_a_column_named_array_compared_with_less_than_is_a_column():
+    statement, items = _item_refs("SELECT array < 5 AS flag, b FROM t")
+
+    assert items == [("flag", [("array",)]), ("b", [("b",)])]
+    assert statement.tail is False
+
+
+def test_a_column_named_map_in_a_comparison_chain_keeps_every_column():
+    statement, items = _item_refs("SELECT map < 10 AND x > 3 AS f, b FROM t")
+
+    assert items == [("f", [("map",), ("x",)]), ("b", [("b",)])]
+    assert statement.tail is False
+
+
+def test_many_unclosed_constructor_lookaheads_stay_linear():
+    import time
+
+    text = "array < " * 20000 + "1"
+    began = time.perf_counter()
+    expr, _ = _expr(text)
+
+    assert time.perf_counter() - began < 2.0
+    assert len(expr.refs) == 20000
+
+
+def test_an_array_subquery_reads_its_columns_through_the_subquery():
+    expr, _ = _expr("ARRAY(SELECT a FROM s)")
+
+    assert expr.refs == ()
+    assert len(expr.subqueries) == 1
+    query, _ = expr.subqueries[0]
+    assert [ref.parts for ref in query.body.items[0].expr.refs] == [("a",)]

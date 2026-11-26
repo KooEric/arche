@@ -151,6 +151,9 @@ class Parser(ExpressionParser):
                 self.skip_parens()
             else:
                 self.advance()
+            self.accept("PERCENT")
+            if self.word() == "WITH" and self.word(1) == "TIES":
+                self.i += 2
         if self.word() == "AS" and self.word(1) in ("STRUCT", "VALUE"):
             self.i += 2
         items = self.items()

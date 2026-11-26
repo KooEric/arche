@@ -3,7 +3,7 @@ expression uses and the context they sit in (an aggregate, a window, a condition
 Depth is checked here, before Python's own recursion limit is near."""
 from __future__ import annotations
 
-from typing import FrozenSet, List, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 from . import MAX_DEPTH
 from .ast import AGG, CONDITION, ORDER, WINDOW, Expr, Query, Ref
@@ -86,6 +86,7 @@ class ExpressionParser:
 
     def __init__(self, tokens: Sequence[Token]) -> None:
         self.tokens, self.i, self.depth = tokens, 0, 0
+        self.angles: Dict[int, int] = {}  # `<` index -> index past its `>` (len(tokens) when unclosed)
 
     # -- token helpers ---------------------------------------------------------------
     def peek(self, offset: int = 0) -> Optional[Token]:
@@ -217,11 +218,14 @@ class ExpressionParser:
             collector.refs[start:] = [ref for ref in collector.refs[start:] if ref.parts[0] not in lambdas.params]
 
     def arrow(self, collector: _Collector, lambdas: _Lambdas) -> None:
-        """`->`: a JSON operator before a string or a number, else a lambda when bare names come right before it.
-        Only that operand is looked at, so a run of arrows stays linear."""
+        """`->`: a JSON operator before a string or a number, or as `->>`; else a lambda when bare names come
+        right before it. Only that operand is looked at, so a run of arrows stays linear."""
         at = self.i
-        self.advance()
+        arrow = self.advance()
         following = self.peek()
+        if following is not None and following.kind == OP and following.text == ">" and following.start == arrow.end:
+            self.advance()  # ->> (the tokenizer reads it as -> and >)
+            return
         if lambdas.last is None or (following is not None and following.kind in (STRING, NUMBER)):
             return
         start, end, mark = lambdas.last
@@ -322,10 +326,16 @@ class ExpressionParser:
         if self.is_op("(", 1):
             self.name_or_call(collector, context)
             return
-        self.advance()
-        if self.is_op("<"):
-            self.skip_angles()
-        if self.is_op("("):
+        if self.is_op("[", 1):
+            self.advance()
+            return
+        end = self.angle_end(self.i + 1)
+        following = self.tokens[end] if end < len(self.tokens) else None
+        if following is None or following.kind != OP or following.text not in ("[", "("):
+            self.name_or_call(collector, context)  # array < 5: a column compared, not a type
+            return
+        self.i = end
+        if following.text == "(":
             self.paren(collector, context)
 
     def dotted(self) -> Tuple[List[Token], bool]:
@@ -445,6 +455,8 @@ class ExpressionParser:
                     self.skip_type()
                 elif self.peek() is not None and self.peek().kind in (WORD, QUOTED):
                     self.advance()
+            elif upper in ("SELECT", "WITH") and position == 0 and not inner.refs and not inner.subqueries:
+                inner.subqueries.append((self.query(), base))  # ARRAY(SELECT …)
             else:
                 first = len(inner.refs)
                 start = self.i
@@ -485,12 +497,30 @@ class ExpressionParser:
 
     def skip_angles(self) -> None:
         """Skip a balanced `< … >` type argument group at the current token."""
-        level = 0
-        while self.peek() is not None:
-            token = self.advance()
-            level += {"<": 1, ">": -1}.get(token.text, 0) if token.kind == OP else 0
-            if level == 0:
-                break
+        self.i = self.angle_end(self.i)
+
+    def angle_end(self, index: int) -> int:
+        """The index past the `>` closing the `<` at `index`, or len(tokens) when it never closes. Every `<`
+        met is remembered and a remembered span is jumped over, so no token is scanned twice."""
+        known = self.angles.get(index)
+        if known is not None:
+            return known
+        size, opened, at = len(self.tokens), [], index
+        while at < size:
+            token = self.tokens[at]
+            if token.kind == OP and token.text == "<" and at != index and at in self.angles:
+                at = self.angles[at]
+                continue
+            if token.kind == OP and token.text == "<":
+                opened.append(at)
+            elif token.kind == OP and token.text == ">" and opened:
+                self.angles[opened.pop()] = at + 1
+                if not opened:
+                    return at + 1
+            at += 1
+        for start in opened:
+            self.angles[start] = size
+        return size
 
     def query(self) -> Query:
         raise NotImplementedError

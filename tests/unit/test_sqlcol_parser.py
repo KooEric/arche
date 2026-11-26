@@ -567,3 +567,15 @@ def test_every_prefix_of_a_statement_parses_or_is_a_parse_error(text):
             parse(toks[:end])
         except ParseError:
             pass
+
+
+# -- fix round 2 -------------------------------------------------------------------------
+def test_top_percent_is_skipped():
+    statement = _one("SELECT TOP 10 PERCENT a FROM t")
+
+    assert [item.name for item in statement.query.body.items] == ["a"]
+    assert [r.parts for r in statement.query.body.items[0].expr.refs] == [("a",)]
+
+
+def test_top_with_ties_is_skipped():
+    assert _items("SELECT TOP (5) WITH TIES a, b FROM t ORDER BY a") == ["a", "b"]
