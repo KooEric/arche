@@ -45,7 +45,7 @@ def project(documents: Sequence[Sequence[Scalar]]) -> Optional[dict]:
                 setting = LEGACY_KEYS.get(key[0], key[0])
                 if setting in PATH_KEYS:
                     found.setdefault(setting, []).append(value.strip("/"))
-    return {"name": name, **{setting: found.get(setting, default) for setting, default in PATH_KEYS.items()}}
+    return {"name": _cap(name), **{setting: found.get(setting, default) for setting, default in PATH_KEYS.items()}}
 
 
 def local_packages(path: str, documents: Sequence[Sequence[Scalar]]) -> List[str]:
@@ -167,6 +167,9 @@ def _test(item: object) -> Optional[Tuple[int, dict]]:
         return None
     name = names[0]
     args = item[name] if isinstance(item[name], dict) else {}
+    named = _leaf(item, "test_name") if isinstance(item, dict) else None
+    if named:  # `- name: my_check` with `test_name: unique`: dbt's other spelling, arguments beside the name
+        name, args = named, item
     if isinstance(args.get("arguments"), dict):
         args = {**args, **args["arguments"]}
     test: dict = {"name": name[:MAX_VALUE_CHARS]}
@@ -206,6 +209,7 @@ def _columns(node: Node, cut_lines: set) -> List[dict]:
         data_type = _leaf(column, "data_type")
         columns.append({"name": _cap(name), "description": described["description"],
                         **({"description_truncated": True} if "description_truncated" in described else {}),
+                        **({"doc": described["doc"]} if described["doc"] else {}),
                         "data_type": data_type[:MAX_VALUE_CHARS] if data_type else None, "tests": _tests(column)})
     return columns
 

@@ -72,7 +72,7 @@ def test_models_carry_descriptions_columns_types_and_tests():
         ("models", "orders", 3), ("models", "customers", 34), ("snapshots", "orders_snapshot", 40)]
     assert orders["description"] == "One row per order. Placed or shipped.\n"
     assert orders["tests"] == [{"name": "dbt_utils.expression_is_true"}]
-    assert orders["columns"][0] == {"name": "order_id", "description": None, "data_type": "bigint",
+    assert orders["columns"][0] == {"name": "order_id", "description": None, "doc": "order_id", "data_type": "bigint",
                                     "tests": [{"name": "not_null"}, {"name": "unique"}]}
     assert models[1]["description"] == "Customers.\n\n# Kept as text.\n"
 
@@ -194,3 +194,29 @@ def test_long_model_name_and_folder_value_are_cut():
 
     folder = yaml_config.extract("dbt/dbt_project.yml", f"name: p\nmodels:\n  p:\n    +schema: {'s' * 5000}\n")["dbt_folder_config"]
     assert len(folder[0]["value"]) == 200
+
+
+def test_a_test_in_the_name_and_test_name_syntax_takes_the_test_name():
+    text = ("models:\n  - name: a\n    columns:\n      - name: id\n        tests:\n"
+            "          - name: my_custom\n            test_name: unique\n"
+            "          - name: pick\n            test_name: accepted_values\n            values: [x, y]\n")
+
+    tests = _props(text)["models"][0]["columns"][0]["tests"]
+
+    assert tests == [{"name": "unique"}, {"name": "accepted_values", "values": ["x", "y"], "values_count": 2}]
+
+
+def test_a_column_description_that_is_only_a_doc_call_records_the_doc_block():
+    text = ("models:\n  - name: a\n    columns:\n      - name: id\n        description: \"{{ doc('id_doc') }}\"\n"
+            "      - name: plain\n        description: text\n")
+
+    columns = _props(text)["models"][0]["columns"]
+
+    assert (columns[0]["description"], columns[0]["doc"]) == (None, "id_doc")
+    assert "doc" not in columns[1]
+
+
+def test_the_project_name_is_cut_at_the_value_limit():
+    project = yaml_config.extract("dbt_project.yml", "name: " + "n" * 500 + "\n")["dbt_project"]
+
+    assert len(project["name"]) == 200
