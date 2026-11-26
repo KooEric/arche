@@ -194,10 +194,67 @@ def test_union_with_a_constant_branch_keeps_the_column_and_marks_a_constant():
     assert output.constant is True
 
 
-def test_union_branches_of_different_widths_are_an_arity_miss():
-    outputs = derived("SELECT amt, id FROM orders UNION SELECT name FROM cust").outputs
+def test_union_branches_of_different_widths_are_one_statement_arity_miss():
+    found = derived("SELECT amt, id FROM orders UNION SELECT name FROM cust")
 
-    assert [[m.reason for m in o.misses] for o in outputs] == [["arity"], ["arity"]]
+    assert [[m.reason for m in o.misses] for o in found.outputs] == [[], []]
+    assert [m.miss.reason for m in found.missed] == ["arity"]
+
+
+# -- positions after a SELECT * whose columns are unknown -------------------------------
+def test_a_select_records_where_its_first_unknown_star_starts():
+    assert derived("SELECT o.amt, r.*, o.id FROM orders o, raw r").cut.at == 1
+    assert derived("SELECT o.*, r.* FROM orders o, raw r").cut.at == 4
+    assert derived("SELECT o.*, o.id FROM orders o").cut is None
+
+
+def test_a_cte_column_list_names_only_the_columns_before_an_unknown_star():
+    found = derived("WITH c(a, b) AS (SELECT r.*, r.y FROM raw r) SELECT c.a, c.b FROM c")
+
+    assert [(o.name, o.leaves, [m.reason for m in o.misses]) for o in found.outputs] == [
+        ("a", (), ["unknown_star"]), ("b", (), ["unknown_star"])]
+    assert found.stars == ()
+
+
+def test_a_cte_column_list_keeps_the_columns_before_an_unknown_star():
+    found = derived("WITH c(a, b) AS (SELECT o.amt, r.* FROM orders o, raw r) SELECT c.a, c.b FROM c")
+
+    assert [(o.name, [l.column for l in o.leaves], [m.reason for m in o.misses]) for o in found.outputs] == [
+        ("a", ["amt"], []), ("b", [], ["unknown_star"])]
+
+
+def test_a_derived_table_column_list_names_only_the_columns_before_an_unknown_star():
+    found = derived("SELECT d.a, d.b FROM (SELECT r.*, r.y FROM raw r) AS d(a, b)")
+
+    assert [(o.name, o.leaves, [m.reason for m in o.misses]) for o in found.outputs] == [
+        ("a", (), ["unknown_star"]), ("b", (), ["unknown_star"])]
+    assert found.stars == ()
+
+
+def test_a_recursive_cte_column_list_names_only_the_columns_before_an_unknown_star():
+    text = ("WITH RECURSIVE c(a, b) AS (SELECT r.*, r.y FROM raw r UNION ALL SELECT c.a, c.b FROM c) "
+            "SELECT c.a, c.b FROM c")
+
+    assert [(o.name, o.leaves) for o in derived(text).outputs] == [("a", ()), ("b", ())]
+
+
+def test_union_aligns_only_the_columns_before_an_unknown_star_in_the_first_branch():
+    found = derived("SELECT u.*, u.z FROM raw u UNION ALL SELECT o.amt FROM orders o")
+    (z,) = found.outputs
+
+    assert [(l.table, l.column) for l in z.leaves] == [("raw.ev", "z")]
+    assert [m.reason for m in z.misses] == ["unknown_star"]
+
+
+def test_union_aligns_the_columns_before_an_unknown_star_in_a_later_branch():
+    outputs = derived("SELECT o.id, o.amt FROM orders o UNION ALL SELECT r.k, r.* FROM raw r").outputs
+
+    assert [[l.column for l in o.leaves] for o in outputs] == [["id", "k"], ["amt"]]
+    assert [[m.reason for m in o.misses] for o in outputs] == [[], ["unknown_star"]]
+
+
+def test_a_group_by_position_after_an_unknown_star_is_not_followed():
+    assert _uses("SELECT r.*, o.amt FROM orders o, raw r GROUP BY 1") == []
 
 
 def test_a_cte_chain_records_its_path_and_keeps_the_strongest_kind():

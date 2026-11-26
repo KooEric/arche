@@ -222,6 +222,70 @@ def test_an_insert_of_the_wrong_width_is_partial_arity():
     assert ("table:m.t", "arity") in [(u["to"], u["reason"]) for u in columns["unresolved"]]
 
 
+# -- positions after a SELECT * whose columns are unknown -------------------------------
+def _states(columns, path="q/a.sql"):
+    return [(s["status"], s["reason"]) for s in columns["statements"] if s["path"] == path]
+
+
+def _column_misses(columns):
+    return sorted((u["to"], u["reason"]) for u in columns["unresolved"] if (u["to"] or "").startswith("col:"))
+
+
+def test_an_insert_column_list_maps_only_the_columns_before_an_unknown_star():
+    columns = _columns({"q/a.sql": "INSERT INTO mart.t (a, b, c) SELECT s.x, s.*, s.y FROM raw.src s;\n"})
+
+    assert _edges(columns) == [("col:raw.src.x", "col:mart.t.a", "rename", "verified", "qualified")]
+    assert _column_misses(columns) == [("col:mart.t.b", "unknown_star"), ("col:mart.t.c", "unknown_star")]
+    assert _states(columns) == [("partial", "unknown_star")]
+
+
+def test_a_create_column_list_maps_only_the_columns_before_an_unknown_star():
+    columns = _columns({"q/a.sql": "CREATE TABLE mart.v (a, b, c) AS SELECT s.x, s.*, s.y FROM raw.src s;\n"})
+
+    assert _edges(columns) == [("col:raw.src.x", "col:mart.v.a", "rename", "verified", "qualified")]
+    assert _column_misses(columns) == [("col:mart.v.b", "unknown_star"), ("col:mart.v.c", "unknown_star")]
+    assert _states(columns) == [("partial", "unknown_star")]
+    assert [c["column"] for c in columns["columns"] if c["table"] == "mart.v"] == ["a", "b", "c"]
+
+
+def test_a_create_column_list_shorter_than_the_known_outputs_is_arity():
+    columns = _columns({"q/a.sql": "CREATE TABLE mart.v (a) AS SELECT s.x, s.*, s.y FROM raw.src s;\n"})
+
+    assert _edges(columns) == []
+    assert _states(columns) == [("partial", "arity")]
+
+
+def test_a_positional_insert_maps_only_the_columns_before_an_unknown_star():
+    columns = _columns({"q/ddl.sql": "CREATE TABLE m.t (id INT, total INT, extra INT);\n",
+                        "q/a.sql": "INSERT INTO m.t SELECT s.id, s.*, s.y FROM raw.src s;\n"})
+
+    assert _edges(columns) == [("col:raw.src.id", "col:m.t.id", "direct", "inferred", "positional")]
+    assert _states(columns) == [("partial", "unknown_star")]
+
+
+def test_a_cte_column_list_after_an_unknown_star_passes_nothing_on():
+    columns = _columns({"q/a.sql": "CREATE TABLE mart.w AS WITH c(a, b) AS (SELECT s.*, s.y FROM raw.unk s) "
+                                   "SELECT c.a, c.b FROM c;\n"})
+
+    assert _edges(columns) == []
+    assert _column_misses(columns) == [("col:mart.w.a", "unknown_star"), ("col:mart.w.b", "unknown_star")]
+
+
+def test_a_derived_table_column_list_after_an_unknown_star_passes_nothing_on():
+    columns = _columns({"q/a.sql": "CREATE TABLE mart.d AS SELECT d.a, d.b FROM "
+                                   "(SELECT s.*, s.y FROM raw.unk s) AS d(a, b);\n"})
+
+    assert _edges(columns) == []
+    assert _column_misses(columns) == [("col:mart.d.a", "unknown_star"), ("col:mart.d.b", "unknown_star")]
+
+
+def test_union_after_an_unknown_star_in_the_first_branch_takes_no_later_branch():
+    columns = _columns({"q/a.sql": "CREATE TABLE mart.u AS SELECT u.*, u.z FROM raw.unk u "
+                                   "UNION ALL SELECT s.k FROM other.s s;\n"})
+
+    assert [e[0] for e in _edges(columns, to="col:mart.u.z")] == ["col:raw.unk.z"]
+
+
 def test_an_insert_into_an_unlisted_table_matches_by_select_alias():
     columns = _columns({"q/load.sql": "INSERT INTO m.t SELECT r.id FROM raw.x r;\n"})
 

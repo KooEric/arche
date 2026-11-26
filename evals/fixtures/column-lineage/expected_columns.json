@@ -17,6 +17,8 @@
     ["col:raw.orders.status", "col:stage.orders.status", "direct"],
     ["col:raw.orders.ts", "col:stage.orders.ts", "direct"],
     ["col:raw.people.id", "table:mart.mixed", "join_key"],
+    ["col:raw.slot_src.id", "col:mart.star_slots.slot_id", "rename"],
+    ["col:raw.slot_src.kind", "col:mart.star_union.kind", "direct"],
     ["col:refunds.daily.amount", "col:mart.all_amounts.amount", "direct"],
     ["col:refunds.daily.id", "col:mart.all_amounts.id", "direct"],
     ["col:stage.customers.id", "col:query:dags/sql/more.sql#6.id", "direct"],
@@ -86,7 +88,12 @@
   ],
   "unresolved": [
     [null, "dynamic", "INSERT INTO ledger.daily_{{ ds_nodash }}"],
+    ["col:mart.star_slots.slot_rest", "unknown_star", "s.*"],
+    ["col:mart.star_slots.slot_tail", "unknown_star", "s.*"],
     ["col:{}.stg_pay.currency", "dynamic", "{{ var('currency') }} as currency"],
+    ["table:mart.star_slots", "unknown_star", "*"],
+    ["table:mart.star_slots", "unknown_star", "s.*"],
+    ["table:mart.star_union", "unknown_star", "s.*"],
     ["table:stage.events", "unknown_star", "*"]
   ],
   "statements": [
@@ -111,6 +118,8 @@
     ["dags/sql/stage.sql", 0, "parsed", null],
     ["dags/sql/stage.sql", 1, "parsed", null],
     ["dags/sql/stage.sql", 2, "parsed", null],
+    ["dags/sql/star_slots.sql", 0, "partial", "unknown_star"],
+    ["dags/sql/star_slots.sql", 1, "parsed", null],
     ["dags/sql/tmp.sql", 0, "parsed", null],
     ["dags/sql/tmp.sql", 1, "parsed", null],
     ["dags/sql/tmp.sql", 2, "partial", "dynamic"],

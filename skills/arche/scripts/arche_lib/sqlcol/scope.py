@@ -153,11 +153,20 @@ class Output(NamedTuple):
     dynamic: bool
 
 
+class Cut(NamedTuple):
+    """Where the first SELECT * whose columns are not all known starts in an output list: the outputs
+    before `at` have known places; from `at` on, the star may add any number of columns."""
+    at: int
+    miss: Miss  # recorded for a column matched by place at or after `at`
+    start: int  # the star's place
+    end: int
+
+
 class QueryRelation(Relation):
     """A CTE, a derived table or a temporary table of the same file."""
 
-    def __init__(self, label: str, outputs: List[Output], stars: List[Relation]) -> None:
-        self.label, self.outputs, self.stars = label, outputs, stars
+    def __init__(self, label: str, outputs: List[Output], stars: List[Relation], cut: Optional[Cut] = None) -> None:
+        self.label, self.outputs, self.stars, self.cut = label, outputs, stars, cut
         self.by_name: Dict[str, List[Output]] = {}
         for output in outputs:
             if output.name is not None:

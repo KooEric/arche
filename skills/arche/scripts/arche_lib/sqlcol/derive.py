@@ -8,10 +8,11 @@ from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 from . import MAX_DEPTH, MAX_SELECT_ITEMS
 from .ast import AGG, CONDITION, ORDER, WINDOW, Expr, Query, QuerySource, Select, SetOp, Statement, \
     TableName, TableSource, Values
-from .scope import KIND_RANK, FunctionRelation, Leaf, Miss, Output, QueryRelation, Relation, Result, Scope, \
+from .scope import KIND_RANK, Cut, FunctionRelation, Leaf, Miss, Output, QueryRelation, Relation, Result, Scope, \
     TableInfo, TableRelation, cap, dedupe, named
 
 Lookup = Callable[[TableName], TableInfo]
+Body = Tuple[List[Output], List[Relation], Optional[Cut]]  # outputs, unknown star sources, first unknown star
 
 
 class Usage(NamedTuple):
@@ -33,6 +34,7 @@ class Derived(NamedTuple):
     usages: Tuple[Usage, ...]
     missed: Tuple[Missed, ...]
     stars: Tuple[Relation, ...]  # sources of a SELECT * whose columns are unknown
+    cut: Optional[Cut] = None  # where the first such SELECT * starts among the outputs
 
 
 class _Env:
@@ -89,44 +91,49 @@ class Deriver:
             for cte in query.ctes:
                 env.entries[cte.name] = [cte, None, env]
         if isinstance(query.body, Select):  # ORDER BY after a SELECT sees its sources
-            outputs, stars = self.select(query.body, scope, env, query.orders)
+            outputs, stars, cut = self.select(query.body, scope, env, query.orders)
         else:  # after a set operation ORDER BY names output columns
-            outputs, stars = self.body(query.body, scope, env)
-            self.uses(query.orders, Scope([], (), scope), env, "order_key", outputs)
-        return QueryRelation(label, outputs, stars)
+            outputs, stars, cut = self.body(query.body, scope, env)
+            self.uses(query.orders, Scope([], (), scope), env, "order_key", outputs, _width(outputs, cut))
+        return QueryRelation(label, outputs, stars, cut)
 
-    def body(self, body, scope: Optional[Scope], env: Optional[_Env]) -> Tuple[List[Output], List[Relation]]:
+    def body(self, body, scope: Optional[Scope], env: Optional[_Env]) -> Body:
         if isinstance(body, Query):
             relation = self.query(body, scope, env, "")
-            return relation.outputs, relation.stars
+            return relation.outputs, relation.stars, relation.cut
         if isinstance(body, Select):
             return self.select(body, scope, env)
         if isinstance(body, Values):
-            return self.values(body, scope, env), []
+            return self.values(body, scope, env), [], None
         return self.set_op(body, scope, env)
 
-    def set_op(self, body: SetOp, scope: Optional[Scope], env: Optional[_Env]) -> Tuple[List[Output], List[Relation]]:
-        return self.merge([self.body(branch, scope, env) for branch in body.branches])
+    def set_op(self, body: SetOp, scope: Optional[Scope], env: Optional[_Env]) -> Body:
+        return self.merge([self.body(branch, scope, env) for branch in body.branches], body.start)
 
-    @staticmethod
-    def merge(branches: List[Tuple[List[Output], List[Relation]]]) -> Tuple[List[Output], List[Relation]]:
-        first, stars = branches[0][0], [star for _, branch_stars in branches for star in branch_stars]
+    def merge(self, branches: List[Body], start: int) -> Body:
+        """Branches line up by place, and only before the first unknown SELECT * of any of them.
+        A branch whose width cannot match the first one's is left out and reported once."""
+        first, _, first_cut = branches[0]
+        stars = [star for _, branch_stars, _ in branches for star in branch_stars]
+        kept = [branch for branch in branches[1:] if _fits(first, first_cut, branch[0], branch[2])]
+        if len(kept) < len(branches) - 1:
+            self.missed.append(Missed(Miss("arity"), "*", start))
+        cuts = [cut for cut in [first_cut] + [branch[2] for branch in kept] if cut is not None]
+        cut = min(cuts, key=lambda found: found.at) if cuts else None
         merged = []
         for index, output in enumerate(first):
+            if cut is not None and index >= cut.at:  # its place in the other branches is unknown
+                merged.append(output._replace(misses=output.misses + (cut.miss,)))
+                continue
             leaves, misses, constant, dynamic = list(output.leaves), list(output.misses), output.constant, output.dynamic
-            for outputs, branch_stars in branches[1:]:
-                if branch_stars:
-                    continue
-                if len(outputs) != len(first):
-                    misses.append(Miss("arity"))
-                    continue
+            for outputs, _, _ in kept:
                 other = outputs[index]
                 leaves.extend(other.leaves)
                 misses.extend(other.misses)
                 constant, dynamic = constant or other.constant, dynamic or other.dynamic
             merged.append(output._replace(leaves=tuple(dedupe(leaves)), misses=tuple(misses), constant=constant,
                                           dynamic=dynamic))
-        return merged, stars
+        return merged, stars, cut
 
     def values(self, body: Values, scope: Optional[Scope], env: Optional[_Env]) -> List[Output]:
         width = max(len(row) for row in body.rows)
@@ -146,18 +153,22 @@ class Deriver:
         return outputs
 
     def select(self, select: Select, parent: Optional[Scope], env: Optional[_Env], orders: Tuple[Expr, ...] = ()
-               ) -> Tuple[List[Output], List[Relation]]:
+               ) -> Body:
         scope = Scope([], tuple(name for names in select.using for name in names), parent)
         for source in select.sources:
             scope.sources.append(self.source(source, scope, parent, env))
         outputs: List[Output] = []
         stars: List[Relation] = []
+        cut: Optional[Cut] = None
         for item in select.items:
             if len(outputs) >= MAX_SELECT_ITEMS:
                 self.missed.append(Missed(Miss("too_many_columns"), "*", item.start))
                 break
             if item.star is not None:
-                outputs.extend(self.expand(item.star, scope, env, stars, MAX_SELECT_ITEMS - len(outputs)))
+                expanded, found = self.expand(item.star, scope, env, stars, MAX_SELECT_ITEMS - len(outputs))
+                if cut is None and found is not None:
+                    cut = found._replace(at=len(outputs) + found.at)
+                outputs.extend(expanded)
                 continue
             leaves, misses = self.value(item.expr, scope, env)
             leaves = dedupe(leaves)
@@ -167,20 +178,21 @@ class Deriver:
                 misses = [Miss("dynamic")] + misses  # a macro or variable made it; passed on through SELECT *
             outputs.append(Output(item.name, item.display, tuple(leaves), tuple(misses), item.start, item.end,
                                   constant, item.expr.dynamic))
-        self.uses(select.joins, scope, env, "join_key", outputs)
+        width = _width(outputs, cut)
+        self.uses(select.joins, scope, env, "join_key", outputs, width)
         for names in select.using:
             for name in names:
                 for _, relation, _ in scope.sources:
                     if relation.has(name) is not False:
                         for leaf in relation.column(name, True)[0]:
                             self.usages.append(Usage(leaf, "join_key", select.start))
-        self.uses(select.where, scope, env, "filter", outputs)
-        self.uses(select.groups, scope, env, "group_key", outputs)
-        self.uses(select.orders + orders, scope, env, "order_key", outputs)
+        self.uses(select.where, scope, env, "filter", outputs, width)
+        self.uses(select.groups, scope, env, "group_key", outputs, width)
+        self.uses(select.orders + orders, scope, env, "order_key", outputs, width)
         for _, relation, _ in scope.sources:  # a table function no column read still records its inputs
             if isinstance(relation, FunctionRelation):
                 relation.inputs()
-        return outputs, stars
+        return outputs, stars, cut
 
     def source(self, source, scope: Scope, parent: Optional[Scope], env: Optional[_Env]
                ) -> Tuple[str, Relation, Optional[str]]:
@@ -202,8 +214,7 @@ class Deriver:
             label = f"subquery:{self.line(source.start)}"
             relation = self.query(source.query, parent, env, label)
             if source.columns:
-                relation = QueryRelation(label, [output._replace(name=name, display=name) for output, name
-                                                 in zip(relation.outputs, source.columns)], relation.stars)
+                relation = _renamed(label, (relation.outputs, relation.stars, relation.cut), source.columns)
             return source.alias or "", relation, None
         label = f"function:{self.line(source.start)}"
         before = Scope(list(scope.sources), scope.using, scope.parent)  # not the function itself
@@ -246,21 +257,20 @@ class Deriver:
         self.depth += 1
         try:
             if cte.recursive and isinstance(cte.query.body, SetOp):
-                outputs, stars = self.recursive(entry, cte.query, env, label)
+                body = self.recursive(entry, cte.query, env, label)
             else:
                 found = self.query(cte.query, None, env, label)
-                outputs, stars = found.outputs, found.stars
+                body = found.outputs, found.stars, found.cut
         finally:
             self.depth -= 1
-        return self.settle(entry, QueryRelation(label, self.rename(outputs, cte.columns), stars))
+        return self.settle(entry, _renamed(label, body, cte.columns))
 
     def settle(self, entry: list, relation: Relation) -> Relation:
         entry[1] = relation
         self.filled.append(entry)
         return relation
 
-    def recursive(self, entry: list, query: Query, env: Optional[_Env], label: str
-                  ) -> Tuple[List[Output], List[Relation]]:
+    def recursive(self, entry: list, query: Query, env: Optional[_Env], label: str) -> Body:
         """A recursive CTE's columns come from its first branch. A later branch that reads the CTE itself
         is left out with everything it would record; a later branch that does not is an ordinary branch."""
         if query.ctes:
@@ -268,7 +278,7 @@ class Deriver:
             for inner in query.ctes:
                 env.entries[inner.name] = [inner, None, env]
         first = self.body(query.body.branches[0], None, env)
-        entry[1] = QueryRelation(label, self.rename(first[0], entry[0].columns), first[1])
+        entry[1] = _renamed(label, first, entry[0].columns)
         kept = [first]
         for branch in query.body.branches[1:]:
             usages, missed, filled, reported = len(self.usages), len(self.missed), len(self.filled), set(self.reported)
@@ -285,9 +295,9 @@ class Deriver:
                 del self.filled[filled:]
                 continue
             kept.append(result)
-        outputs, stars = self.merge(kept)
-        self.uses(query.orders, Scope([], (), None), env, "order_key", outputs)
-        return outputs, stars
+        outputs, stars, cut = self.merge(kept, query.body.start)
+        self.uses(query.orders, Scope([], (), None), env, "order_key", outputs, _width(outputs, cut))
+        return outputs, stars, cut
 
     def inputs(self, expr: Expr, scope: Scope, env: Optional[_Env]) -> Callable[[], Result]:
         """The leaves behind a table function's arguments, as one relation column: read the first time
@@ -301,23 +311,20 @@ class Deriver:
             return memo[0]
         return read
 
-    @staticmethod
-    def rename(outputs: List[Output], columns: Tuple[str, ...]) -> List[Output]:
-        if not columns:
-            return outputs
-        return [output._replace(name=name, display=name) for output, name in zip(outputs, columns)]
-
-    def expand(self, star, scope: Scope, env: Optional[_Env], stars: List[Relation], room: int) -> List[Output]:
+    def expand(self, star, scope: Scope, env: Optional[_Env], stars: List[Relation], room: int
+               ) -> Tuple[List[Output], Optional[Cut]]:
+        """The star's columns, and where among them the first source with columns not all known starts."""
         chosen = scope.sources
         if star.qualifier is not None:
             chosen = named(scope.sources, ".".join(star.qualifier))
             if len(chosen) > 1:  # which source the star reads is unknown: its columns are too
                 stars.extend(relation for _, relation, _ in chosen)
                 candidates = tuple(sorted(full or relation.label or alias for alias, relation, full in chosen))
-                self.missed.append(Missed(Miss("ambiguous", candidates), self.spec(star.start, star.end),
-                                          star.start))
-                return []
+                miss = Miss("ambiguous", candidates)
+                self.missed.append(Missed(miss, self.spec(star.start, star.end), star.start))
+                return [], Cut(0, miss, star.start, star.end)
         outputs: List[Output] = []
+        cut: Optional[Cut] = None
         replace = dict(star.replace)
         rename = {old: (new, written) for old, new, written in star.rename}
         for alias, relation, full in chosen:
@@ -325,12 +332,14 @@ class Deriver:
             if is_open:
                 stars.append(relation)
                 resolved = relation.info.table if isinstance(relation, TableRelation) else None
-                self.missed.append(Missed(Miss("unknown_star", source=resolved or full or relation.label or alias),
-                                          self.spec(star.start, star.end), star.start))
+                miss = Miss("unknown_star", source=resolved or full or relation.label or alias)
+                self.missed.append(Missed(miss, self.spec(star.start, star.end), star.start))
+                if cut is None:
+                    cut = Cut(len(outputs), miss, star.start, star.end)
             for name in names:
                 if len(outputs) >= room:
                     self.missed.append(Missed(Miss("too_many_columns"), "*", star.start))
-                    return outputs
+                    return outputs, cut
                 if name in star.except_:
                     continue
                 if name in replace:
@@ -341,7 +350,7 @@ class Deriver:
                 new, written = rename.get(name, (name, name))
                 outputs.append(Output(new, written, tuple(cap(leaf, "inferred", "star") for leaf in dedupe(leaves)),
                                       (miss,) if miss else (), star.start, star.end, False, False))
-        return outputs
+        return outputs, cut
 
     # -- expressions -----------------------------------------------------------------
     def value(self, expr: Expr, scope: Scope, env: Optional[_Env], record: bool = True
@@ -365,15 +374,21 @@ class Deriver:
         for query, context in expr.subqueries:
             relation = self.query(query, scope, env, f"subquery:{self.line(query.start)}")
             kind = "window" if context & WINDOW else "aggregate" if context & AGG else "transform"
+            if relation.cut is not None and relation.cut.at == 0:  # its first column is unknown
+                misses.append(relation.cut.miss)
+                continue
             for output in relation.outputs[:1]:
                 leaves.extend(_combine(leaf, kind, bool(context & CONDITION)) for leaf in output.leaves)
         return leaves, misses
 
-    def uses(self, exprs, scope: Scope, env: Optional[_Env], kind: str, outputs: List[Output]) -> None:
+    def uses(self, exprs, scope: Scope, env: Optional[_Env], kind: str, outputs: List[Output],
+             width: Optional[int] = None) -> None:
+        """`width`: how many outputs have a known place, for GROUP BY 1."""
+        width = len(outputs) if width is None else width
         for expr in exprs:
             if not expr.refs and not expr.subqueries and self.text[expr.start:expr.end].isdigit():
                 index = int(self.text[expr.start:expr.end]) - 1  # GROUP BY 1
-                if 0 <= index < len(outputs):
+                if 0 <= index < width:
                     for leaf in outputs[index].leaves:
                         self.usages.append(Usage(leaf, kind, expr.start))
                 continue
@@ -413,6 +428,36 @@ def _combine(leaf: Leaf, kind: str, condition: bool) -> Leaf:
     return leaf._replace(kind=stronger, condition=leaf.condition or condition)
 
 
+def _width(outputs: List[Output], cut: Optional[Cut]) -> int:
+    return len(outputs) if cut is None else cut.at
+
+
+def _fits(first: List[Output], first_cut: Optional[Cut], other: List[Output], other_cut: Optional[Cut]) -> bool:
+    """Whether two set operation branches can have the same width. A branch with an unknown star has
+    at least as many columns as it lists."""
+    if first_cut is None and other_cut is None:
+        return len(first) == len(other)
+    if first_cut is None:
+        return len(other) <= len(first)
+    if other_cut is None:
+        return len(first) <= len(other)
+    return True
+
+
+def _renamed(label: str, body: Body, columns: Tuple[str, ...]) -> QueryRelation:
+    """A CTE or derived table with a column list names its columns by place. The list is the whole set
+    of columns; a name at or after an unknown star's place has no known source."""
+    outputs, stars, cut = body
+    if not columns:
+        return QueryRelation(label, outputs, stars, cut)
+    known = outputs if cut is None else outputs[:cut.at]
+    named_ = [output._replace(name=name, display=name) for output, name in zip(known, columns)]
+    if cut is not None:
+        named_ += [Output(name, name, (), (cut.miss,), cut.start, cut.end, False, False)
+                   for name in columns[len(named_):]]
+    return QueryRelation(label, named_, [] if cut is not None else stars)
+
+
 def _known(relation: Relation) -> Tuple[Tuple[str, ...], bool]:
     """(the column names a relation is known to have, whether it may have more)."""
     if isinstance(relation, TableRelation):
@@ -431,12 +476,13 @@ def derive(text: str, statement: Statement, lookup: Lookup, temps: Dict[str, Que
     deriver = Deriver(text, lookup, temps, newlines)
     outputs: List[Output] = []
     stars: List[Relation] = []
+    cut: Optional[Cut] = None
     if statement.query is not None:
         relation = deriver.query(statement.query, None, None, "")
-        outputs, stars = relation.outputs, relation.stars
+        outputs, stars, cut = relation.outputs, relation.stars, relation.cut
     elif statement.merge is not None:
         outputs = _merge(deriver, statement)
-    return Derived(statement, tuple(outputs), tuple(deriver.usages), tuple(deriver.missed), tuple(stars))
+    return Derived(statement, tuple(outputs), tuple(deriver.usages), tuple(deriver.missed), tuple(stars), cut)
 
 
 def _merge(deriver: Deriver, statement: Statement) -> List[Output]:

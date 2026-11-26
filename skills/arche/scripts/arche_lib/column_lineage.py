@@ -12,7 +12,7 @@ from .column_document import TempWrite, document, newline_positions
 from .sqlcol.ast import Statement, TableName
 from .sqlcol.derive import Derived, Lookup, derive
 from .sqlcol.parser import ParseError
-from .sqlcol.scope import Output, QueryRelation, TableInfo, TableRelation
+from .sqlcol.scope import Cut, Output, QueryRelation, TableInfo, TableRelation
 from .sqlcol.statements import parse
 from .sqlcol.tokens import statements as split_statements
 
@@ -38,6 +38,7 @@ class Written(NamedTuple):
     status_cap: Tuple[str, str]  # (status, rule) that no edge into this table may pass; rule "" for none
     misses: Tuple[str, ...]  # reasons the statement is only partly mapped
     partial_list: bool = False  # an INSERT's column list: the table may have other columns
+    open_list: bool = False  # the columns are not all known (a CREATE whose column count does not match)
 
 
 Row = Tuple[Parsed, Optional[Derived], Optional[Written]]  # the third may be a TempWrite
@@ -128,7 +129,7 @@ def _file_rows(path: str, text: str, newlines: List[int], items: List[Parsed], t
             temps[name] = QueryRelation(
                 f"temp:{name}",
                 [output._replace(name=name, display=display) for name, display, output, _ in written.columns],
-                list(derived.stars))
+                list(derived.stars), derived.cut if item.statement.columns is None else None)
             # A temporary table is not a node; later statements pass through it.
             written = TempWrite(name, written.misses, ())
         rows.append((item, derived, written))
@@ -212,13 +213,38 @@ def _written(path: str, item: Parsed, derived: Derived, lookup: Lookup,
                        ("verified", ""), ())
     if statement.kind == "create":
         if statement.columns is None:
-            names = _output_names(outputs)
-        elif len(statement.columns) == len(outputs) or derived.stars:
-            names = [(name, display, None) for name, display in statement.columns]
-        else:
-            return Written(target.name, constants, True, stars, ("verified", ""), ("arity",))
-        return Written(target.name, _pair(names, outputs) + constants, True, stars, ("verified", ""), ())
+            return Written(target.name, _pair(_output_names(outputs), outputs) + constants, True, stars,
+                           ("verified", ""), ())
+        names = [(name, display, None) for name, display in statement.columns]
+        if derived.cut is not None:
+            return _by_place(target.name, names, outputs, derived.cut, stars, constants, True, False)
+        if len(statement.columns) == len(outputs) or derived.stars:
+            return Written(target.name, _pair(names, outputs) + constants, True, stars, ("verified", ""), ())
+        return Written(target.name, constants, True, stars, ("verified", ""), ("arity",), open_list=True)
     return _insert(target.name, statement, outputs, derived, stars, constants, lookup)
+
+
+def _by_place(table: str, names: list, outputs: List[Output], cut: Cut, stars: Tuple[str, ...], constants: tuple,
+              defines: bool, listed: bool, rule: Optional[str] = None) -> Written:
+    """Columns matched by place against outputs with an unknown SELECT * at `cut.at`: those before it
+    are mapped; a listed name after it is a column with no known source; a table's own columns after
+    it (no list) are left out."""
+    if len(names) < len(outputs):
+        return Written(table, constants, defines, stars, ("verified", ""), ("arity",), listed, open_list=True)
+    known = [(name, display, _mismatch(rule, name, output)) for (name, display, _), output
+             in zip(names[:cut.at], outputs[:cut.at])]
+    pairs = tuple(pair for pair in _pair(known, outputs) if pair[0])
+    rest = names[cut.at:]
+    if listed or defines:
+        pairs += tuple((name, display, Output(name, display, (), (cut.miss,), cut.start, cut.end, False, False), None)
+                       for name, display, _ in rest)
+    return Written(table, pairs + constants, defines, stars, ("verified", ""), ("unknown_star",) if rest else (),
+                   listed)
+
+
+def _mismatch(rule: Optional[str], name: str, output: Output) -> Optional[str]:
+    """A positional match whose SELECT alias names another column is only inferred."""
+    return "alias_mismatch" if rule == "positional" and output.name is not None and output.name != name else rule
 
 
 def _insert(table: str, statement: Statement, outputs: List[Output], derived: Derived, stars: Tuple[str, ...],
@@ -240,14 +266,14 @@ def _insert(table: str, statement: Statement, outputs: List[Output], derived: De
             if any(not name for name, _ in expected):
                 misses.append("unnamed")
             rule, defines = "select_alias", False
+    if derived.cut is not None and rule != "select_alias":
+        return _by_place(table, [(name, display, rule) for name, display in expected], outputs, derived.cut, stars,
+                         constants, False, listed, rule)
     if derived.stars and rule == "positional":
         return Written(table, constants, defines, stars, ("verified", ""), ("unknown_star",), listed)
     if not derived.stars and len(expected) != len(outputs):
         return Written(table, constants, defines, stars, ("verified", ""), ("arity",), listed)
-    names = []
-    for (name, display), output in zip(expected, outputs):
-        mismatch = rule == "positional" and output.name is not None and output.name != name
-        names.append((name, display, "alias_mismatch" if mismatch else rule))
+    names = [(name, display, _mismatch(rule, name, output)) for (name, display), output in zip(expected, outputs)]
     pairs = tuple(pair for pair in _pair(names, outputs) if pair[0])
     return Written(table, pairs + constants, defines, stars, ("verified", ""), tuple(misses), listed)
 

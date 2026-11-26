@@ -120,7 +120,7 @@ def build_catalog(results: Dict[str, list], documented: Dict[str, Listing]
                 continue
             names = _unique(column[0] for column in written.columns)
             displays = {column[0]: column[1] for column in reversed(written.columns)}
-            listing = Listing(names, _kind(written), bool(written.stars) or written.partial_list,
+            listing = Listing(names, _kind(written), bool(written.stars) or written.partial_list or written.open_list,
                               tuple(displays[n] for n in names), (path, item.index))
             if listing.known_from == "insert_list" and "insert_list" in found.get(written.table, {}):
                 listing = _merge(found[written.table]["insert_list"], listing)

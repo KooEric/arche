@@ -158,7 +158,10 @@ class _Builder:
             entry["candidates"] = list(miss.candidates)
         if miss is not None and miss.source:
             entry["source"] = miss.source
-        self.unresolved.setdefault((where["path"], where["line"], entry["spec"], reason), entry)
+        key = (where["path"], where["line"], entry["spec"], reason)
+        if to is not None and to.startswith("col:"):  # one entry per column: several may share one star
+            key += (to,)
+        self.unresolved.setdefault(key, entry)
 
     def passthrough(self) -> None:
         """For T made by `SELECT * FROM S` with S's columns unknown: S.x -> T.x for each T.x read downstream."""
