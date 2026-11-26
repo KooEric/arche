@@ -65,7 +65,7 @@ def extract(path: str, text: str) -> dict:
             file_refs.append({"spec": value, "line": line, "quote": _quote(lines, line), "dynamic": is_template(value)})
     result = {"imports": [], "symbols": [], "path_refs": path_refs, "config_externals": externals,
               "file_refs": sorted(file_refs, key=lambda ref: (ref["line"], ref["spec"])),
-              **yaml_dbt.extract(path, documents, lines)}
+              **yaml_dbt.extract(path, documents, lines, text)}
     return {**result, "degraded": True} if degraded else result
 
 
