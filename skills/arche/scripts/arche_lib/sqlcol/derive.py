@@ -73,6 +73,7 @@ class Deriver:
         self.missed: List[Missed] = []
         self.reported: set = set()  # (reason, start) of each unmatched table or depth limit already reported
         self.reading: Dict[int, bool] = {}  # recursive CTEs whose later branches are being read: read itself?
+        self.filled: List[list] = []  # CTE entries in the order their relation was settled
         self.depth = 0
 
     def line(self, position: int) -> int:
@@ -176,6 +177,9 @@ class Deriver:
         self.uses(select.where, scope, env, "filter", outputs)
         self.uses(select.groups, scope, env, "group_key", outputs)
         self.uses(select.orders + orders, scope, env, "order_key", outputs)
+        for _, relation, _ in scope.sources:  # a table function no column read still records its inputs
+            if isinstance(relation, FunctionRelation):
+                relation.inputs()
         return outputs, stars
 
     def source(self, source, scope: Scope, parent: Optional[Scope], env: Optional[_Env]
@@ -233,11 +237,10 @@ class Deriver:
                 self.reading[id(entry)] = True
             return relation
         if cte.query is None:
-            entry[1] = TableRelation(TableInfo(None, "unresolved", None, None, False, False, "dynamic", (),
-                                               f"cte:{cte.name}", cte.start))
-            return entry[1]
+            return self.settle(entry, TableRelation(TableInfo(None, "unresolved", None, None, False, False,
+                                                              "dynamic", (), f"cte:{cte.name}", cte.start)))
         if self.depth >= MAX_DEPTH:
-            return self.too_deep(f"cte:{cte.name}", cte.start)
+            return self.settle(entry, self.too_deep(f"cte:{cte.name}", cte.start))
         label = f"cte:{cte.name}"
         entry[1] = QueryRelation(label, [], [])  # a CTE reading itself sees no columns while it is read
         self.depth += 1
@@ -249,8 +252,12 @@ class Deriver:
                 outputs, stars = found.outputs, found.stars
         finally:
             self.depth -= 1
-        entry[1] = QueryRelation(label, self.rename(outputs, cte.columns), stars)
-        return entry[1]
+        return self.settle(entry, QueryRelation(label, self.rename(outputs, cte.columns), stars))
+
+    def settle(self, entry: list, relation: Relation) -> Relation:
+        entry[1] = relation
+        self.filled.append(entry)
+        return relation
 
     def recursive(self, entry: list, query: Query, env: Optional[_Env], label: str
                   ) -> Tuple[List[Output], List[Relation]]:
@@ -264,7 +271,7 @@ class Deriver:
         entry[1] = QueryRelation(label, self.rename(first[0], entry[0].columns), first[1])
         kept = [first]
         for branch in query.body.branches[1:]:
-            usages, missed = len(self.usages), len(self.missed)
+            usages, missed, filled, reported = len(self.usages), len(self.missed), len(self.filled), set(self.reported)
             self.reading[id(entry)] = False
             try:
                 result = self.body(branch, None, env)
@@ -272,7 +279,10 @@ class Deriver:
                 reads_itself = self.reading.pop(id(entry))
             if reads_itself:
                 del self.usages[usages:], self.missed[missed:]
-                self.reported = {(m.miss.reason, m.start) for m in self.missed}
+                self.reported = reported
+                for forgotten in self.filled[filled:]:  # a CTE first read here is read again from scratch
+                    forgotten[1] = None
+                del self.filled[filled:]
                 continue
             kept.append(result)
         outputs, stars = self.merge(kept)

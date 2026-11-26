@@ -415,3 +415,41 @@ def test_an_unmatched_merge_target_is_reported_once_where_it_is_read():
     found = derived(text, tables).missed
 
     assert [(m.miss.reason, m.spec, m.start) for m in found] == [("table_ambiguous", "bad", 11)]
+
+
+# -- fix round 2 ------------------------------------------------------------------------
+SIBLING = "WITH RECURSIVE f AS (SELECT amt FROM orders WHERE status = 'x'), " \
+          "r AS (SELECT id AS n FROM orders UNION ALL SELECT r.n FROM r JOIN f ON f.amt = r.n) "
+
+
+def test_a_cte_first_read_in_a_dropped_recursive_branch_is_recorded_when_read_again():
+    found = _uses(SIBLING + "SELECT n, f.amt FROM r JOIN f ON f.amt = r.n")
+
+    assert found.count(("filter", "db.orders", "status")) == 1
+
+
+def test_a_cte_read_before_the_recursive_cte_is_recorded_once():
+    found = _uses(SIBLING + "SELECT n, f.amt FROM f JOIN r ON f.amt = r.n")
+
+    assert found.count(("filter", "db.orders", "status")) == 1
+
+
+def test_an_unreferenced_table_function_still_records_its_inputs_once():
+    text = "SELECT o.amt FROM orders o, UNNEST((SELECT max(amt) FROM orders WHERE status = 'a')) u(v)"
+
+    assert _uses(text) == [("filter", "db.orders", "status")]
+
+
+def test_a_cte_past_the_depth_limit_is_remembered():
+    from arche_lib.sqlcol import MAX_DEPTH
+    from arche_lib.sqlcol.derive import Deriver
+
+    (statement,) = parse(list(tokens("WITH c AS (SELECT amt FROM orders) SELECT amt FROM c")))
+    deriver = Deriver("", lambda t: TABLES[t.name], {}, [])
+    deriver.depth = MAX_DEPTH
+    entry = [statement.query.ctes[0], None, None]
+
+    first = deriver.cte(entry)
+
+    assert entry[1] is first and deriver.cte(entry) is first
+    assert [m.miss.reason for m in deriver.missed] == ["too_deep"]
