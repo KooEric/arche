@@ -255,6 +255,68 @@ _KO = {
     "Type differs": "타입 다름",
     "In the sample: null {ratio}": "표본에서 null {ratio}",
     "In the sample: duplicates": "표본에서 중복 있음",
+    # Column lineage
+    "Column lineage": "컬럼 lineage",
+    "Sources": "출처",
+    "Kind": "종류",
+    "Expression": "식",
+    "Status": "상태",
+    "condition": "조건",
+    "constant": "상수",
+    "not followed": "따라가지 못함",
+    "If this column is removed": "이 컬럼을 지우면",
+    "Columns used to build this table": "이 테이블을 만들 때 쓰는 컬럼",
+    "No downstream column or use found.": "하류 컬럼이나 사용처가 없습니다.",
+    "Not computed: the report reached its impact limit.": "리포트의 영향 계산 상한에 닿아 계산하지 않았습니다.",
+    "used by": "사용처",
+    "Depth {depth}": "깊이 {depth}",
+    "+{count} more entries": "{count}개 더",
+    "+{count} or more entries": "{count}개 이상 더",
+    "SQL statements": "SQL 문",
+    "partial": "일부만 분석",
+    "unsupported": "지원하지 않음",
+    "parse_error": "분석 오류",
+    "too_large": "너무 큼",
+    "Column lineage reads only SELECT statements in SQL files. It does not follow SQL inside views or Python, names changed by ALTER, PIVOT, or macro output.":
+        "SQL 파일의 SELECT만 읽습니다. 뷰 안, Python 안 SQL, ALTER로 바뀐 이름, PIVOT, 매크로 결과는 따라가지 않습니다.",
+    "An inferred link needs checking before you rely on it.": "추론됨(inferred) 연결은 확인이 필요합니다.",
+    "Column lineage stopped at an edge limit, or its column lists did not settle within the round limit; "
+    "some columns may have more sources and uses than shown.":
+        "컬럼 edge 상한에서 멈췄거나, 반복 상한 안에 컬럼 목록이 정해지지 않았습니다. "
+        "일부 컬럼은 보이는 것보다 출처와 사용처가 더 있을 수 있습니다.",
+    "Columns not followed": "따라가지 못한 컬럼",
+    "Columns matching several sources": "여러 소스와 일치하는 컬럼",
+    "SELECT * from tables with unknown columns": "컬럼을 모르는 테이블의 SELECT *",
+    "Columns no source lists": "어느 소스에도 없는 컬럼",
+    "Qualifiers matching no source": "일치하는 소스가 없는 한정자",
+    "Names built at run time": "실행 시점에 만들어지는 이름",
+    "INSERT column counts that do not match": "INSERT 컬럼 수가 맞지 않음",
+    "Output columns without a name": "이름 없는 출력 컬럼",
+    "Expressions nested too deeply": "너무 깊이 중첩된 식",
+    "Statements with too many columns": "컬럼이 너무 많은 문장",
+    "Tables not matched": "맞추지 못한 테이블",
+    "Other columns not followed": "그 밖에 따라가지 못한 컬럼",
+    "source": "소스",
+    "candidates": "후보",
+    # Column impact
+    "Column impact": "컬럼 영향",
+    "Column impact was not computed.": "컬럼 영향을 계산하지 않았습니다.",
+    "The base snapshot has no column lineage; run imports.py on the base again.":
+        "기준 스냅샷에 컬럼 lineage가 없습니다. 기준에서 imports.py를 다시 실행하세요.",
+    "The graph snapshot is dirty or matches neither compared commit; scan a clean checkout of one again.":
+        "그래프 스냅샷이 dirty이거나 비교한 두 커밋 어느 쪽과도 맞지 않습니다. 둘 중 하나의 깨끗한 체크아웃을 다시 스캔하세요.",
+    "Reason": "이유",
+    "Stopped at the walk limit.": "탐색 상한에서 멈췄습니다.",
+    "Column-level results are exact only when two snapshots are compared.":
+        "컬럼 단위로 정확한 결과는 두 스냅샷을 비교할 때만 나옵니다.",
+    "Seed": "씨앗",
+    "Changed columns": "바뀐 컬럼",
+    "Affected columns": "영향받는 컬럼",
+    "Used by tables": "사용하는 테이블",
+    "Affected files": "영향받는 파일",
+    "Affected tables": "영향받는 테이블",
+    "Column impact stopped at its limit; more columns may be affected.":
+        "컬럼 영향 계산이 상한에서 멈췄습니다. 영향받는 컬럼이 더 있을 수 있습니다.",
 }
 
 _TABLES = {"ko": _KO}

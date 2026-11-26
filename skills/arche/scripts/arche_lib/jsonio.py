@@ -44,6 +44,11 @@ def read_json(path: Path) -> Any:
         raise IntegrityError(f"missing input file: {path}") from None
     except json.JSONDecodeError as exc:
         raise IntegrityError(f"invalid JSON in {path}: {exc}") from None
+    except RecursionError:
+        raise IntegrityError(f"invalid JSON in {path}: nested too deeply") from None
+    except UnicodeDecodeError as exc:
+        raise IntegrityError(f"invalid JSON in {path}: not UTF-8 ({exc.reason} at byte {exc.start})") from None
+
 
 def read_snapshot(path: Path) -> dict:
     """Read legacy and 1.0 snapshots; leave archived documents intact."""

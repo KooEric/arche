@@ -1,0 +1,9 @@
+version: 2
+sources:
+  - name: stripe
+    tables:
+      - name: payments
+        columns:
+          - name: id
+          - name: order_id
+          - name: amount

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from pathlib import Path
 
-from . import SCHEMA_VERSION, gitinfo, pathref
+from . import SCHEMA_VERSION, column_impact, gitinfo, pathref
 from .errors import IntegrityError, UsageError
 
 
@@ -92,7 +92,8 @@ def _side_impact(item, side, reverse, files):
     return {"state": "analyzed", "paths": _dependents(reverse, path)}
 
 
-def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str, base_graph=None) -> dict:
+def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str, base_graph=None, columns=None,
+                  base_columns=None) -> dict:
     base, head = _commit(root, base_ref), _commit(root, head_ref)
     files = _diff(root, base, head)
     try:
@@ -119,5 +120,16 @@ def build_changes(root: Path, graph: dict, base_ref: str, head_ref: str, base_gr
                 "base": _side_impact(item, "base", base_reverse, base_files),
                 "head": _side_impact(item, "head", reverse, head_files),
             }
-    return {"schema_version": SCHEMA_VERSION, "base": base, "head": head,
-            "graph_commit": revision, "impact_available": valid, "files": files}
+    result = {"schema_version": SCHEMA_VERSION, "base": base, "head": head,
+              "graph_commit": revision, "impact_available": valid, "files": files}
+    if columns is not None:
+        result["column_impact"] = _column_impact(files, valid, columns, base_columns)
+    return result
+
+
+def _column_impact(files: list, valid: bool, columns: dict, base_columns) -> dict:
+    """Column-level impact; absent from the output when the run has no columns.json."""
+    if not valid:  # the graph is dirty or matches neither commit
+        return {**column_impact.empty(), "reason": "graph_mismatch"}
+    changed = sorted({path for item in files for path in (item["path"], item.get("old_path")) if path})
+    return column_impact.build(columns, changed, base_columns)

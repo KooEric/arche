@@ -11,7 +11,8 @@ from string import Template
 
 from .focus import select_steps
 from .i18n import translator
-from .report_data import has_tables, table_data
+from . import report_columns
+from .report_data import has_tables, shown_tables, table_data
 
 KEY_FILE_LIMIT = 8
 LAZY_FILE_LIMIT = 500
@@ -305,6 +306,8 @@ def _audit(edges, anchors):
 
 
 def _changes(changes, anchors):
+    if changes is not None and "column_impact" in changes:
+        return _changes({key: value for key, value in changes.items() if key != "column_impact"}, anchors) + report_columns.impact(changes["column_impact"], T, lambda path: _file_link("file:" + path, anchors))
     if changes is None:
         return f'<p class="empty">{T("No change comparison available for this snapshot.")}</p>'
     files = changes["files"]
@@ -580,18 +583,20 @@ def _readers(links):
     return f'{shown}, {T("+{count} more").format(count=hidden)}' if hidden > 0 else shown
 
 
-def _tables(graph, anchors, profile=None):
-    """Profiled table data, tables read here and written nowhere scanned, and names not followed."""
+def _tables(graph, anchors, profile=None, columns=None):
+    """Column lineage, profiled table data, tables read here and written nowhere scanned, and names not followed."""
     external = graph.get("external_tables", [])
     reads = [edge for edge in graph["edges"] if edge.get("kind") == "READS"]
-    if not external and not reads and not has_tables(graph, profile):
+    if not external and not reads and not has_tables(graph, profile) and not columns:
         return ""
+    lineage = report_columns.ColumnLineage(columns, T, lambda path: _file_link("file:" + path, anchors)) if columns else None
     by_reason = defaultdict(list)
     for edge in reads:
         if not edge["to"]:
             by_reason[edge["reason"]].append(f'{_code(edge["spec"])} · {_evidence(edge)}')
     count = len({item["table"] for item in external})
-    data = table_data(graph, profile, lambda node: _file_link(node, anchors), T) if has_tables(graph, profile) else ""
+    data = table_data(graph, profile, lambda node: _file_link(node, anchors), T, lineage and lineage.panel) if has_tables(graph, profile) else ""
+    data = (lineage.section(shown_tables(graph, profile) if has_tables(graph, profile) else ()) if lineage else "") + data
     body = data + (f'<h3>{T("External tables")} <span class="count">{count}</span></h3>'
             + (_external_tables(external, anchors) or f'<p class="empty">{T("Every table read here is written by a scanned SQL file.")}</p>'))
     for reason, title in _UNRESOLVED_READS:
@@ -626,16 +631,16 @@ def _section(section_id, title, body, lead=""):
 
 
 def render(template, graph, commits, readonly_check, *, modules=None, tour=None, changes=None, findings=None, finding_delta=None, lang="en",
-           lazy_file_limit=LAZY_FILE_LIMIT, profile=None):
+           lazy_file_limit=LAZY_FILE_LIMIT, profile=None, columns=None):
     global _translate
     previous, _translate = _translate, translator(lang)
     try:
-        return _render(template, graph, commits, readonly_check, modules, tour, changes, findings or [], finding_delta, lang, lazy_file_limit, profile)
+        return _render(template, graph, commits, readonly_check, modules, tour, changes, findings or [], finding_delta, lang, lazy_file_limit, profile, columns)
     finally:
         _translate = previous
 
 
-def _render(template, graph, commits, readonly_check, modules, tour, changes, findings, finding_delta, lang, lazy_file_limit, profile=None):
+def _render(template, graph, commits, readonly_check, modules, tour, changes, findings, finding_delta, lang, lazy_file_limit, profile=None, columns=None):
     repo = graph["repo"]
     files = [node for node in graph["nodes"] if node["type"] == "file"]
     anchors = {file["id"]: f"file-{index}" for index, file in enumerate(files)}
@@ -692,7 +697,7 @@ def _render(template, graph, commits, readonly_check, modules, tour, changes, fi
          sum(1 for edge in edges if edge.get("kind") == "REFERENCES" and edge["to"] and "via" in edge) or None,
          _config_references(edges, anchors)),
         ("tables", T("Tables"), len({item["table"] for item in graph.get("external_tables", [])}) or None,
-         _tables(graph, anchors, profile)),
+         _tables(graph, anchors, profile, columns)),
         ("files", T("Dependencies"), len(files), _section("files", T("File dependencies"), file_list)),
         ("changes", T("Changes"), len(changes["files"]) if changes else None, _section("changes", T("Changes and impact"), _changes(changes, anchors))),
         ("audit", T("Audit"), (len(findings) + cycle_count) or None,

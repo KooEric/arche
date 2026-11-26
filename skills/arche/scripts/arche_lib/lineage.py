@@ -24,16 +24,23 @@ def _differs_by_catalog(one: str, other: str) -> bool:
 
 def resolve(table: str, dynamic: bool, writers: dict) -> List[dict]:
     """verified (rule name), inferred (rule table_name), unresolved (dynamic|ambiguous) or external."""
+    return [{key: value for key, value in result.items() if key != "matched"} if "matched" in result else result
+            for result in resolve_matched(table, dynamic, writers)]
+
+
+def resolve_matched(table: str, dynamic: bool, writers: dict) -> List[dict]:
+    """`resolve`, with the written table name each verified or inferred result matched (`matched`)."""
     if dynamic:
         return [{"status": "unresolved", "spec": table, "reason": "dynamic"}]
     if "{}" not in table and table in writers["files"]:
-        return [{"status": "verified", "to": path, "rule": "name"} for path in writers["files"][table]]
+        return [{"status": "verified", "to": path, "rule": "name", "matched": table} for path in writers["files"][table]]
     if "{}" not in table:
         # Names that differ only by catalog share the last part, so only that bucket can match.
         same_last = writers["names"].get(table.rsplit(".", 1)[-1], [])
         prefixed = sorted(name for name in same_last if "{}" not in name and _differs_by_catalog(table, name))
         if len(prefixed) == 1:
-            return [{"status": "inferred", "to": path, "rule": "table_name"} for path in writers["files"][prefixed[0]]]
+            return [{"status": "inferred", "to": path, "rule": "table_name", "matched": prefixed[0]}
+                    for path in writers["files"][prefixed[0]]]
         if prefixed:
             return [{"status": "unresolved", "spec": table, "reason": "ambiguous", "candidates": prefixed}]
     prefix, _, last = table.rpartition(".")
@@ -42,7 +49,8 @@ def resolve(table: str, dynamic: bool, writers: dict) -> List[dict]:
     matches = same_name if not prefix or "{}" in prefix else [
         name for name in same_name if "{}" in name or "." not in name]
     if len(matches) == 1:
-        return [{"status": "inferred", "to": path, "rule": "table_name"} for path in writers["files"][matches[0]]]
+        return [{"status": "inferred", "to": path, "rule": "table_name", "matched": matches[0]}
+                for path in writers["files"][matches[0]]]
     if matches:
         return [{"status": "unresolved", "spec": table, "reason": "ambiguous", "candidates": matches}]
     return [{"status": "external", "table": table}]

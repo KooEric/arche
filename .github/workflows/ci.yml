@@ -27,3 +27,5 @@ jobs:
         run: python evals/score.py
       - name: Data profile score
         run: python evals/score_profile.py
+      - name: Column lineage score
+        run: python evals/score_columns.py

@@ -120,3 +120,64 @@ def test_cited_step_survives_edits_elsewhere_and_fails_when_its_lines_change(mak
     assert done.returncode != 0 and "stale SHA256" in done.stderr
 
     assert run_script("cite.py", "--out", out, "--path", "missing.py", "--start", "1").returncode != 0
+
+
+SQL_FILES = {"q/stage.sql": "CREATE TABLE stage.orders AS SELECT o.amt AS amount FROM raw.orders o;\n",
+             "q/mart.sql": "INSERT INTO mart.revenue SELECT SUM(s.amount) AS total FROM stage.orders s;\n"}
+
+
+def _scan_and_import(make_repo, run_script, tmp_path, files):
+    repo, out = make_repo(files), tmp_path / "out"
+    for script, args in (("scan.py", (repo, "--out", out)), ("imports.py", ("--out", out))):
+        done = run_script(script, *args)
+        assert done.returncode == 0, done.stderr
+    return out
+
+
+def test_report_draws_column_lineage_from_columns_json(make_repo, run_script, tmp_path):
+    out = _scan_and_import(make_repo, run_script, tmp_path, SQL_FILES)
+    assert (out / "columns.json").exists()
+
+    done = run_script("render.py", "--out", out)
+
+    assert done.returncode == 0, done.stderr
+    html = (out / "report.html").read_text(encoding="utf-8")
+    assert 'class="group column-lineage"' in html and "If this column is removed" in html
+    assert "<code>raw.orders.amt</code>" in html and "<code>mart.revenue.total</code>" in html
+
+
+def test_render_refuses_columns_json_of_another_snapshot(make_repo, run_script, tmp_path):
+    out = _scan_and_import(make_repo, run_script, tmp_path, SQL_FILES)
+    columns = json.loads((out / "columns.json").read_text())
+    (out / "columns.json").write_text(json.dumps({**columns, "inventory_sha256": "x"}), encoding="utf-8")
+
+    done = run_script("render.py", "--out", out)
+
+    assert done.returncode == 3
+    assert "columns.json describes a different snapshot; run imports.py again" in done.stderr
+    for broken in ([], {**columns, "columns_version": 2}, {**columns, "edges": {}}):
+        (out / "columns.json").write_text(json.dumps(broken), encoding="utf-8")
+        done = run_script("render.py", "--out", out)
+        assert done.returncode == 3 and "columns.json" in done.stderr
+
+
+def test_render_refuses_columns_json_that_is_too_deep_or_not_utf8(make_repo, run_script, tmp_path):
+    out = _scan_and_import(make_repo, run_script, tmp_path, SQL_FILES)
+
+    for broken in (b"[" * 200_000, b'{"columns": "\xff\xfe"}'):
+        (out / "columns.json").write_bytes(broken)
+        done = run_script("render.py", "--out", out)
+        assert done.returncode == 3, done.stderr
+        assert "Traceback" not in done.stderr and "columns.json" in done.stderr
+
+
+def test_report_without_columns_json_has_no_column_lineage(make_repo, run_script, tmp_path):
+    out = _scan_and_import(make_repo, run_script, tmp_path, SQL_FILES)
+    assert run_script("render.py", "--out", out).returncode == 0
+    (out / "columns.json").unlink()
+
+    done = run_script("render.py", "--out", out)
+
+    assert done.returncode == 0, done.stderr
+    html = (out / "report.html").read_text(encoding="utf-8")
+    assert "column-lineage" not in html and "Column lineage" not in html and "Tables" in html

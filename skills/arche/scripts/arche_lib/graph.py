@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from . import SCHEMA_VERSION, dbt, fileref, lineage, pathref
+from . import SCHEMA_VERSION, column_lineage, dbt, fileref, lineage, pathref
 from .errors import ParseError
 from .httpmatch import connect, join_path
 from .jsonio import inventory_digest
@@ -538,6 +538,12 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
 
     `options` holds run-time settings an adapter cannot see in the files, such as
     {"jpath": [...]} for Jsonnet. Given options are recorded in the graph."""
+    return build_graph_and_columns(inventory, read_path, options)[0]
+
+
+def build_graph_and_columns(inventory: dict, read_path: ReadPath, options: Optional[Dict[str, list]] = None
+                            ) -> Tuple[dict, Optional[dict]]:
+    """(graph.json, columns.json or None when no SQL file was analyzed)."""
     options = {name: list(value) for name, value in (options or {}).items() if value}
     analyzed = sorted(
         (entry for entry in inventory["files"] if entry["status"] == "analyzed"),
@@ -557,9 +563,12 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
     reads, external_tables = _reads(analyzed, with_sources, [(m["file"], m["table"]) for m in models if m["table"]], ref_pairs)
     config_edges, config_externals = _config_references(inventory, extracted)
     dbt_models, dbt_docs_unlinked = _dbt_docs(projects, extracted, models)
+    digest = inventory_digest(inventory)
+    columns = column_lineage.build_columns([entry["path"] for entry in analyzed], read_path, extracted, projects,
+                                           models, dbt_sources, dbt_models, digest)
     return {
         "schema_version": SCHEMA_VERSION,
-        "inventory_sha256": inventory_digest(inventory),
+        "inventory_sha256": digest,
         "repo": {"name": repo["name"], "commit": repo["commit"], "dirty": repo["dirty"]},
         "nodes": _nodes(analyzed, extracted),
         "edges": sorted(edges + _references(analyzed, extracted) + config_edges + reads + dbt_edges,
@@ -574,4 +583,4 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
         "http_routes": routes,
         "skipped": _skipped(inventory, failures),
         **({"options": options} if options else {}),
-    }
+    }, columns

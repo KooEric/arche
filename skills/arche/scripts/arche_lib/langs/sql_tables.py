@@ -337,3 +337,19 @@ def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[di
         else:
             tables_found.setdefault(("{}", "read"), {**item, "table": "{}", "dynamic": True})
     return list(tables_found.values()), written_refs
+
+
+def literal_args(text: str) -> Optional[List[str]]:
+    """Positional string arguments of a dbt call's argument text, or None when one is not a literal."""
+    return _literal_args(text)
+
+
+def table_name(token: str) -> Optional[str]:
+    """A table name as the table reader records it (lowercase, quotes removed), or None."""
+    return _name(token)
+
+
+def ref_version(text: str) -> Optional[str]:
+    """The `v=` or `version=` argument of a ref() call's argument text, or None."""
+    found = _VERSION_ARG.search(text)
+    return found.group(1) if found else None

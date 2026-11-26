@@ -63,12 +63,26 @@ python3 -B skills/arche/scripts/arche.py /path/to/repo --lang ko
 ```
  리포트에는 분석 제외 사유, 최근 Git 커밋, 검증된 정적 import의 대표 순환 참조가 포함됩니다. 파일의 역할과 배경은 에이전트가 소스 근거를 바탕으로 대화에서 설명합니다.
 
+## SQL·데이터 레포에서
+
+Airflow·HQL·dbt처럼 SQL 파일이 많은 레포에서는 리포트의 **테이블** 구역에 테이블과 컬럼의 흐름이 나옵니다. 모든 연결에는 근거 줄이 붙고, 이름만으로 맞춘 연결은 "추론됨"으로 표시합니다.
+
+- **테이블 lineage**: SQL 파일이 읽고 쓰는 테이블을 따라 파일을 잇습니다. 스캔한 SQL 중 아무도 쓰지 않는 테이블은 외부 테이블로 보여 줍니다.
+- **컬럼 lineage (1.3.0)**: 테이블에 쓰는 컬럼마다 어느 상류 컬럼에서 어떤 식으로 오는지 남깁니다. 예를 들어 `mart.revenue.net_amount` ← `SUM(o.amount)` ← `billing.orders.amount`처럼 CTE, 서브쿼리, `UNION`, `INSERT`, `MERGE`를 지나며 따라갑니다. 필터·JOIN 키·GROUP BY에 쓰인 컬럼도 기록합니다. 결과는 `columns.json`과 리포트의 컬럼 패널에 나옵니다.
+- **컬럼 변경 영향**: `changes.py`로 두 커밋을 비교하면, 사라지거나 정의가 바뀐 컬럼에서 영향받는 하류 컬럼·파일·테이블을 `changes.json`의 `column_impact`로 보여 줍니다. 두 스냅샷(`--base-out`)을 주면 컬럼 단위로 정확하고, 하나만 주면 바뀐 SQL 파일이 쓰는 컬럼 전부에서 시작합니다.
+- **dbt**: `{{ ref() }}`·`{{ source() }}`를 모델과 원천 테이블로 잇고, 모델이 만드는 테이블(스키마는 변수)과 `schema.yml`의 설명·컬럼·테스트를 읽습니다.
+- **로컬 데이터 프로파일**: 레포 밖 폴더의 CSV·TSV·JSON·JSONL·Parquet을 `arche.py REPO --data DIR`로 읽어 테이블과 맞춥니다. 테이블마다 컬럼 타입, null 비율, 키 후보, 문서와 데이터의 컬럼 차이를 보여 주고, 문자열 값은 기본으로 보여 주지 않습니다.
+
+에이전트에게는 "`mart.revenue.net_amount`는 어디서 와?", "`stage.orders.cust_id`를 지우면 뭐가 깨져?", "이 PR이 바꾼 컬럼의 영향 범위를 보여줘"처럼 물으면 됩니다. Python 문자열 안의 SQL, 기본 스키마, 레포 밖에서 정의된 뷰, `ALTER`로 바뀐 이름, 매크로가 만드는 컬럼은 따라가지 않습니다.
+
 ## 검증과 범위
 
-정적 분석 어댑터는 Python·TypeScript·JavaScript·Dart·Go·Java·Kotlin·Jsonnet·Terraform을 지원합니다. Terraform은 `module` 블록의 `source`를 모듈 폴더의 대표 파일(`main.tf`)로 연결하고, `file()`·`templatefile()`·`fileset()`과 `${path.module}/…` 경로로 읽는 파일도 연결합니다. YAML은 Docker Compose·GitHub Actions·Helm 차트·dbt에 적힌 경로를 **설정 파일 참조**로 연결하고, 모든 YAML에서 SQL 파일 경로를 찾습니다. 스키마를 모르는 YAML도 값이 실제 소스 파일을 가리키면 추정으로 연결하고, Python이 읽는 YAML(파일 이름, 패턴, 같은 폴더 관례)도 연결합니다. YAML이 왜 연결되지 않는지는 `diagnose_yaml.py REPO --output DIR`로 키 구조별 진단을 볼 수 있습니다(값은 출력하지 않음). dbt SQL의 `{{ ref() }}`는 그 모델 파일로 연결합니다. Java와 Kotlin은 서로의 클래스를 import할 수 있고, import 문 없이 쓰는 같은 패키지의 타입은 "추론됨"으로 표시합니다. 합성 레포 11개의 정답과 import 관계를 대조합니다. Dart·TypeScript·JavaScript의 HTTP 요청과 Hono·Express·Fastify·FastAPI·Flask·Go(gin, echo, chi, fiber, net/http)·Spring MVC(Java·Kotlin의 `@RequestMapping`·`@GetMapping` 등) 라우트가 발견되면 HTML의 **HTTP connections**에서 메서드·경로와 양쪽 소스 위치를 볼 수 있습니다. 유일하게 매칭된 후보도 배포 호스트와 런타임 호출은 별도 확인이 필요합니다. SQL·HQL 파일에서는 테이블 이름만 읽습니다. 한 파일이 읽는 테이블을 다른 파일이 쓰면 두 파일을 연결하고, 스캔한 SQL 중 쓰는 파일이 없는 테이블은 리포트의 **테이블**에 외부 테이블로 보여 줍니다. 컬럼, Python 안의 SQL, 기본 스키마는 읽지 않습니다. Python 파일에 문자열로 적힌 SQL 파일 경로는 **SQL 파일 참조**로 연결하고, f-string처럼 실행 시점에 만들어지는 경로는 따라가지 않고 건수만 보여 줍니다. Jsonnet 라이브러리 폴더를 `jsonnet -J`로 지정하는 레포는 같은 폴더를 `--jpath DIR`(레포 기준 상대 경로, 여러 번 가능)로 넘기면 그 import가 확정으로 연결됩니다. 레포 밖 폴더의 CSV·TSV·JSON·JSONL·Parquet은 `arche.py REPO --data DIR`로 프로파일해 SQL이 읽고 쓰는 테이블과 맞출 수 있습니다. 리포트의 **테이블**에서 테이블마다 쓰는 파일, 읽는 파일, 컬럼 타입, null 비율, 키 후보를 보여 주고, 문자열 값은 기본으로 보여 주지 않습니다. dbt 레포에서는 모델이 만드는 테이블(스키마는 변수)과 `schema.yml`의 설명·컬럼·테스트를 읽어, 문서와 데이터의 컬럼 차이와 테스트 단서를 같은 블록에 보여 줍니다.
+정적 분석 어댑터는 Python·TypeScript·JavaScript·Dart·Go·Java·Kotlin·Jsonnet·Terraform을 지원합니다. Terraform은 `module` 블록의 `source`를 모듈 폴더의 대표 파일(`main.tf`)로 연결하고, `file()`·`templatefile()`·`fileset()`과 `${path.module}/…` 경로로 읽는 파일도 연결합니다. YAML은 Docker Compose·GitHub Actions·Helm 차트·dbt에 적힌 경로를 **설정 파일 참조**로 연결하고, 모든 YAML에서 SQL 파일 경로를 찾습니다. 스키마를 모르는 YAML도 값이 실제 소스 파일을 가리키면 추정으로 연결하고, Python이 읽는 YAML(파일 이름, 패턴, 같은 폴더 관례)도 연결합니다. YAML이 왜 연결되지 않는지는 `diagnose_yaml.py REPO --output DIR`로 키 구조별 진단을 볼 수 있습니다(값은 출력하지 않음). dbt SQL의 `{{ ref() }}`는 그 모델 파일로 연결합니다. Java와 Kotlin은 서로의 클래스를 import할 수 있고, import 문 없이 쓰는 같은 패키지의 타입은 "추론됨"으로 표시합니다. 합성 레포 11개의 정답과 import 관계를 대조합니다. Dart·TypeScript·JavaScript의 HTTP 요청과 Hono·Express·Fastify·FastAPI·Flask·Go(gin, echo, chi, fiber, net/http)·Spring MVC(Java·Kotlin의 `@RequestMapping`·`@GetMapping` 등) 라우트가 발견되면 HTML의 **HTTP connections**에서 메서드·경로와 양쪽 소스 위치를 볼 수 있습니다. 유일하게 매칭된 후보도 배포 호스트와 런타임 호출은 별도 확인이 필요합니다. Python 파일에 문자열로 적힌 SQL 파일 경로는 **SQL 파일 참조**로 연결하고, f-string처럼 실행 시점에 만들어지는 경로는 따라가지 않고 건수만 보여 줍니다. Jsonnet 라이브러리 폴더를 `jsonnet -J`로 지정하는 레포는 같은 폴더를 `--jpath DIR`(레포 기준 상대 경로, 여러 번 가능)로 넘기면 그 import가 확정으로 연결됩니다.
 
 ```sh
 python3 evals/score.py
+python3 evals/score_profile.py
+python3 evals/score_columns.py
 ```
 
 스킬을 설치한 Codex에서 `$arche 레포 분석`으로 시작하세요. 이어서 “번역기가 없을 때 흐름을 보여줘”, “이 두 커밋의 변경과 영향 후보를 설명해줘”, “이 투어를 Mermaid로 내보내줘”처럼 요청할 수 있습니다. Git 변경 목록에는 정적 의존성으로 찾은 영향 후보가 표시됩니다. 감사 규칙은 근거 줄과 함께 순환·반복 import를 표시합니다.

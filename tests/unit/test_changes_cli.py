@@ -81,3 +81,239 @@ def test_changing_a_sql_file_reaches_readers_of_its_table_and_the_code_naming_th
     assert result.returncode == 0, result.stderr
     files = {item["path"]: item for item in json.loads((out / "changes.json").read_text())["files"]}
     assert files["q/load.sql"]["impact"] == ["dag.py", "q/report.sql"]
+
+
+_LOAD = "INSERT INTO s.t SELECT r.a AS b, r.c FROM raw.r AS r;\n"
+_MART = "INSERT INTO m.v SELECT t.b AS total FROM s.t AS t WHERE t.c > 1;\n"
+
+
+def _commit_all(repo, git_cmd, message):
+    git_cmd(repo, "add", "-A")
+    git_cmd(repo, "commit", "-qm", message)
+    return git_cmd(repo, "rev-parse", "HEAD").strip()
+
+
+def test_column_impact_from_one_snapshot_seeds_the_columns_of_changed_files(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    (repo / "q" / "load.sql").write_text(_LOAD.replace("r.a AS b", "r.a + 1 AS b"))
+    head = _commit_all(repo, git_cmd, "edit")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert impact["available"] is True
+    assert [(s["column"], s["seed"], s["path"]) for s in impact["seeds"]] == [
+        ("col:s.t.b", "file", "q/load.sql"), ("col:s.t.c", "file", "q/load.sql")]
+    assert impact["affected"] == [{"column": "col:m.v.total", "depth": 1, "kinds": ["rename"],
+                                   "status": "inferred", "files": ["q/mart.sql"]}]
+    assert [(u["table"], u["kinds"]) for u in impact["used_by"]] == [("table:m.v", ["filter"])]
+    assert impact["affected_tables"] == ["m.v"]
+    assert impact["affected_files"] == ["q/mart.sql"]
+    first = (out / "changes.json").read_bytes()
+    assert run_script("changes.py", "--out", out, "--base", base, "--head", head).returncode == 0
+    assert (out / "changes.json").read_bytes() == first
+
+
+def test_column_impact_from_two_snapshots_walks_removed_columns_on_the_base(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _snapshot(repo, base_out, run_script)
+    (repo / "q" / "load.sql").write_text(_LOAD.replace("r.c", "r.c AS d"))
+    head = _commit_all(repo, git_cmd, "rename c")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert [(s["column"], s["change"], s["seed"]) for s in impact["seeds"]] == [
+        ("col:s.t.c", "removed", "column_diff"), ("col:s.t.d", "added", "column_diff")]
+    assert impact["affected"] == []
+    assert [(u["table"], u["kinds"], u["files"]) for u in impact["used_by"]] == [
+        ("table:m.v", ["filter"], ["q/mart.sql"])]
+
+
+def test_no_columns_json_leaves_changes_output_without_column_impact(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"a.py": "x = 1\n", "b.py": "import a\n"})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    (repo / "a.py").write_text("x = 2\n")
+    head = _commit_all(repo, git_cmd, "edit")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    assert not (out / "columns.json").exists()
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 0, result.stderr
+    changes = json.loads((out / "changes.json").read_text())
+    assert sorted(changes) == ["base", "files", "graph_commit", "head", "impact_available", "schema_version"]
+
+
+def test_columns_json_of_another_snapshot_is_rejected(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    (repo / "q" / "mart.sql").write_text(_MART.replace("> 1", "> 2"))
+    head = _commit_all(repo, git_cmd, "edit")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    columns = json.loads((out / "columns.json").read_text())
+    (out / "columns.json").write_text(json.dumps({**columns, "inventory_sha256": "0" * 64}))
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode != 0
+    assert "columns.json describes a different snapshot" in result.stderr
+    assert not (out / "changes.json").exists()
+
+
+def test_column_impact_is_unavailable_when_the_graph_matches_neither_commit(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    (repo / "q" / "load.sql").write_text(_LOAD.replace("r.c", "r.c AS d"))
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    head = _commit_all(repo, git_cmd, "edit")
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert impact == {"available": False, "reason": "graph_mismatch", "seeds": [], "affected": [], "used_by": [],
+                      "affected_files": [], "affected_tables": [], "truncated": False}
+
+
+def _edit_load(repo, git_cmd, old, new):
+    (repo / "q" / "load.sql").write_text(_LOAD.replace(old, new))
+    return _commit_all(repo, git_cmd, "edit")
+
+
+def test_column_impact_from_two_snapshots_reports_redefined_seeds_and_affected_columns(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _snapshot(repo, base_out, run_script)
+    head = _edit_load(repo, git_cmd, "r.a AS b", "r.a + 1 AS b")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert [(s["column"], s["change"], s["seed"], s["path"]) for s in impact["seeds"]] == [
+        ("col:s.t.b", "redefined", "column_diff", "q/load.sql")]
+    assert [(a["column"], a["depth"], a["files"]) for a in impact["affected"]] == [
+        ("col:m.v.total", 1, ["q/mart.sql"])]
+    assert impact["affected_tables"] == ["m.v"]
+
+
+def test_base_with_sql_files_but_no_columns_json_marks_column_impact_unavailable(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _snapshot(repo, base_out, run_script)
+    (base_out / "columns.json").unlink()
+    head = _edit_load(repo, git_cmd, "r.c", "r.c AS d")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert impact == {"available": False, "seeds": [], "affected": [], "used_by": [], "affected_files": [],
+                      "affected_tables": [], "truncated": False, "reason": "base_without_columns"}
+
+
+def test_base_without_sql_files_treats_every_head_column_as_added(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"a.py": "x = 1\n"})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _snapshot(repo, base_out, run_script)
+    assert not (base_out / "columns.json").exists()
+    (repo / "q").mkdir()
+    (repo / "q" / "load.sql").write_text(_LOAD)
+    head = _commit_all(repo, git_cmd, "add sql")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert impact["available"] is True and "reason" not in impact
+    assert {(s["column"], s["change"]) for s in impact["seeds"]} == {("col:s.t.b", "added"), ("col:s.t.c", "added")}
+
+
+def _column_run(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    head = _edit_load(repo, git_cmd, "r.a AS b", "r.a + 1 AS b")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    return out, base, head, json.loads((out / "columns.json").read_text())
+
+
+def test_malformed_columns_json_shape_is_an_integrity_error(make_repo, git_cmd, run_script, tmp_path):
+    out, base, head, columns = _column_run(make_repo, git_cmd, run_script, tmp_path)
+    for shape in ([], {**columns, "columns": {}}, {**columns, "edges": "x"}):
+        (out / "columns.json").write_text(json.dumps(shape))
+
+        result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+        assert result.returncode != 0
+        assert "columns.json is malformed; run imports.py again" in result.stderr
+        assert "Traceback" not in result.stderr
+        assert not (out / "changes.json").exists()
+
+
+def test_hostile_columns_json_entries_are_skipped_without_a_crash(make_repo, git_cmd, run_script, tmp_path):
+    out, base, head, columns = _column_run(make_repo, git_cmd, run_script, tmp_path)
+    hostile = [{"from": "col:s.t.b", "to": "col:x.y", "status": []}, {"from": "col:s.t.b", "to": "table:z", "kind": {}},
+               {"from": ["col:s.t.b"], "to": "col:x.z"}, [1, [2]], None]
+    (out / "columns.json").write_text(json.dumps({**columns, "columns": columns["columns"] + [[], {"id": []}],
+                                                  "edges": columns["edges"] + hostile}))
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert [a["column"] for a in impact["affected"]] == ["col:m.v.total"]
+
+
+_BROKEN_JSON = (b"[" * 200_000, b'{"columns": "\xff\xfe"}')  # nested past the parser's limit; not UTF-8
+
+
+def test_a_malformed_columns_json_is_an_integrity_error_not_a_traceback(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    head = _edit_load(repo, git_cmd, "r.c", "r.c AS d")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    for broken in _BROKEN_JSON:
+        (out / "columns.json").write_bytes(broken)
+        result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+        assert result.returncode == 3, result.stderr
+        assert "Traceback" not in result.stderr and "columns.json" in result.stderr
+
+
+def test_a_columns_json_of_another_version_is_rejected(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    head = _edit_load(repo, git_cmd, "r.c", "r.c AS d")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    columns = json.loads((out / "columns.json").read_text())
+    (out / "columns.json").write_text(json.dumps({**columns, "columns_version": 2}))
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 3
+    assert "columns.json has an unsupported columns_version; run imports.py again" in result.stderr
