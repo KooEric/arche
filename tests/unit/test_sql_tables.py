@@ -144,3 +144,14 @@ def test_a_quote_comes_from_the_same_line_as_its_number():
 
 def test_a_path_in_backticks_is_not_a_table():
     assert _found("SELECT * FROM parquet.`s3://bucket/path/x.parquet` p JOIN a.b ON 1=1") == [("read", "a.b")]
+
+
+def test_a_direct_read_and_a_source_call_of_one_name_are_two_records_in_either_order():
+    direct, call = "select * from raw.events", "select * from {{ source('raw', 'events') }}"
+
+    for first, second in ((direct, call), (call, direct)):
+        records = tables("q.sql", f"{first}\n;\n{second}")["tables"]
+
+        assert [(item["table"], item["line"], item.get("source")) for item in records] == sorted(
+            [("raw.events", 1, None if first is direct else ["raw", "events"]),
+             ("raw.events", 3, None if second is direct else ["raw", "events"])], key=lambda r: r[1])

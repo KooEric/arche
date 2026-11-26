@@ -3,13 +3,16 @@ from __future__ import annotations
 
 from typing import List
 
+from .dbt_config import config
 from .sql_tables import tables
 
 
 def extract(path: str, text: str) -> dict:
     found = tables(path, text)
     degraded = {"degraded": True} if found["degraded"] else {}
-    return {"imports": [], "symbols": [], "tables": found["tables"], "dbt_refs": found["dbt_refs"], **degraded}
+    settings = config(text)
+    dbt_config = {"dbt_config": settings} if settings else {}
+    return {"imports": [], "symbols": [], "tables": found["tables"], "dbt_refs": found["dbt_refs"], **dbt_config, **degraded}
 
 
 def build_context(parsed_paths, all_paths, read_path) -> None:

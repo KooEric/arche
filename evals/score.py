@@ -9,6 +9,8 @@ REFERENCES edges (a SQL file path written as text) are compared exactly through 
 `references` list and never count toward precision or recall.
 READS edges (a SQL file reading a table another SQL file writes) and external tables are
 compared exactly through the `reads` and `external_tables` lists, also outside precision and recall.
+dbt model tables and docs (`dbt_models`: model, table, dynamic, documented columns, test names)
+and resolved sources (`dbt_sources`) are compared exactly too; a fixture without them expects none.
 
 Usage: python3 evals/score.py [--min-precision 0.98] [--min-recall 0.95]
 Exits 1 when a gate fails or a fixture does not match its expected sets.
@@ -34,7 +36,7 @@ EXPECTED_FILE = "expected_graph.json"
 DEFAULT_MIN_PRECISION = 0.98
 DEFAULT_MIN_RECALL = 0.95
 EXACT_SETS = ("analyzed", "skipped", "inferred", "unresolved", "externals", "symbols", "http", "references",
-              "reads", "external_tables")
+              "reads", "external_tables", "dbt_models", "dbt_sources")
 OUTCOMES = ("true_positive", "false_positive", "false_negative")
 
 
@@ -65,6 +67,13 @@ def _read_key(edge):
     return (_path(edge["from"]), target, edge["table"], edge["status"], edge.get("rule") or edge["reason"])
 
 
+def _model_key(model):
+    """(model, table, dynamic, documented columns, sorted test names); a column test is `column.test`."""
+    tests = [test["name"] for test in model["tests"]]
+    tests += [f'{column["name"]}.{test["name"]}' for column in model["columns"] for test in column["tests"]]
+    return (model["model"], model["table"], model["dynamic"], tuple(c["name"] for c in model["columns"]), tuple(sorted(tests)))
+
+
 def observed_sets(graph):
     edges = [e for e in graph["edges"] if e["kind"] == "IMPORTS"]
     return {
@@ -79,6 +88,8 @@ def observed_sets(graph):
         "references": {_reference_key(e) for e in graph["edges"] if e["kind"] == "REFERENCES"},
         "reads": {_read_key(e) for e in graph["edges"] if e["kind"] == "READS"},
         "external_tables": {(_path(x["from"]), x["table"]) for x in graph.get("external_tables", [])},
+        "dbt_models": {_model_key(m) for m in graph.get("dbt_models", [])},
+        "dbt_sources": {(s["source"], s["table"], s["resolved"], s["status"]) for s in graph.get("dbt_sources", [])},
     }
 
 
@@ -106,6 +117,9 @@ def expected_sets(expected):
         "references": {(r["from"], r["target"], r["status"], r["how"]) for r in expected.get("references", [])},
         "reads": {(r["from"], r["target"], r["table"], r["status"], r["how"]) for r in expected.get("reads", [])},
         "external_tables": {(x["from"], x["table"]) for x in expected.get("external_tables", [])},
+        "dbt_models": {(m["model"], m["table"], m["dynamic"], tuple(m["columns"]), tuple(sorted(m["tests"])))
+                       for m in expected.get("dbt_models", [])},
+        "dbt_sources": {(s["source"], s["table"], s["resolved"], s["status"]) for s in expected.get("dbt_sources", [])},
     }
 
 

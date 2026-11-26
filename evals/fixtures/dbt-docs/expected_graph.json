@@ -1,0 +1,64 @@
+{
+  "analyzed": [
+    "jaffle/dbt_project.yml",
+    "jaffle/models/marts/customers.sql",
+    "jaffle/models/marts/dynamic_alias.sql",
+    "jaffle/models/marts/finance/revenue.sql",
+    "jaffle/models/marts/orders_v1.sql",
+    "jaffle/models/marts/orders_v2.sql",
+    "jaffle/models/marts/schema.yml",
+    "jaffle/models/staging/more_sources.yml",
+    "jaffle/models/staging/sources.yml",
+    "jaffle/models/staging/stg_customers.sql",
+    "jaffle/models/staging/stg_events.sql",
+    "jaffle/models/staging/stg_orders.sql",
+    "jaffle/snapshots/customers_snapshot.sql",
+    "reports/weekly_revenue.sql"
+  ],
+  "skipped": [],
+  "imports": [],
+  "inferred": [],
+  "unresolved": [],
+  "externals": [],
+  "symbols": [],
+  "references": [
+    {"from": "jaffle/models/marts/schema.yml", "target": "jaffle/models/marts/customers.sql", "status": "verified", "how": "dbt_name"},
+    {"from": "jaffle/models/marts/schema.yml", "target": "jaffle/models/marts/orders_v2.sql", "status": "inferred", "how": "dbt_latest_version"},
+    {"from": "jaffle/models/marts/schema.yml", "target": "old_orders", "status": "unresolved", "how": "not_found"}
+  ],
+  "reads": [
+    {"from": "jaffle/models/marts/customers.sql", "target": "jaffle/models/staging/stg_customers.sql", "table": "stg_customers", "status": "verified", "how": "dbt_ref"},
+    {"from": "jaffle/models/marts/finance/revenue.sql", "target": "jaffle/models/marts/orders_v2.sql", "table": "orders", "status": "verified", "how": "dbt_ref"},
+    {"from": "jaffle/models/marts/orders_v1.sql", "target": "jaffle/models/staging/stg_orders.sql", "table": "stg_orders", "status": "verified", "how": "dbt_ref"},
+    {"from": "jaffle/models/marts/orders_v2.sql", "target": "jaffle/models/marts/customers.sql", "table": "customers", "status": "verified", "how": "dbt_ref"},
+    {"from": "jaffle/models/marts/orders_v2.sql", "target": "jaffle/models/staging/stg_orders.sql", "table": "stg_orders", "status": "verified", "how": "dbt_ref"},
+    {"from": "reports/weekly_revenue.sql", "target": "jaffle/models/marts/finance/revenue.sql", "table": "analytics_finance.revenue", "status": "inferred", "how": "table_name"},
+    {"from": "reports/weekly_revenue.sql", "target": "jaffle/models/marts/orders_v2.sql", "table": "analytics_marts.orders_v2", "status": "inferred", "how": "table_name"}
+  ],
+  "external_tables": [
+    {"from": "jaffle/models/staging/stg_customers.sql", "table": "lake.raw_data.customers"},
+    {"from": "jaffle/models/staging/stg_events.sql", "table": "lake.raw_data.ev_v2"},
+    {"from": "jaffle/models/staging/stg_orders.sql", "table": "shop.orders"},
+    {"from": "jaffle/snapshots/customers_snapshot.sql", "table": "lake.raw_data.customers"},
+    {"from": "reports/weekly_revenue.sql", "table": "lake.raw_data.ev_v2"}
+  ],
+  "dbt_models": [
+    {"model": "customers", "table": "{}_marts.customers", "dynamic": false, "columns": ["customer_id"], "tests": ["customer_id.not_null"]},
+    {"model": "customers_snapshot", "table": "{}.customers_snapshot", "dynamic": false, "columns": [], "tests": []},
+    {"model": "dynamic_alias", "table": null, "dynamic": true, "columns": [], "tests": []},
+    {"model": "orders_v1", "table": "{}_marts.orders_v1", "dynamic": false, "columns": [], "tests": []},
+    {"model": "orders_v2", "table": "{}_marts.orders_v2", "dynamic": false,
+     "columns": ["order_id", "status", "customer_id", "discount"],
+     "tests": ["customer_id.not_null", "customer_id.relationships", "dbt_utils.expression_is_true",
+               "order_id.not_null", "order_id.unique", "status.accepted_values"]},
+    {"model": "revenue", "table": "{}_finance.revenue", "dynamic": false, "columns": [], "tests": []},
+    {"model": "stg_customers", "table": "{}_staging.customers_clean", "dynamic": false, "columns": [], "tests": []},
+    {"model": "stg_events", "table": "{}_staging.stg_events", "dynamic": false, "columns": [], "tests": []},
+    {"model": "stg_orders", "table": "{}_staging.stg_orders", "dynamic": false, "columns": [], "tests": []}
+  ],
+  "dbt_sources": [
+    {"source": "raw", "table": "customers", "resolved": "lake.raw_data.customers", "status": "resolved"},
+    {"source": "raw", "table": "events", "resolved": "lake.raw_data.ev_v2", "status": "resolved"},
+    {"source": "shop", "table": "orders", "resolved": "shop.orders", "status": "ambiguous"}
+  ]
+}

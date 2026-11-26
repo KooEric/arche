@@ -99,3 +99,14 @@ def test_large_reports_carry_the_table_name_in_file_details_as_escaped_json():
 
     assert '"billing.\\u003corders>"' in data
     assert "billing.<orders>" not in html
+
+
+def test_an_empty_profile_shows_the_dbt_model_tables_like_no_profile():
+    from arche_lib.report_data import table_data
+    from arche_lib.i18n import translator
+
+    graph = {"edges": [], "dbt_models": [{"model": "orders", "table": "{}.orders", "dynamic": False, "file": "file:m/orders.sql",
+                                          "description": None, "doc": None, "tests": [], "columns": [],
+                                          "defined_in": None, "duplicates": []}]}
+
+    assert table_data(graph, {}, lambda node: node, translator("en")) == table_data(graph, None, lambda node: node, translator("en"))

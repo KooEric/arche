@@ -5,7 +5,8 @@ import pytest
 import score
 from arche_lib import jsonio
 
-FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic", "hono-mobile", "jvm-basic", "airflow-sql"}
+FIXTURES = {"py-basic", "py-dynamic", "secrets", "ts-basic", "ts-alias", "ts-dynamic", "dart-basic", "hono-mobile", "jvm-basic", "airflow-sql",
+            "dbt-docs"}
 INFERRED_ONLY = {
     ("py-dynamic", "tools/run.py", "vendor_local/helper.py"),
     ("ts-alias", "src/main.ts", "packages/legacy/src/index.ts"),
@@ -63,6 +64,16 @@ def test_table_reads_are_scored_as_their_own_exact_sets():
                                            ("dags/shared/sql/stage_a.sql", "shared.calendar"),
                                            ("dags/shared/sql/stage_b.sql", "shared.calendar")}
     assert "reads" in score.EXACT_SETS and "external_tables" in score.EXACT_SETS
+
+
+def test_dbt_model_tables_and_sources_are_scored_as_their_own_exact_sets():
+    observed = score.observed_sets(_graph("dbt-docs"))
+
+    assert ("stg_customers", "{}_staging.customers_clean", False, (), ()) in observed["dbt_models"]
+    assert ("dynamic_alias", None, True, (), ()) in observed["dbt_models"]
+    assert ("shop", "orders", "shop.orders", "ambiguous") in observed["dbt_sources"]
+    assert {"dbt_models", "dbt_sources"} <= set(score.EXACT_SETS)
+    assert all(score.observed_sets(_graph(name))["dbt_models"] == set() for name in ("airflow-sql", "py-basic"))
 
 
 def test_edges_not_verified_are_exactly_the_ones_declared_as_inferred(results):

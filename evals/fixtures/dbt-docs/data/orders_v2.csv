@@ -1,0 +1,5 @@
+order_id,customer_id,status,amount
+1,10,placed,12.50
+2,11,shipped,8.00
+2,12,returned,3.25
+4,,placed,7.75

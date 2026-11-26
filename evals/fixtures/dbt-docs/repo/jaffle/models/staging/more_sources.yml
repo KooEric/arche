@@ -1,0 +1,7 @@
+version: 2
+
+sources:
+  - name: shop
+    schema: shop_archive
+    tables:
+      - name: orders

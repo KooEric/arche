@@ -11,7 +11,7 @@ from string import Template
 
 from .focus import select_steps
 from .i18n import translator
-from .report_data import table_data
+from .report_data import has_tables, table_data
 
 KEY_FILE_LIMIT = 8
 LAZY_FILE_LIMIT = 500
@@ -584,14 +584,14 @@ def _tables(graph, anchors, profile=None):
     """Profiled table data, tables read here and written nowhere scanned, and names not followed."""
     external = graph.get("external_tables", [])
     reads = [edge for edge in graph["edges"] if edge.get("kind") == "READS"]
-    if not external and not reads and not profile:
+    if not external and not reads and not has_tables(graph, profile):
         return ""
     by_reason = defaultdict(list)
     for edge in reads:
         if not edge["to"]:
             by_reason[edge["reason"]].append(f'{_code(edge["spec"])} · {_evidence(edge)}')
     count = len({item["table"] for item in external})
-    data = table_data(graph, profile, lambda node: _file_link(node, anchors), T) if profile else ""
+    data = table_data(graph, profile, lambda node: _file_link(node, anchors), T) if has_tables(graph, profile) else ""
     body = data + (f'<h3>{T("External tables")} <span class="count">{count}</span></h3>'
             + (_external_tables(external, anchors) or f'<p class="empty">{T("Every table read here is written by a scanned SQL file.")}</p>'))
     for reason, title in _UNRESOLVED_READS:

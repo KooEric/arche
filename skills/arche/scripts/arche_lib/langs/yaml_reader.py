@@ -4,17 +4,22 @@
 `(key path, value, line)` for every scalar value. A key path is a tuple of keys
 and sequence positions, e.g. ("services", "web", "build", "context") or
 ("dependencies", 0, "repository"). Not read, by design:
-  - block scalar contents (`|`, `>`), which are text, not structure;
+  - block scalar contents (`|`, `>`), which are text, not structure, unless
+    `block_scalars=True` asks for them (dbt property files do);
   - anchors and tags, which are dropped from values; aliases (`*a`), which are skipped;
   - flow collections that span lines, and nested flow collections;
   - template lines (`{% ... %}`, or `{{` before a key), which mark the file degraded.
 """
 from __future__ import annotations
 
+import re
 from typing import List, Optional, Tuple
 
 Path = Tuple[object, ...]
 Scalar = Tuple[Path, str, int]
+MAX_BLOCK_CHARS = 2_000
+# `|`, `>-`, `|+2`, `>1-`: style, then chomping and indentation indicators in either order.
+_BLOCK_HEADER = re.compile(r"([|>])(?:([+-])([1-9])?|([1-9])([+-])?)?")
 
 
 def _strip_comment(line: str) -> str:
@@ -154,7 +159,86 @@ def _emit_value(path: Path, rest: str, line: int, out: List[Scalar]) -> bool:
     return True
 
 
-def scalars(text: str) -> Tuple[List[List[Scalar]], bool]:
+def _block_header(rest: str) -> Optional[Tuple[str, str, Optional[int]]]:
+    """(style, chomping, indentation indicator) of a block scalar header such as `>-`; None otherwise."""
+    match = _BLOCK_HEADER.fullmatch(rest)
+    if match is None:
+        return None
+    style, chomp_a, digit_a, digit_b, chomp_b = match.groups()
+    digit = digit_a or digit_b
+    return style, chomp_a or chomp_b or "", int(digit) if digit else None
+
+
+class _Block:
+    """A block scalar being read: its lines are collected until a line is indented less than its body."""
+
+    def __init__(self, path: Path, line: int, header: Tuple[str, str, Optional[int]], owner_indent: int):
+        self.path, self.line = path, line
+        self.style, self.chomp, explicit = header
+        self.owner_indent = owner_indent
+        self.indent: Optional[int] = None if explicit is None else owner_indent + explicit
+        self.lines: List[str] = []
+        self.size = 0
+        self.overflow = False
+
+    def takes(self, raw: str) -> bool:
+        """True when `raw` belongs to the body; the first deeper line sets the body indentation."""
+        content = raw.lstrip(" ")
+        if not content.strip():
+            self._keep("")
+            return True
+        indent = len(raw) - len(content)
+        if self.indent is None:
+            if indent <= self.owner_indent:
+                return False
+            self.indent = indent
+        if indent < self.indent:
+            return False
+        self._keep(raw[self.indent:])
+        return True
+
+    def _keep(self, text: str) -> None:
+        if self.size > MAX_BLOCK_CHARS:
+            self.overflow = True
+            return
+        self.lines.append(text)
+        self.size += len(text) + 1
+
+    def value(self) -> Tuple[str, bool]:
+        """(text after folding and chomping, cut at MAX_BLOCK_CHARS)."""
+        core = list(self.lines)
+        trailing = 0
+        while core and core[-1] == "":
+            core.pop()
+            trailing += 1
+        if self.style == "|":
+            text = "\n".join(core)
+        else:
+            parts: List[str] = []
+            empty = 0
+            for item in core:
+                if item == "":
+                    empty += 1
+                    continue
+                if parts:
+                    parts.append("\n" * empty if empty else " ")
+                elif empty:
+                    parts.append("\n" * empty)
+                parts.append(item)
+                empty = 0
+            text = "".join(parts)
+        if core and self.chomp == "":
+            text += "\n"
+        elif core and self.chomp == "+":
+            text += "\n" * (trailing + 1)
+        cut = self.overflow or len(text) > MAX_BLOCK_CHARS
+        return text[:MAX_BLOCK_CHARS], cut
+
+
+def scalars(text: str, block_scalars: bool = False,
+            truncated: Optional[List[Tuple[Path, int]]] = None) -> Tuple[List[List[Scalar]], bool]:
+    """`block_scalars=True` also yields block scalar contents, at the line of their key; each
+    longer than MAX_BLOCK_CHARS is cut, and its (key path, line) is added to `truncated` when given."""
     documents: List[List[Scalar]] = [[]]
     degraded = False
     # Stack of [indent, path, is_item, next index] for open containers; the first
@@ -162,7 +246,21 @@ def scalars(text: str) -> Tuple[List[List[Scalar]], bool]:
     stack: List[list] = [[-1, (), False, 0]]
     skip_deeper_than: Optional[int] = None
     open_quote: Optional[str] = None  # a quoted scalar continues on this line
+    block: Optional[_Block] = None  # a block scalar read because block_scalars is on
+
+    def finish(found: _Block) -> None:
+        value, cut = found.value()
+        if value:
+            documents[-1].append((found.path, value, found.line))
+        if cut and truncated is not None:
+            truncated.append((found.path, found.line))
+
     for number, raw in enumerate(text.splitlines(), 1):
+        if block is not None:
+            if block.takes(raw):
+                continue
+            finish(block)
+            block = None
         if open_quote is not None:
             if _closes(raw, open_quote):
                 open_quote = None
@@ -209,6 +307,10 @@ def scalars(text: str) -> Tuple[List[List[Scalar]], bool]:
             continue
         pair = _split_key(stripped)
         if pair is None:
+            header = _block_header(stripped) if block_scalars and parent[2] else None
+            if header is not None:
+                block = _Block(base, number, header, parent[0])
+                continue
             if parent[2]:
                 open_quote = _unclosed_quote(stripped)
                 if open_quote is None and not _emit_value(base, stripped, number, out):
@@ -224,8 +326,14 @@ def scalars(text: str) -> Tuple[List[List[Scalar]], bool]:
         if not rest:
             stack.append([indent, path, False, 0])
             continue
+        header = _block_header(rest) if block_scalars else None
+        if header is not None:
+            block = _Block(path, number, header, indent)
+            continue
         open_quote = _unclosed_quote(rest)
         if open_quote is None and not _emit_value(path, rest, number, out):
             skip_deeper_than = indent
             degraded = degraded or rest[:1] in "[{"
+    if block is not None:
+        finish(block)
     return [document for document in documents if document], degraded

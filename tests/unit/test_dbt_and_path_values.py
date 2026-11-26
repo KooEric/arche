@@ -204,3 +204,9 @@ def test_report_lists_ambiguous_dbt_property_names():
     anchors = {n["id"]: n["id"] for n in graph["nodes"] if n["type"] == "file"}
 
     assert "<code>ambiguous</code>" in _config_references(graph["edges"], anchors)
+
+
+def test_source_reads_carry_the_source_and_table_as_written():
+    found = tables("models/x.sql", "select * from {{ source('Raw', 'Events') }} e join raw.other o on true\n")
+
+    assert [(t["table"], t.get("source")) for t in found["tables"]] == [("raw.events", ["Raw", "Events"]), ("raw.other", None)]

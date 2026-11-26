@@ -236,6 +236,25 @@ _KO = {
     "Counts describe the rows read, up to the row limit. A table matched by path or table name is inferred; check it before relying on it.":
         "수치는 행 상한까지 읽은 행 기준입니다. 경로나 테이블 이름으로 맞춘 테이블은 추정이므로 확인한 뒤 사용하세요.",
     "+{count} more columns": "컬럼 {count}개 더",
+    # dbt model docs
+    "dbt model tables": "dbt 모델 테이블",
+    "A dbt model's schema is chosen by the target at run time, so links from other SQL and from data to a model table are inferred.":
+        "dbt 모델의 스키마는 실행 환경(target)이 정하므로, 다른 SQL이나 데이터와 모델 테이블의 연결은 추정입니다.",
+    "Test hints come from the sample read and are not test results.": "테스트 단서는 표본에서 본 것이며 판정이 아닙니다.",
+    "Model file": "모델 파일",
+    "Documented in": "문서 위치",
+    "doc block": "doc 블록",
+    "Model tests": "모델 테스트",
+    "Also documented in": "중복 문서 위치",
+    "Documented type": "문서 타입",
+    "Data type": "데이터 타입",
+    "Description": "설명",
+    "Tests": "테스트",
+    "Not in data": "데이터에 없음",
+    "Not in docs": "문서에 없음",
+    "Type differs": "타입 다름",
+    "In the sample: null {ratio}": "표본에서 null {ratio}",
+    "In the sample: duplicates": "표본에서 중복 있음",
 }
 
 _TABLES = {"ko": _KO}

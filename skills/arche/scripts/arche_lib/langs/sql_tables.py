@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 MAX_QUOTE_CHARS = 200
 MAX_NAME_PARTS = 3
-_PLACEHOLDER = re.compile(r"\{\{.*?\}\}|\$\{[^}\n]*\}|\$[A-Za-z_]\w*", re.S)
+_DOLLAR_NAME = re.compile(r"\$[A-Za-z_]\w*")
 _PART = r"(?:`[^`\n]*`|\"[^\"\n]*\"|(?:[\w$]|\{\})+)"
 _TOKEN = re.compile(rf"{_PART}(?:\s*\.\s*{_PART})*|[(),;]")
 _CREATE_MODIFIERS = frozenset({"OR", "REPLACE", "EXTERNAL", "GLOBAL", "TRANSIENT", "MATERIALIZED", "UNLOGGED"})
@@ -25,12 +25,51 @@ _DBT_CALL = re.compile(r"\{\{-?\s*(ref|source)\s*\(([^()]*)\)\s*-?\}\}")
 _DBT_TOKEN = re.compile(r"^__dbt_call_(\d+)__$")
 # Every `ref(` inside `{{ }}` or `{% %}` is a dbt dependency, wherever the SQL puts
 # it (a bare line, even a `--` comment): Jinja renders first. `{# #}` hides it.
-_JINJA_SPAN = re.compile(r"\{#.*?#\}|\{\{.*?\}\}|\{%.*?%\}", re.S)
+_JINJA_PAIRS = (("{#", "#}"), ("{{", "}}"), ("{%", "%}"))
 _REF_OPEN = re.compile(r"\bref\s*\(")
 _REF_CALL = re.compile(r"\bref\s*\(([^()]*)\)")
 _VERSION_ARG = re.compile(r"\b(?:v|version)\s*=\s*['\"]?(\d+)['\"]?")
 _LITERAL = re.compile(r"""\s*(?:'([^'\n]*)'|"([^"\n]*)")\s*""")
 _CLOSERS = {"/*": "*/", "{%": "%}", "{#": "#}"}
+
+
+class _Seek:
+    """`str.find` for one needle with its last answer remembered, so a scan that only moves
+    forward never reads the same text twice. Starts must not decrease between calls."""
+
+    def __init__(self, text: str, needle: str) -> None:
+        self.text, self.needle, self.start, self.found = text, needle, 0, None
+
+    def at_or_after(self, start: int) -> int:
+        if self.found is not None and (self.found < 0 or self.found >= start):
+            return self.found  # nothing in [self.start, found), so nothing in [start, found) either
+        self.start, self.found = start, self.text.find(self.needle, start)
+        return self.found
+
+
+def _jinja_spans(text: str) -> List[Tuple[int, int]]:
+    """(start, end) of each `{# #}`, `{{ }}` and `{% %}` span, as the non-greedy regex
+    `\\{#.*?#\\}|\\{\\{.*?\\}\\}|\\{%.*?%\\}` finds them, in one pass: an opener with no closer
+    ends its kind, since no later opener of that kind can close either."""
+    seeks = [(_Seek(text, opener), _Seek(text, closer)) for opener, closer in _JINJA_PAIRS]
+    alive = [True] * len(seeks)
+    spans: List[Tuple[int, int]] = []
+    position = 0
+    while True:
+        best = None
+        for index, (opener, closer) in enumerate(seeks):
+            if not alive[index]:
+                continue
+            start = opener.at_or_after(position)
+            end = closer.at_or_after(start + 2) if start >= 0 else -1
+            if end < 0:
+                alive[index] = False
+            elif best is None or start < best[0]:
+                best = (start, end + 2)
+        if best is None:
+            return spans
+        spans.append(best)
+        position = best[1]
 
 
 def _span_end(text: str, start: int) -> int:
@@ -103,15 +142,16 @@ def _jinja_refs(text: str) -> List[dict]:
     """[{"ref", "package", "line", "quote", "dynamic"}] for each ref() call in Jinja, first per line and name."""
     lines = text.split("\n")
     found: Dict[Tuple[int, str, Optional[str]], dict] = {}
-    for span in _JINJA_SPAN.finditer(text):
-        if span.group().startswith("{#"):
+    newlines = [match.start() for match in re.finditer("\n", text)]
+    for start, end in _jinja_spans(text):
+        body = text[start:end]
+        if body.startswith("{#"):
             continue
-        body = span.group()
         for opening in _REF_OPEN.finditer(body):
             call = _REF_CALL.match(body, opening.start())
             args = _literal_args(call.group(1)) if call else None
             dynamic = args is None or not 1 <= len(args) <= 2
-            line = text.count("\n", 0, span.start() + opening.start()) + 1
+            line = bisect_left(newlines, start + opening.start()) + 1
             name = "" if dynamic else args[-1]
             package = None if dynamic or len(args) == 1 else args[0]
             quote = lines[line - 1].strip()[:MAX_QUOTE_CHARS] if line <= len(lines) else ""
@@ -122,8 +162,46 @@ def _jinja_refs(text: str) -> List[dict]:
 
 
 def _placeholders(masked: str) -> str:
-    """Each run-time value becomes `{}`; newlines inside it are kept after it."""
-    return _PLACEHOLDER.sub(lambda match: "{}" + "\n" * match.group().count("\n"), masked)
+    """Each run-time value (`{{ }}`, `${ }`, `$name`) becomes `{}`; newlines inside it are kept after it.
+
+    One pass, with the match rules of `\\{\\{.*?\\}\\}|\\$\\{[^}\\n]*\\}|\\$[A-Za-z_]\\w*`."""
+    opener, closer = _Seek(masked, "{{"), _Seek(masked, "}}")
+    dollar, brace, newline = _Seek(masked, "$"), _Seek(masked, "}"), _Seek(masked, "\n")
+    braces_alive = True
+    pieces: List[str] = []
+    position = last = 0
+    while True:
+        template = (-1, -1)
+        if braces_alive:
+            start = opener.at_or_after(position)
+            end = closer.at_or_after(start + 2) if start >= 0 else -1
+            if end < 0:
+                braces_alive = False
+            else:
+                template = (start, end + 2)
+        best = template if template[0] >= 0 else None
+        cursor = dollar.at_or_after(position)
+        while cursor >= 0 and (best is None or cursor < best[0]):
+            end = _dollar_end(masked, cursor, brace, newline)
+            if end > 0:
+                best = (cursor, end)
+                break
+            cursor = dollar.at_or_after(cursor + 1)
+        if best is None:
+            break
+        pieces.append(masked[last:best[0]] + "{}" + "\n" * masked.count("\n", best[0], best[1]))
+        position = last = best[1]
+    pieces.append(masked[last:])
+    return "".join(pieces)
+
+
+def _dollar_end(text: str, start: int, brace: _Seek, newline: _Seek) -> int:
+    """End of the `${...}` or `$name` at `start`, or -1 when it is neither."""
+    if text.startswith("${", start):
+        close, line_end = brace.at_or_after(start + 2), newline.at_or_after(start + 2)
+        return close + 1 if close >= 0 and (line_end < 0 or close < line_end) else -1
+    match = _DOLLAR_NAME.match(text, start)
+    return match.end() if match else -1
 
 
 def _name(token: str) -> Optional[str]:
@@ -139,7 +217,8 @@ def tables(path: str, text: str) -> dict:
     """{"tables": [{"table", "access", "line", "quote", "dynamic", "temp"}],
     "dbt_refs": [{"ref", "package", "line", "quote", "dynamic"}], "degraded": bool}.
 
-    A table read through `{{ source('src', 'table') }}` is the table `src.table`."""
+    A table read through `{{ source('src', 'table') }}` is the table `src.table`, and its
+    record carries `source: [src, table]` as written so graph.py can apply sources.yml."""
     masked, unterminated = mask(text)
     masked, calls = _dbt_calls(text, masked)
     source = _placeholders(masked)
@@ -230,12 +309,13 @@ def tables(path: str, text: str) -> dict:
 
 
 def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[dict], Set[Tuple[int, str]]]:
-    """Drop reads of `ref` calls (dbt_refs covers them) and turn `source` calls into table reads.
+    """Drop reads of `ref` calls (dbt_refs covers them) and turn `source` calls into table reads
+    marked with the source and table names.
 
     A dbt call written to (`insert into {{ ref('t') }}`) stays a run-time write, as any
     other template in a write position does; the (line, name) of such a ref is
     returned so it is not also counted as a read."""
-    tables_found: Dict[Tuple[str, str], dict] = {}
+    tables_found: Dict[tuple, dict] = {}  # (name, access), plus the call's arguments for a `source()` read
     written_refs: Set[Tuple[int, str]] = set()
     for item in found.values():
         match = _DBT_TOKEN.match(item["table"])
@@ -252,7 +332,8 @@ def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[di
             continue
         if args is not None and len(args) == 2 and all(args):
             name = f"{args[0]}.{args[1]}".lower()
-            tables_found.setdefault((name, "read"), {**item, "table": name, "dynamic": False})
+            tables_found.setdefault((name, "read", tuple(args)),
+                                    {**item, "table": name, "dynamic": False, "source": list(args)})
         else:
             tables_found.setdefault(("{}", "read"), {**item, "table": "{}", "dynamic": True})
     return list(tables_found.values()), written_refs

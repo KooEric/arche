@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw_data
+    database: lake
+    description: Landing tables copied from the shop database.
+    tables:
+      - name: events
+        identifier: ev_v2
+        description: Click events, one row per click.
+        columns:
+          - name: event_id
+            tests: [not_null, unique]
+      - name: customers
+  - name: shop
+    tables:
+      - name: orders

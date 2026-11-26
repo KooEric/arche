@@ -1,5 +1,14 @@
 # Arche 릴리스 노트
 
+## 1.2.0
+
+- dbt 모델 테이블: 모델과 스냅숏 파일마다 만드는 테이블 이름을 정해 `written_tables`에 `via: dbt:model`로 더합니다. 이름은 `{{ config(alias=...) }}`, `dbt_project.yml` 폴더 설정의 `+alias`, 파일 이름 순으로 정하고, 스키마는 `{{ config(schema=...) }}`, 폴더 설정의 `+schema` 순으로 정합니다. 스키마 앞부분은 실행 환경이 정하므로 `{}`(`+schema: marts`가 있으면 `{}_marts`)로 둡니다. dbt 밖의 SQL이 `analytics_marts.orders`를 읽으면 그 모델 파일로 추정 연결되고, 데이터 프로파일의 `orders` 데이터셋도 그 테이블과 추정으로 맞춥니다. alias가 리터럴이 아니거나 config가 `{% if %}`·`{% for %}` 안에 있으면 `dynamic`으로 두고 테이블을 만들지 않습니다. SQL·Jinja 스캔(주석, `{{ }}`, `{% %}`, `ref` 찾기)은 이제 한 번의 선형 패스입니다. 닫히지 않은 `{{`·`{%`·`{#`가 수만 개 있는 SQL에서 스캔이 몇 초씩 걸리던 예전 문제도 함께 고쳤습니다.
+- source 이름: `sources.yml`의 `schema`, `identifier`, `database`로 `{{ source('raw', 'events') }}`가 읽는 실제 테이블 이름(`lake.raw_data.ev_v2`)을 정합니다. SQL 파일이 속한 프로젝트, 로컬 패키지 순으로 찾고, 같은 단계에 정의가 둘이면 기본 이름을 쓰고 `ambiguous`로 남깁니다. source 읽기는 dbt 모델 테이블과 맞추지 않습니다.
+- 같은 파일이 `raw.events`를 직접 읽고 `{{ source('raw', 'events') }}`로도 읽으면 이제 기록이 둘로 남습니다. 먼저 나온 쪽이 다른 쪽을 지우던 문제를 고쳤고, `sources.yml` 이름 바꾸기와 `dbt_sources` 항목은 source 호출에만 적용됩니다.
+- 속성 문서: `schema.yml`의 모델·컬럼 설명(여러 줄 `>`·`|` 포함, 2,000자까지), `data_type`, `tests`·`data_tests`(`accepted_values`의 값 10개, `relationships`의 `to`·`field`, dbt 1.10의 `arguments:`)를 `graph.json`의 `dbt_models`, `dbt_sources`, `dbt_docs_unlinked`로 남깁니다. 이름·테스트 대상·값·타입은 200자에서 자릅니다.
+- 리포트의 **테이블** 구역: dbt 모델 테이블마다 블록을 그려 모델 설명, 모델 파일과 속성 파일 링크, 문서 컬럼과 데이터 컬럼의 비교(문서에 없음, 데이터에 없음, 타입 다름)를 보여 줍니다. `not_null`·`unique` 테스트에는 표본에서 본 null 비율과 중복 여부를 단서로 붙이며, 이 단서는 판정이 아니고 값은 보이지 않습니다.
+- YAML 리더에 여러 줄 텍스트를 읽는 선택 옵션(`block_scalars`)을 두었습니다. dbt 속성 파일을 읽을 때만 켜므로 Compose, GitHub Actions, Helm, 경로 값 연결 결과는 그대로입니다.
+
 ## 1.1.0
 
 - 로컬 데이터 프로파일: `data_profile.py --out RUN --data DIR`(또는 `arche.py REPO --data DIR`)이 레포 밖 폴더의 CSV·TSV·JSON·JSONL·Parquet을 읽어 `profile.json`을 쓰고, 리포트의 **테이블** 구역에 테이블별 데이터(쓰는 파일, 읽는 파일, 컬럼, 타입, null 비율, 고윳값 수, 범위, 키 후보)를 보여 줍니다. `key=value` 파티션 폴더, `part-*` 조각 파일, 같은 길이의 16진수 해시 이름 파일, `_SUCCESS`가 있는 폴더는 데이터셋 하나로 묶습니다. 데이터셋마다 10만 행(`--max-rows`)까지 읽습니다.
