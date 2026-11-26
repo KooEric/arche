@@ -139,7 +139,8 @@ def tables(path: str, text: str) -> dict:
     """{"tables": [{"table", "access", "line", "quote", "dynamic", "temp"}],
     "dbt_refs": [{"ref", "package", "line", "quote", "dynamic"}], "degraded": bool}.
 
-    A table read through `{{ source('src', 'table') }}` is the table `src.table`."""
+    A table read through `{{ source('src', 'table') }}` is the table `src.table`, and its
+    record carries `source: [src, table]` as written so graph.py can apply sources.yml."""
     masked, unterminated = mask(text)
     masked, calls = _dbt_calls(text, masked)
     source = _placeholders(masked)
@@ -230,7 +231,8 @@ def tables(path: str, text: str) -> dict:
 
 
 def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[dict], Set[Tuple[int, str]]]:
-    """Drop reads of `ref` calls (dbt_refs covers them) and turn `source` calls into table reads.
+    """Drop reads of `ref` calls (dbt_refs covers them) and turn `source` calls into table reads
+    marked with the source and table names.
 
     A dbt call written to (`insert into {{ ref('t') }}`) stays a run-time write, as any
     other template in a write position does; the (line, name) of such a ref is
@@ -252,7 +254,7 @@ def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[di
             continue
         if args is not None and len(args) == 2 and all(args):
             name = f"{args[0]}.{args[1]}".lower()
-            tables_found.setdefault((name, "read"), {**item, "table": name, "dynamic": False})
+            tables_found.setdefault((name, "read"), {**item, "table": name, "dynamic": False, "source": list(args)})
         else:
             tables_found.setdefault(("{}", "read"), {**item, "table": "{}", "dynamic": True})
     return list(tables_found.values()), written_refs
