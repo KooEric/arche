@@ -154,3 +154,43 @@ def test_folder_settings_come_from_the_project_block_with_or_without_plus():
         {"kind": "models", "folders": ["marts", "finance"], "setting": "alias", "value": "fin", "line": 8},
         {"kind": "snapshots", "folders": [], "setting": "schema", "value": "snaps", "line": 13},
     ]
+
+
+def test_ref_and_source_names_in_relationships_are_capped():
+    long_name = "y" * 5000
+    text = f"models:\n  - name: a\n    columns:\n      - name: c\n        tests:\n          - relationships:\n              to: ref('{long_name}')\n              field: id\n"
+
+    to = _props(text)["models"][0]["columns"][0]["tests"][0]["to"]
+    assert to == {"ref": "y" * 200}
+
+
+def test_source_description_truncation_is_kept():
+    text = f"sources:\n  - name: raw\n    description: '{'x' * 3000}'\n    tables:\n      - name: t\n"
+
+    source = _props(text)["sources"][0]
+    assert len(source["description"]) == 2000 and source["description_truncated"] is True
+
+
+def test_config_keys_under_a_folder_are_not_folder_settings():
+    text = ("name: jaffle\n"
+            "models:\n"
+            "  jaffle:\n"
+            "    +column_types:\n"
+            "      schema: text\n"
+            "    +meta:\n"
+            "      alias: x\n"
+            "    marts:\n"
+            "      +schema: m\n")
+
+    assert yaml_config.extract("dbt/dbt_project.yml", text)["dbt_folder_config"] == [
+        {"kind": "models", "folders": ["marts"], "setting": "schema", "value": "m", "line": 9},
+    ]
+
+
+def test_long_model_name_and_folder_value_are_cut():
+    long_name = "m" * 5000
+    model = _props(f"models:\n  - name: {long_name}\n")["models"][0]
+    assert len(model["name"]) == 200
+
+    folder = yaml_config.extract("dbt/dbt_project.yml", f"name: p\nmodels:\n  p:\n    +schema: {'s' * 5000}\n")["dbt_folder_config"]
+    assert len(folder[0]["value"]) == 200

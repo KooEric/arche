@@ -80,9 +80,10 @@ def folder_config(documents: Sequence[Sequence[Scalar]], name: Optional[str]) ->
     for document in documents:
         for key, value, line in document:
             if (name and len(key) >= 3 and key[0] in FOLDER_KINDS and key[1] == name and key[-1] in FOLDER_SETTINGS
-                    and all(isinstance(part, str) for part in key)):
+                    and all(isinstance(part, str) for part in key)
+                    and not any(part.startswith("+") for part in key[2:-1])):
                 found.append({"kind": key[0], "folders": list(key[2:-1]), "setting": FOLDER_SETTINGS[key[-1]],
-                              "value": value, "line": line})
+                              "value": _cap(value), "line": line})
     return found
 
 
@@ -109,6 +110,11 @@ def _items(node: object) -> List[Node]:
     if not isinstance(node, dict):
         return []
     return [node[index] for index in sorted(key for key in node if isinstance(key, int)) if isinstance(node[index], dict)]
+
+
+def _cap(value: Optional[str]) -> Optional[str]:
+    """A value from the file, cut to MAX_VALUE_CHARS; untrusted input is never kept whole."""
+    return value[:MAX_VALUE_CHARS] if value is not None else None
 
 
 def _leaf(node: Node, key: str) -> Optional[str]:
@@ -144,11 +150,11 @@ def _description(node: Node, cut_lines: set) -> dict:
 def _relation(text: str) -> dict:
     ref = _REF_TO.fullmatch(text.strip())
     if ref:
-        return {"ref": ref.group(1) if ref.group(1) is not None else ref.group(2)}
+        return {"ref": _cap(ref.group(1) if ref.group(1) is not None else ref.group(2))}
     source = _SOURCE_TO.fullmatch(text.strip())
     if source:
-        return {"source": [source.group(1) if source.group(1) is not None else source.group(2),
-                           source.group(3) if source.group(3) is not None else source.group(4)]}
+        return {"source": [_cap(source.group(1) if source.group(1) is not None else source.group(2)),
+                           _cap(source.group(3) if source.group(3) is not None else source.group(4))]}
     return {"dynamic": True}
 
 
@@ -198,7 +204,7 @@ def _columns(node: Node, cut_lines: set) -> List[dict]:
             continue
         described = _description(column, cut_lines)
         data_type = _leaf(column, "data_type")
-        columns.append({"name": name, "description": described["description"],
+        columns.append({"name": _cap(name), "description": described["description"],
                         **({"description_truncated": True} if "description_truncated" in described else {}),
                         "data_type": data_type[:MAX_VALUE_CHARS] if data_type else None, "tests": _tests(column)})
     return columns
@@ -209,7 +215,7 @@ def _named(node: Node, cut_lines: set) -> Optional[dict]:
     found = node.get("name")
     if not isinstance(found, tuple):
         return None
-    return {"name": found[0], "line": found[1], **_description(node, cut_lines), "columns": _columns(node, cut_lines)}
+    return {"name": _cap(found[0]), "line": found[1], **_description(node, cut_lines), "columns": _columns(node, cut_lines)}
 
 
 def properties(documents: Sequence[Sequence[Scalar]], cut: Sequence[Tuple[tuple, int]] = ()) -> dict:
@@ -231,9 +237,11 @@ def properties(documents: Sequence[Sequence[Scalar]], cut: Sequence[Tuple[tuple,
             for node in _items(item.get("tables")):
                 table = _named(node, cut_lines)
                 if table:
-                    tables.append({**table, "identifier": _leaf(node, "identifier")})
-            sources.append({"name": entry["name"], "line": entry["line"], "schema": _leaf(item, "schema"),
-                            "database": _leaf(item, "database"), "description": entry["description"], "tables": tables})
+                    tables.append({**table, "identifier": _cap(_leaf(node, "identifier"))})
+            flagged = {"description_truncated": True} if entry.get("description_truncated") else {}
+            sources.append({"name": entry["name"], "line": entry["line"], "schema": _cap(_leaf(item, "schema")),
+                            "database": _cap(_leaf(item, "database")), "description": entry["description"], **flagged,
+                            "tables": tables})
     return {"models": models, "sources": sources}
 
 
