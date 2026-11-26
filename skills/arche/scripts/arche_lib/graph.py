@@ -4,7 +4,7 @@ from __future__ import annotations
 import posixpath
 import re
 from collections import defaultdict
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from . import SCHEMA_VERSION, dbt, fileref, lineage, pathref
 from .errors import ParseError
@@ -137,13 +137,12 @@ def _config_references(inventory: dict, extracted: Dict[str, dict]) -> Tuple[Lis
     return list(edges.values()), externals
 
 
-def _dbt_edges(inventory: dict, extracted: Dict[str, dict]) -> Tuple[List[dict], List[dict]]:
+def _dbt_edges(projects: Dict[str, dbt.Project], extracted: Dict[str, dict]) -> Tuple[List[dict], List[dict]]:
     """READS edges for `{{ ref() }}` in SQL, REFERENCES edges for model names in property
     files, and refs to packages that are not in the repository."""
     with_refs = [path for path in sorted(extracted) if extracted[path].get("dbt_refs") or extracted[path].get("dbt_names")]
     if not with_refs:
         return [], []
-    projects = dbt.build((entry["path"] for entry in inventory["files"]), extracted)
     edges: Dict[tuple, dict] = {}
     externals: List[dict] = []
     for path in with_refs:
@@ -194,27 +193,40 @@ def _references(analyzed: List[dict], extracted: Dict[str, dict]) -> List[dict]:
     return list(edges.values())
 
 
-def _written_tables(paths: List[str], extracted: Dict[str, dict]) -> dict:
-    """Tables each SQL file writes for others to read: no temporary and no run-time names."""
-    return lineage.index(
+def _written_tables(paths: List[str], extracted: Dict[str, dict], extra: Iterable[Tuple[str, str]] = ()) -> dict:
+    """Tables each SQL file writes for others to read: no temporary and no run-time names.
+    `extra` adds (file, table) pairs such as the tables dbt models build."""
+    return lineage.index([
         (path, item["table"]) for path in paths for item in extracted[path]["tables"]
-        if item["access"] == "write" and not item["temp"] and not item["dynamic"])
+        if item["access"] == "write" and not item["temp"] and not item["dynamic"]] + list(extra))
 
 
-def _written_table_list(analyzed: List[dict], extracted: Dict[str, dict]) -> List[dict]:
-    """Every table a SQL file writes for others to read, at its first line in that file."""
-    first: Dict[tuple, int] = {}
+def _written_table_list(analyzed: List[dict], extracted: Dict[str, dict], models: List[dict] = ()) -> List[dict]:
+    """Every table a SQL file writes for others to read, at its first line in that file,
+    and every table a dbt model builds (`via: dbt:model`)."""
+    rows: Dict[tuple, dict] = {}
     for entry in analyzed:
         for item in extracted.get(entry["path"], {}).get("tables", []):
             if item["access"] == "write" and not item["temp"] and not item["dynamic"]:
-                first.setdefault((item["table"], entry["path"]), item["line"])
-    return [{"table": table, "from": _file_id(path), "line": line} for (table, path), line in sorted(first.items())]
+                rows.setdefault((item["table"], entry["path"]),
+                                {"table": item["table"], "from": _file_id(entry["path"]), "line": item["line"]})
+    for model in models:
+        if model["table"]:
+            rows.setdefault((model["table"], model["file"]), {"table": model["table"], "from": _file_id(model["file"]),
+                                                              "line": model["line"], "via": dbt.MODEL_VIA})
+    return [rows[key] for key in sorted(rows)]
 
 
-def _reads(analyzed: List[dict], extracted: Dict[str, dict]) -> Tuple[List[dict], List[dict]]:
-    """(READS edges from a file to the files writing a table it reads, tables nothing scanned writes)."""
+def _reads(analyzed: List[dict], extracted: Dict[str, dict], model_writes: List[Tuple[str, str]] = (),
+           ref_pairs: Set[Tuple[str, str]] = frozenset()) -> Tuple[List[dict], List[dict]]:
+    """(READS edges from a file to the files writing a table it reads, tables nothing scanned writes).
+
+    Tables dbt models build (`model_writes`) are matched by every read except a `source()`
+    read, which names a table dbt does not build. A pair already linked by `{{ ref() }}`
+    (`ref_pairs`) gets no second edge by table name."""
     paths = [entry["path"] for entry in analyzed if "tables" in extracted.get(entry["path"], {})]
-    writers = _written_tables(paths, extracted)
+    writers = _written_tables(paths, extracted, model_writes)
+    plain = _written_tables(paths, extracted) if model_writes else writers
     edges: Dict[tuple, dict] = {}
     external: Dict[tuple, dict] = {}
     for path in paths:
@@ -227,14 +239,82 @@ def _reads(analyzed: List[dict], extracted: Dict[str, dict]) -> Tuple[List[dict]
                 continue
             if item["table"] in own_writes and own_writes[item["table"]] <= item["line"]:
                 continue  # the file made this table itself before reading it
-            for result in lineage.resolve(item["table"], item["dynamic"], writers):
+            for result in lineage.resolve(item["table"], item["dynamic"], plain if "source" in item else writers):
                 if result["status"] == "external":
                     external.setdefault((path, item["table"]),
                                         {"from": _file_id(path), "table": item["table"], "line": item["line"]})
-                elif result.get("to") != path:
+                elif result.get("to") != path and (path, result.get("to")) not in ref_pairs:
                     edge = _read_edge(path, item, result)
                     edges[(path, item["line"], edge["to"] or "", item["table"])] = edge
     return list(edges.values()), sorted(external.values(), key=lambda x: (x["from"], x["line"], x["table"]))
+
+
+def _resolve_sources(extracted: Dict[str, dict], projects: Dict[str, dbt.Project]) -> Tuple[Dict[str, dict], List[dict]]:
+    """(extracted with each `source()` read renamed as sources.yml defines it, dbt_sources)."""
+    if not projects:
+        return extracted, []
+    renamed: Dict[str, dict] = {}
+    listed: Dict[tuple, dict] = {}
+    for path in sorted(extracted):
+        records = extracted[path].get("tables", [])
+        if not any("source" in item for item in records):
+            continue
+        rewritten = []
+        for item in records:
+            found = dbt.resolve_source(item["source"], path, projects) if "source" in item else None
+            if found is None:
+                rewritten.append(item)
+                continue
+            table = found["table"]
+            rewritten.append({**item, "table": table, "dynamic": "{}" in table.rsplit(".", 1)[-1]})
+            entry = _source_entry(item["source"], found)
+            listed.setdefault((entry["source"], entry["table"], table, (entry["defined_in"] or {}).get("path", "")), entry)
+        renamed[path] = {**extracted[path], "tables": rewritten}
+    return {**extracted, **renamed}, [listed[key] for key in sorted(listed)]
+
+
+def _source_entry(names: List[str], found: dict) -> dict:
+    """One dbt_sources item: the definition used, or the candidates when there are several."""
+    base = {"source": names[0], "table": names[1], "resolved": found["table"]}
+    places = [{"path": d["path"], "line": d["table"]["line"]} for d in found["definitions"]]
+    if found["status"] == "ambiguous":
+        return {**base, "description": None, "columns": [], "defined_in": None, "candidates": places, "status": "ambiguous"}
+    table = found["definitions"][0]["table"]
+    return {**base, "description": table["description"], "columns": table["columns"], "defined_in": places[0],
+            **({"description_truncated": True} if table.get("description_truncated") else {}), "status": "resolved"}
+
+
+def _dbt_docs(projects: Dict[str, dbt.Project], extracted: Dict[str, dict], models: List[dict]) -> Tuple[List[dict], List[dict]]:
+    """(dbt_models: every model file with its documentation, dbt_docs_unlinked: entries naming no model file)."""
+    docs: Dict[str, tuple] = {}
+    duplicates: Dict[str, List[dict]] = defaultdict(list)
+    unlinked = []
+    for path in sorted(extracted):
+        props = extracted[path].get("dbt_props")
+        if not props or dbt.project_of(path, projects) is None:
+            continue
+        for item in props["models"]:
+            result = dbt.resolve_name(item, path, projects, extracted)
+            where = {"path": path, "line": item["line"]}
+            if result["status"] in _RESOLVED:
+                if result["to"] in docs:
+                    duplicates[result["to"]].append(where)
+                else:
+                    docs[result["to"]] = (item, where)
+            elif result["reason"] == "not_found":
+                unlinked.append({"name": item["name"], "kind": item["kind"], "defined_in": where})
+    found = []
+    for model in models:
+        item, where = docs.get(model["file"], ({}, None))
+        found.append({
+            "model": model["model"], "kind": model["kind"], "project": model["project"], "file": _file_id(model["file"]),
+            "table": model["table"], "dynamic": model["dynamic"], "alias_from": model["alias_from"],
+            "schema_from": model["schema_from"], "description": item.get("description"), "doc": item.get("doc"),
+            **({"description_truncated": True} if item.get("description_truncated") else {}),
+            "tests": item.get("tests", []), "columns": item.get("columns", []), "defined_in": where,
+            "duplicates": duplicates.get(model["file"], [])})
+    unlinked.sort(key=lambda entry: (entry["defined_in"]["path"], entry["defined_in"]["line"], entry["name"]))
+    return found, unlinked
 
 
 def _read_edge(path: str, item: dict, result: dict) -> dict:
@@ -468,9 +548,15 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
     edges, externals = _resolve_all(analyzed, extracted, contexts)
     repo = inventory["repo"]
     connections, routes = _http(extracted, edges)
-    reads, external_tables = _reads(analyzed, extracted)
+    projects = dbt.build((entry["path"] for entry in inventory["files"]), extracted)
+    models = dbt.models(projects, extracted)
+    dbt_edges, dbt_externals = _dbt_edges(projects, extracted)
+    ref_pairs = {(edge["from"][len("file:"):], edge["to"][len("file:"):])
+                 for edge in dbt_edges if edge.get("via") == "dbt:ref" and edge["to"]}
+    with_sources, dbt_sources = _resolve_sources(extracted, projects)
+    reads, external_tables = _reads(analyzed, with_sources, [(m["file"], m["table"]) for m in models if m["table"]], ref_pairs)
     config_edges, config_externals = _config_references(inventory, extracted)
-    dbt_edges, dbt_externals = _dbt_edges(inventory, extracted)
+    dbt_models, dbt_docs_unlinked = _dbt_docs(projects, extracted, models)
     return {
         "schema_version": SCHEMA_VERSION,
         "inventory_sha256": inventory_digest(inventory),
@@ -480,7 +566,10 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
                        key=lambda edge: _edge_key(edge) + (edge.get("table", ""),)),
         "externals": _dedupe_externals(externals + config_externals + dbt_externals),
         "external_tables": external_tables,
-        "written_tables": _written_table_list(analyzed, extracted),
+        "written_tables": _written_table_list(analyzed, extracted, models),
+        "dbt_models": dbt_models,
+        "dbt_sources": dbt_sources,
+        "dbt_docs_unlinked": dbt_docs_unlinked,
         "http_connections": connections,
         "http_routes": routes,
         "skipped": _skipped(inventory, failures),
