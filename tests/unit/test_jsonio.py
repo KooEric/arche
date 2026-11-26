@@ -37,3 +37,34 @@ def test_read_invalid_json_raises_integrity_error(tmp_path):
 
     with pytest.raises(IntegrityError, match="invalid JSON"):
         jsonio.read_json(broken)
+
+
+def test_write_json_writes_the_same_bytes_as_dumps(tmp_path):
+    data = {"z": [1, 2.5, None, True], "a": {"한글": "값", "e": [], "o": {}}, "m": "x\"y\n"}
+    target = tmp_path / "data.json"
+
+    jsonio.write_json(target, data)
+
+    assert target.read_bytes() == jsonio.dumps(data).encode("utf-8")
+
+
+def test_write_json_streams_instead_of_building_the_whole_string(tmp_path, monkeypatch):
+    def refuse(_data):
+        raise AssertionError("write_json must not build the document as one string")
+
+    monkeypatch.setattr(jsonio, "dumps", refuse)
+
+    jsonio.write_json(tmp_path / "data.json", {"rows": list(range(10))})
+
+    assert jsonio.read_json(tmp_path / "data.json") == {"rows": list(range(10))}
+
+
+def test_a_failure_while_streaming_keeps_the_old_file_and_no_temp_file(tmp_path):
+    target = tmp_path / "data.json"
+    jsonio.write_json(target, {"v": 1})
+
+    with pytest.raises(TypeError):
+        jsonio.write_json(target, {"a": list(range(5000)), "z": object()})
+
+    assert jsonio.read_json(target) == {"v": 1}
+    assert [path.name for path in tmp_path.iterdir()] == ["data.json"]

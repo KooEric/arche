@@ -6,21 +6,43 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, List, TextIO
 
 from .errors import IntegrityError
 
 
+_CHUNKS_PER_WRITE = 4096  # encoder pieces joined per write: few calls, little held at once
+
+
+def _encoder() -> json.JSONEncoder:
+    return json.JSONEncoder(sort_keys=True, indent=2, ensure_ascii=False)
+
+
 def dumps(data: Any) -> str:
     """Serialize so that equal data always produces identical bytes."""
-    return json.dumps(data, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+    return _encoder().encode(data) + "\n"
 
 
 def write_json(path: Path, data: Any) -> None:
-    write_text(path, dumps(data))
+    """Write the bytes `dumps` gives, streamed so a large document is never one string in memory."""
+    def write(handle: TextIO) -> None:
+        pieces: List[str] = []
+        for piece in _encoder().iterencode(data):
+            pieces.append(piece)
+            if len(pieces) >= _CHUNKS_PER_WRITE:
+                handle.write("".join(pieces))
+                pieces = []
+        pieces.append("\n")
+        handle.write("".join(pieces))
+
+    _write_atomic(path, write)
 
 
 def write_text(path: Path, content: str) -> None:
+    _write_atomic(path, lambda handle: handle.write(content))
+
+
+def _write_atomic(path: Path, write: Callable[[TextIO], Any]) -> None:
     """Write atomically: a crash never leaves a half-written file behind."""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle_fd, temp_name = tempfile.mkstemp(
@@ -28,7 +50,7 @@ def write_text(path: Path, content: str) -> None:
     )
     try:
         with os.fdopen(handle_fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(content)
+            write(handle)
         os.replace(temp_name, path)
     except BaseException:
         if os.path.exists(temp_name):

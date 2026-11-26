@@ -729,3 +729,46 @@ def test_a_dbt_model_whose_first_query_fails_to_parse_has_no_later_query(make_re
     columns = json.loads((out / "columns.json").read_text(encoding="utf-8"))
 
     assert not any(c["table"] == "{}.m" for c in columns["columns"])
+
+
+# -- rounds -----------------------------------------------------------------------------
+def _derive_counts(monkeypatch):
+    from arche_lib import column_lineage
+
+    counts = {}
+    real = column_lineage.derive
+
+    def counting(text, *args, **kwargs):
+        counts[text] = counts.get(text, 0) + 1
+        return real(text, *args, **kwargs)
+
+    monkeypatch.setattr(column_lineage, "derive", counting)
+    return counts
+
+
+def test_a_later_round_derives_only_the_files_that_read_a_changed_table(monkeypatch):
+    sources = {"q/a.sql": "CREATE TABLE s.a AS SELECT r.id FROM raw.x r;\n",
+               "q/b.sql": "CREATE TABLE s.b AS SELECT * FROM s.z;\n",
+               "q/z.sql": "CREATE TABLE s.z AS SELECT r.id FROM raw.x r;\n"}
+    counts = _derive_counts(monkeypatch)
+
+    columns = _columns(sources)
+
+    assert _edges(columns, to="col:s.b.id") == [("col:s.z.id", "col:s.b.id", "direct", "inferred", "star")]
+    assert counts == {sources["q/a.sql"]: 1, sources["q/b.sql"]: 2, sources["q/z.sql"]: 1}
+
+
+def test_a_star_chain_across_rounds_gives_the_same_document_as_deriving_every_file(monkeypatch):
+    sources = {"q/a.sql": "CREATE TABLE s.a AS SELECT * FROM s.b;\n",
+               "q/b.sql": "CREATE TABLE s.b AS SELECT * FROM s.c;\n",
+               "q/c.sql": "CREATE TABLE s.c AS SELECT * FROM s.d;\n",
+               "q/d.sql": "CREATE TABLE s.d AS SELECT r.id, r.amt FROM raw.x r;\n",
+               "q/e.sql": "SELECT a.id FROM s.a a JOIN s.c c ON a.id = c.id;\n"}
+    from arche_lib import column_lineage
+
+    incremental = _columns(sources)
+    monkeypatch.setattr(column_lineage, "_changed_readers", lambda paths, reads, changed: list(paths))
+    everything = _columns(sources)
+
+    assert incremental == everything
+    assert _edges(incremental, to="col:s.a.amt") == [("col:s.b.amt", "col:s.a.amt", "direct", "inferred", "star")]

@@ -1,5 +1,9 @@
 # Arche 릴리스 노트
 
+## 다음 버전 (미출시)
+
+- 컬럼 lineage 성능: `columns.json`을 문자열 하나로 만들지 않고 파일에 흘려 씁니다. 두 번째 회차부터는 열 목록이 바뀐 테이블을 조회한 파일만 다시 유도합니다. 합성 3,000 파일 레포에서 `imports.py`의 최대 메모리가 1.1GB에서 455MB로, 시간이 11.2초에서 10.0초로 줄었습니다. 그 레포와 jaffle-shop, dbt-project-evaluator에서 `columns.json`과 `graph.json`은 바이트까지 같습니다.
+
 ## 1.3.0
 
 - 컬럼 lineage: SQL·HQL 파일의 SELECT를 작은 파서로 읽어, 테이블에 쓰는 컬럼마다 어느 상류 `table.column`에서 어떤 식(`direct`, `rename`, `transform`, `aggregate`, `window`, `constant`)을 거쳐 오는지 `columns.json`에 남깁니다. `imports.py`가 `graph.json` 다음에 쓰고, SQL 파일이 없으면 쓰지 않습니다. `graph.json`은 바뀌지 않습니다.

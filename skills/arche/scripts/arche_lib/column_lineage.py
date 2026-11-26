@@ -1,10 +1,12 @@
 """columns.json: where each column a SQL file writes comes from, across files.
 
 Files are parsed once. Their column lists depend on one another (a `SELECT *` from a
-table another file builds), so derivation repeats until the lists stop changing."""
+table another file builds), so derivation repeats until the lists stop changing. A file
+reads the lists only through its lookup, so a later round derives again only the files that
+looked up a table whose list changed; the rest would give the same rows."""
 from __future__ import annotations
 
-from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Set, Tuple
 
 from . import dbt
 from .column_catalog import Listing, Tables, build_catalog
@@ -74,15 +76,27 @@ def build_columns(paths: List[str], read_path: Callable[[str], Optional[str]], e
     parsed = {path: parse_file(texts[path]) for path in sql_paths}
     tables = Tables(extracted, projects, models, sources, dbt_models)
     catalog: Dict[str, Listing] = dict(tables.documented)
+    results: Dict[str, List[Row]] = {}
+    reads: Dict[str, Set[str]] = {}  # path -> the tables its last derivation looked up
+    pending = sql_paths
     settled = False
     for _ in range(MAX_ROUNDS):
-        results = _round(sql_paths, texts, newlines, parsed, tables, catalog)
+        for path in pending:
+            results[path], reads[path] = _file_rows(path, texts[path], newlines[path], parsed[path], tables,
+                                                    catalog)
         following, disagree = build_catalog(results, tables.documented)
-        settled = following == catalog
+        changed = {name for name in catalog.keys() | following.keys() if catalog.get(name) != following.get(name)}
+        settled = not changed
         catalog = following
         if settled:
             break
+        pending = _changed_readers(sql_paths, reads, changed)
     return document(sql_paths, texts, newlines, results, catalog, disagree, inventory_sha256, not settled)
+
+
+def _changed_readers(paths: List[str], reads: Dict[str, Set[str]], changed: Set[str]) -> List[str]:
+    """The files whose next derivation can differ: they looked up a table whose list changed."""
+    return [path for path in paths if not reads[path].isdisjoint(changed)]
 
 
 class _Temps(dict):
@@ -97,16 +111,12 @@ class _Temps(dict):
         return super().__getitem__(name)
 
 
-def _round(paths: List[str], texts: Dict[str, str], newlines: Dict[str, List[int]],
-           parsed: Dict[str, List[Parsed]], tables: Tables, catalog: Dict[str, Listing]) -> Dict[str, List[Row]]:
-    """path -> rows for one pass over every file, with the column lists of the pass before."""
-    return {path: _file_rows(path, texts[path], newlines[path], parsed[path], tables, catalog) for path in paths}
-
-
 def _file_rows(path: str, text: str, newlines: List[int], items: List[Parsed], tables: Tables,
-               catalog: Dict[str, Listing]) -> List[Row]:
+               catalog: Dict[str, Listing]) -> Tuple[List[Row], Set[str]]:
+    """(the file's rows with the column lists of the round before, the tables it looked up)."""
     temps = _Temps()
-    lookup = _lookup(path, tables, catalog)
+    looked_up: Set[str] = set()
+    lookup = _lookup(path, tables, catalog, looked_up)
     rows: List[Row] = []
     reads: List[set] = []  # per row, the temporary tables it read
     first_query = True  # a model's query is its first query, or its first statement that failed to parse
@@ -133,7 +143,7 @@ def _file_rows(path: str, text: str, newlines: List[int], items: List[Parsed], t
             # A temporary table is not a node; later statements pass through it.
             written = TempWrite(name, written.misses, ())
         rows.append((item, derived, written))
-    return _temp_readers(rows, reads)
+    return _temp_readers(rows, reads), looked_up
 
 
 def _temp_readers(rows: List[Row], reads: List[set]) -> List[Row]:
@@ -156,13 +166,16 @@ def _temp_readers(rows: List[Row], reads: List[set]) -> List[Row]:
     return done
 
 
-def _lookup(path: str, tables: Tables, catalog: Dict[str, Listing]) -> Lookup:
+def _lookup(path: str, tables: Tables, catalog: Dict[str, Listing], looked_up: Set[str]) -> Lookup:
+    """Each table's info for `path`; adds every catalog name it reads, found or not, to `looked_up`."""
     cache: Dict[TableName, TableInfo] = {}
 
     def lookup(table: TableName) -> TableInfo:
         key = table._replace(start=0, end=0)
         if key not in cache:
             name, status, rule, reason, candidates = tables.resolve(path, table)
+            if name:
+                looked_up.add(name)
             listing = catalog.get(name) if name else None
             cache[key] = TableInfo(name, status, rule, listing.names if listing else None,
                                    bool(listing) and listing.verifiable, bool(listing) and listing.open,
