@@ -119,3 +119,14 @@ def test_the_same_input_gives_the_same_graph():
     import json
 
     assert json.dumps(_graph(REPO), sort_keys=True) == json.dumps(_graph(dict(reversed(list(REPO.items())))), sort_keys=True)
+
+
+def test_a_direct_read_beside_a_source_call_keeps_both_and_only_the_source_is_renamed():
+    for body in ("select * from raw.events\n;\nselect * from {{ source('raw', 'events') }}\n",
+                 "select * from {{ source('raw', 'events') }}\n;\nselect * from raw.events\n"):
+        graph = _graph({**REPO, "dbt/models/staging/stg_events.sql": body})
+
+        tables = sorted(item["table"] for item in graph["external_tables"]
+                        if item["from"] == "file:dbt/models/staging/stg_events.sql")
+        assert tables == ["raw.events", "raw_data.ev_v2"], body
+        assert [item["table"] for item in graph["dbt_sources"] if item["table"] == "events"] == ["events"]

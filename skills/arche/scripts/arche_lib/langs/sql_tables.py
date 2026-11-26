@@ -315,7 +315,7 @@ def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[di
     A dbt call written to (`insert into {{ ref('t') }}`) stays a run-time write, as any
     other template in a write position does; the (line, name) of such a ref is
     returned so it is not also counted as a read."""
-    tables_found: Dict[Tuple[str, str], dict] = {}
+    tables_found: Dict[tuple, dict] = {}  # (name, access), plus the call's arguments for a `source()` read
     written_refs: Set[Tuple[int, str]] = set()
     for item in found.values():
         match = _DBT_TOKEN.match(item["table"])
@@ -332,7 +332,8 @@ def _apply_dbt_calls(found: Dict[Tuple[str, str], dict], calls) -> Tuple[List[di
             continue
         if args is not None and len(args) == 2 and all(args):
             name = f"{args[0]}.{args[1]}".lower()
-            tables_found.setdefault((name, "read"), {**item, "table": name, "dynamic": False, "source": list(args)})
+            tables_found.setdefault((name, "read", tuple(args)),
+                                    {**item, "table": name, "dynamic": False, "source": list(args)})
         else:
             tables_found.setdefault(("{}", "read"), {**item, "table": "{}", "dynamic": True})
     return list(tables_found.values()), written_refs
