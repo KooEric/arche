@@ -139,7 +139,7 @@ def has_tables(graph: dict, profile: Optional[dict]) -> bool:
 def table_data(graph: dict, profile: Optional[dict], link: Link, T: Translate) -> str:
     """The table blocks of the Tables section: profiled data, dbt model docs, or both."""
     models = _model_tables(graph)
-    if profile is None:
+    if not profile:
         blocks = "".join(_table_block(table, [], *_lineage(graph), link, T, models[table]) for table in sorted(models))
         return (f'<h3>{T("dbt model tables")} <span class="count">{len(models)}</span></h3>'
                 f'<p>{T(report_docs.DBT_CAVEAT)}</p>{blocks}')
