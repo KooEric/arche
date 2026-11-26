@@ -1,6 +1,6 @@
 # Arche 릴리스 노트
 
-## 다음 버전 (미출시)
+## 1.3.1
 
 - 컬럼 lineage 성능: `columns.json`을 문자열 하나로 만들지 않고 파일에 흘려 씁니다. 두 번째 회차부터는 열 목록이 바뀐 테이블을 조회한 파일만 다시 유도합니다. 합성 3,000 파일 레포에서 `imports.py`의 최대 메모리가 1.1GB에서 455MB로, 시간이 11.2초에서 10.0초로 줄었습니다. 그 레포와 jaffle-shop, dbt-project-evaluator에서 `columns.json`과 `graph.json`은 바이트까지 같습니다.
 
