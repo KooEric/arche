@@ -27,10 +27,11 @@ NULL_TEXT = frozenset({"", "NULL", "null", "\\N", "NaN", "nan"})
 # A name is sensitive when any entry is a substring of it once separators are removed, after the known harmless words
 # below are blanked out. Every word in HARMLESS_WORDS must contain an entry and must not itself be sensitive;
 # add a word only for a real false positive. Blanking leaves a marker, so what was around a harmless word never fuses
-# into an entry (companytel stays sensitive through "tel"; discard_card through "card").
+# into an entry (companytel stays sensitive through "tel"; discard_card through "card"). "userid" names one person and
+# "accessedat" times when they were somewhere; either one joined with other columns can single a person out.
 SENSITIVE_NAMES = ("email", "phone", "mobile", "tel", "ssn", "passport", "password", "passwd", "secret", "token",
                    "apikey", "card", "pan", "ccnum", "cardno", "iban", "accountno", "birth", "dob", "address",
-                   "socialsecurity", "주민", "전화", "휴대", "생년", "주소", "계좌", "여권")
+                   "socialsecurity", "userid", "accessedat", "주민", "전화", "휴대", "생년", "주소", "계좌", "여권")
 HARMLESS_WORDS = (
     "company", "companies", "span", "spanish", "japan", "japanese", "panel", "panda",
     "expand", "expanded", "pancake",

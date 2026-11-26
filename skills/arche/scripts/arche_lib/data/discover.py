@@ -14,6 +14,9 @@ FORMATS = {".csv": "csv", ".tsv": "tsv", ".tab": "tsv", ".json": "json", ".jsonl
 SUCCESS_MARKER = "_SUCCESS"
 _PARTITION = re.compile(r"^[^=]+=.*$")
 _NUMBERED = re.compile(r"^(.*?)\d+$")
+# Content-hash names such as 106c94b0c61384ad, written by idempotent ingesters. The length floor keeps words that
+# happen to be hex (cafe, face, added) from grouping.
+_HEX_NAME = re.compile(r"^[0-9a-fA-F]{8,}$")
 
 
 class DataFile(NamedTuple):
@@ -129,6 +132,8 @@ def _is_parts(folder: _Folder) -> bool:
         return False
     stems = [os.path.splitext(item.rel.rsplit("/", 1)[-1])[0] for item in folder.files]
     if all(stem.startswith("part-") for stem in stems):
+        return True
+    if all(_HEX_NAME.match(stem) for stem in stems) and len({len(stem) for stem in stems}) == 1:
         return True
     prefixes = {match.group(1) for match in map(_NUMBERED.match, stems) if match}
     return len(prefixes) == 1 and all(_NUMBERED.match(stem) for stem in stems)

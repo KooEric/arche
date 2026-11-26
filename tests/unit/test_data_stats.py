@@ -86,6 +86,17 @@ def test_sensitive_names(name):
     assert sensitive_name(name) is True
 
 
+@pytest.mark.parametrize("name", ["user_id", "userId", "UserID", "owner_user_id", "target_user_id", "accessed_at",
+                                  "accessedAt", "last_accessed_at"])
+def test_person_identifiers_and_access_times_are_sensitive(name):
+    assert sensitive_name(name) is True
+
+
+@pytest.mark.parametrize("name", ["id", "event_id", "users", "user_count", "created_at", "access_level"])
+def test_other_ids_and_times_are_not_sensitive(name):
+    assert sensitive_name(name) is False
+
+
 @pytest.mark.parametrize("name", ["pan", "card_pan", "tel", "dob", "card", "cardNo", "credit_card", "ssn", "user_email",
                                   "emailAddress", "phone_number", "phoneNumber", "api-key", "birth_date", "고객주소",
                                   "telno", "TEL_NO", "access_token", "accessToken", "userPAN"])
