@@ -80,7 +80,7 @@
 파일당 800줄 상한을 지키기 위해 프로토타입의 큰 파일 두 개는 구현에서 나눈다.
 
 - `parser.py`: 식 부분(`expressions.py`, 약 400줄)과 쿼리·FROM 부분(`parser.py`, 약 400줄)
-- `column_lineage.py`: 파일 분석과 반복(`column_lineage.py`)과 문서 조립(`column_document.py`)
+- `column_lineage.py`: 테이블 이름 맞추기와 컬럼 목록(`column_catalog.py`), 파일 분석과 반복(`column_lineage.py`), 문서 조립(`column_document.py`)
 
 `report.py`는 지금 727줄이다. 새 HTML은 전부 `report_columns.py`에 두고, `report.py`에는 호출과 인자 전달만 넣는다.
 
