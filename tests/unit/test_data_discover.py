@@ -109,3 +109,29 @@ def test_an_entry_that_fails_midwalk_is_counted_as_unreadable(tmp_path, monkeypa
     ids, skipped, _ = _ids(root)
 
     assert ids == ["d0:a.csv"] and skipped == {"unreadable": 1}
+
+
+def test_hash_named_parts_make_one_folder_dataset(tmp_path):
+    root = _tree(tmp_path, {"usage_events/106c94b0c61384ad.parquet": "PAR1", "usage_events/9f2e00a1b3c4d5e6.parquet": "PAR1",
+                            "location_access_logs/aa00bb11cc22dd33.parquet": "PAR1",
+                            "location_access_logs/0123456789ABCDEF.parquet": "PAR1"})
+
+    datasets, _, _ = discover(root, "d0")
+
+    assert [(d.record["id"], d.record["kind"], d.record["files"]) for d in datasets] == [
+        ("d0:location_access_logs", "folder", 2), ("d0:usage_events", "folder", 2)]
+
+
+def test_hash_names_need_two_files_one_format_one_length_and_no_subfolders(tmp_path):
+    root = _tree(tmp_path, {"one/106c94b0c61384ad.parquet": "PAR1",
+                            "fmt/106c94b0c61384ad.parquet": "PAR1", "fmt/9f2e00a1b3c4d5e6.csv": "x\n",
+                            "len/106c94b0c61384ad.csv": "x\n", "len/9f2e00a1b3c4.csv": "x\n",
+                            "sub/106c94b0c61384ad.csv": "x\n", "sub/9f2e00a1b3c4d5e6.csv": "x\n", "sub/in/a.csv": "x\n",
+                            "word/cafe.csv": "x\n", "word/face.csv": "x\n",
+                            "nothex/106c94b0c61384zz.csv": "x\n", "nothex/9f2e00a1b3c4d5e6.csv": "x\n"})
+
+    ids, _, _ = _ids(root)
+
+    assert "d0:one/106c94b0c61384ad.parquet" in ids
+    assert {"d0:fmt", "d0:len", "d0:sub", "d0:word", "d0:nothex"}.isdisjoint(ids)
+    assert "d0:word/cafe.csv" in ids and "d0:nothex/9f2e00a1b3c4d5e6.csv" in ids
