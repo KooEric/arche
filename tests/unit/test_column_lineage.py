@@ -477,3 +477,121 @@ def test_lineage_resolve_keeps_its_output_without_matched():
     assert results == [{"status": "inferred", "to": "a.sql", "rule": "table_name"},
                        {"status": "verified", "to": "b.sql", "rule": "name"}]
     assert lineage.resolve_matched("s.t", False, writers)[0]["matched"] == "lake.s.t"
+
+
+# -- fix round 1 ------------------------------------------------------------------------
+def test_star_passthrough_edges_count_against_the_total_edge_limit(monkeypatch):
+    monkeypatch.setattr("arche_lib.column_document.MAX_EDGES", 5)
+    sources = {f"q/l{i:02}.sql": f"INSERT INTO s.t SELECT * FROM raw.r{i};\n" for i in range(20)}
+    sources["q/z.sql"] = "SELECT t.a, t.b, t.c FROM s.t t;\n"
+
+    columns = _columns(sources)
+
+    assert len(columns["edges"]) <= 5
+    assert columns["truncated"] is True
+
+
+def test_star_passthrough_edges_count_against_their_files_edge_limit(monkeypatch):
+    monkeypatch.setattr("arche_lib.column_document.MAX_FILE_EDGES", 2)
+    columns = _columns({"q/a.sql": "CREATE TABLE s.t AS SELECT * FROM raw.r;\n",
+                        "q/b.sql": "SELECT t.a, t.b FROM s.t t;\n", "q/c.sql": "SELECT t.c, t.d FROM s.t t;\n"})
+
+    assert len([e for e in columns["edges"] if e["evidence"]["path"] == "q/a.sql"]) == 2
+    assert columns["truncated"] is True
+
+
+def test_constant_edges_count_against_the_file_edge_limit(monkeypatch):
+    monkeypatch.setattr("arche_lib.column_document.MAX_FILE_EDGES", 2)
+    columns = _columns({"q/a.sql": "CREATE TABLE s.t AS SELECT 1 AS a,\n2 AS b,\n3 AS c;\n"})
+
+    assert len(columns["edges"]) == 2
+    assert columns["truncated"] is True
+
+
+def test_a_duplicate_edge_at_the_limit_does_not_truncate(monkeypatch):
+    monkeypatch.setattr("arche_lib.column_document.MAX_FILE_EDGES", 1)
+    statement = "CREATE TABLE s.t AS SELECT r.a AS c FROM raw.r r;"
+    columns = _columns({"q/a.sql": f"{statement} {statement}\n"})  # the same edge twice on one line
+
+    assert len(columns["edges"]) == 1
+    assert columns["truncated"] is False
+
+
+TEMP_PROBE = ("CREATE TEMP TABLE t AS SELECT x.a, nope FROM raw.x x JOIN raw.y y ON x.k = y.k "
+              "WHERE x.status = 'p';\nINSERT INTO s.m (a, b) SELECT a, nope FROM t;\n")
+
+
+def test_a_temporary_tables_join_keys_and_filters_reach_the_table_that_reads_it():
+    columns = _columns({"q/t.sql": TEMP_PROBE})
+
+    uses = {(e["from"], e["to"]) for e in columns["edges"] if e["kind"] in ("join_key", "filter")}
+    assert {("col:raw.x.k", "table:s.m"), ("col:raw.y.k", "table:s.m"), ("col:raw.x.status", "table:s.m")} <= uses
+    assert ("nope", "col:s.m.b") in [(u["spec"], u["to"]) for u in columns["unresolved"]]
+    assert not any(c["table"] in ("t", "temp:t") for c in columns["columns"])
+
+
+def test_a_temporary_table_nobody_reads_keeps_its_uses_on_its_own_name():
+    columns = _columns({"q/t.sql": "CREATE TEMP TABLE t AS SELECT r.a FROM raw.x r WHERE r.f = 1;\n"})
+
+    assert ("col:raw.x.f", "table:temp:t") in [(e["from"], e["to"]) for e in columns["edges"]]
+
+
+def test_a_temporary_table_with_a_tail_or_a_statement_miss_is_partial():
+    columns = _columns({"q/t.sql": "CREATE TEMP TABLE t AS SELECT r.a FROM raw.x r extra junk;\n"
+                                   "CREATE TEMP TABLE u (a, b) AS SELECT r.a FROM raw.x r;\n"
+                                   "INSERT INTO s.m (a) SELECT a FROM u;\n"})
+
+    assert [(s["status"], s["reason"]) for s in columns["statements"]][:2] == [("partial", "tail"),
+                                                                                ("partial", "arity")]
+    assert ("table:s.m", "arity") in [(u["to"], u["reason"]) for u in columns["unresolved"]]
+
+
+def test_an_insert_column_list_does_not_outrank_ddl():
+    columns = _columns({"q/a.sql": "CREATE TABLE s.t (a INT, b INT, c INT);\n",
+                        "q/b.sql": "INSERT INTO s.t (a) SELECT r.a FROM raw.r r;\n",
+                        "q/c.sql": "CREATE TABLE s.u AS SELECT * FROM s.t;\n"})
+
+    assert sorted(e["to"] for e in columns["edges"] if e["to"].startswith("col:s.u.")) == [
+        "col:s.u.a", "col:s.u.b", "col:s.u.c"]
+    assert columns["column_sources_disagree"] == []
+
+
+def test_insert_column_lists_merge_into_one_open_list():
+    columns = _columns({"q/a.sql": "INSERT INTO s.t (a) SELECT r.a FROM raw.r r;\n",
+                        "q/b.sql": "INSERT INTO s.t (b) SELECT r.b FROM raw.r r;\n",
+                        "q/c.sql": "CREATE TABLE s.u AS SELECT * FROM s.t;\n"})
+
+    into_u = [e for e in columns["edges"] if e["to"].startswith("col:s.u.")]
+    assert sorted(e["to"] for e in into_u) == ["col:s.u.a", "col:s.u.b"]
+    assert all(e["status"] == "inferred" for e in into_u)
+    assert ("table:s.u", "unknown_star") in [(u["to"], u["reason"]) for u in columns["unresolved"]]
+    assert [c["known_from"] for c in columns["columns"] if c["id"] == "col:s.t.a"] == [["sql_output"]]
+
+
+def test_a_read_over_an_insert_column_list_is_not_verified():
+    columns = _columns({"q/a.sql": "INSERT INTO s.t (a) SELECT r.a FROM raw.r r;\n",
+                        "q/b.sql": "SELECT a FROM s.t;\n"})
+
+    (edge,) = [e for e in columns["edges"] if e["from"] == "col:s.t.a"]
+    assert edge["status"] != "verified"
+
+
+def test_star_passthrough_reaches_a_column_ddl_lists():
+    columns = _columns({"q/a.sql": "CREATE TABLE s.t (a INT, b INT);\n",
+                        "q/b.sql": "INSERT INTO s.t SELECT * FROM raw.r;\n",
+                        "q/c.sql": "SELECT t.a FROM s.t t;\n"})
+
+    assert _edges(columns, rule="star_passthrough") == [
+        ("col:raw.r.a", "col:s.t.a", "direct", "inferred", "star_passthrough")]
+
+
+DBT_PROJECT = {"proj/dbt_project.yml": 'name: proj\nversion: "1.0"\nmodel-paths: ["models"]\n'}
+
+
+def test_a_dbt_model_whose_first_query_fails_to_parse_has_no_later_query(make_repo, run_script, tmp_path):
+    out = tmp_path / "out"
+    repo = make_repo({**DBT_PROJECT, "proj/models/m.sql": "select from;\nselect r.id from raw.x r\n"})
+    _scan_and_import(run_script, repo, out)
+    columns = json.loads((out / "columns.json").read_text(encoding="utf-8"))
+
+    assert not any(c["table"] == "{}.m" for c in columns["columns"])

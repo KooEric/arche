@@ -1,9 +1,13 @@
 """Hostile SQL ends quickly with a status or a reason, never with an exception."""
+import hashlib
 import time
 
 import pytest
 
 from arche_lib.column_lineage import parse_file
+from arche_lib.graph import build_graph_and_columns
+from arche_lib.inventory import count_lines
+from arche_lib.langs import language_for
 from arche_lib.sqlcol.derive import derive
 from arche_lib.sqlcol.scope import TableInfo
 
@@ -133,3 +137,61 @@ def test_expansion_never_passes_the_column_limit():
 
     assert len(derived.outputs) <= 2_000
     assert "too_many_columns" in {m.miss.reason for m in derived.missed}
+
+
+# -- through build_columns --------------------------------------------------------------
+def _build(sources):
+    """(columns.json document, seconds) for a repository of SQL files."""
+    files = [{"path": path, "status": "analyzed", "lang": language_for(path), "bytes": len(text),
+              "lines": count_lines(text), "sha256": hashlib.sha256(text.encode()).hexdigest()}
+             for path, text in sources.items()]
+    inventory = {"schema_version": "0.1", "repo": {"name": "demo", "root": "/abs/demo", "commit": None,
+                                                    "dirty": None}, "files": files}
+    started = time.perf_counter()
+    _, columns = build_graph_and_columns(inventory, sources.get, {})
+    return columns, time.perf_counter() - started
+
+
+def _statuses(columns):
+    found = {}
+    for record in columns["statements"]:
+        key = f"{record['status']}:{record['reason']}"
+        found[key] = found.get(key, 0) + 1
+    return found
+
+
+def test_deep_nesting_in_a_repository_ends_with_a_status():
+    columns, seconds = _build({"q/deep.sql": "SELECT x FROM " + "(SELECT x FROM " * 200 + "t" + ") s" * 200 + ";\n"
+                                             + "SELECT " + "CASE WHEN a THEN " * 10_000 + "1" + " END" * 10_000
+                                             + " FROM t;\nSELECT r.a FROM raw.r r;\n"})
+
+    assert _statuses(columns) == {"parse_error:too_deep": 2, "parsed:None": 1}
+    assert seconds < 10
+
+
+def test_fifty_thousand_statements_in_a_repository_end_with_statuses():
+    columns, seconds = _build({"q/many.sql": "INSERT INTO s.t SELECT r.a FROM raw.r r;\n" * 50_000})
+
+    assert _statuses(columns) == {"parsed:None": 50_000}
+    assert seconds < 15
+
+
+def test_a_long_star_chain_across_files_ends_with_statuses():
+    sources = {f"q/c{i:03}.sql": f"CREATE TABLE s.t{i} AS SELECT * FROM s.t{i - 1};\n" for i in range(1, 200)}
+    sources["q/c000.sql"] = "CREATE TABLE s.t0 AS SELECT * FROM raw.r;\n"
+    sources["q/read.sql"] = "SELECT t.a, t.b FROM s.t199 t;\n"
+
+    columns, seconds = _build(sources)
+
+    assert _statuses(columns) == {"parsed:None": 201}
+    assert any(e["to"] == "col:s.t199.a" for e in columns["edges"])
+    assert seconds < 10
+
+
+def test_a_star_cycle_between_two_tables_ends():
+    columns, seconds = _build({"q/a.sql": "CREATE TABLE s.a AS SELECT * FROM s.b;\n",
+                               "q/b.sql": "CREATE TABLE s.b AS SELECT * FROM s.a;\n",
+                               "q/c.sql": "SELECT a.x FROM s.a a;\n"})
+
+    assert _statuses(columns) == {"parsed:None": 3}
+    assert seconds < LIMIT_SECONDS

@@ -2,8 +2,9 @@
 
 Table names are matched as the table lineage matches them (`lineage.resolve_matched`,
 `dbt.resolve_ref`, `dbt.resolve_source`), so a column always hangs on the same table name
-graph.json uses. Column lists come from SQL that defines a table, then DDL, then dbt
-documentation, then the aliases of an INSERT without a column list."""
+graph.json uses. Column lists come from SQL that defines a table, then DDL, then the column
+lists of INSERTs (open: other columns may exist), then dbt documentation, then the aliases of
+an INSERT without a column list."""
 from __future__ import annotations
 
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
@@ -12,13 +13,13 @@ from . import dbt, lineage
 from .sqlcol.ast import TableName
 
 Resolved = Tuple[Optional[str], str, Optional[str], Optional[str], Tuple[str, ...]]
-_PRIORITY = ("sql_output", "ddl", "documented", "insert_alias")
+_PRIORITY = ("sql_output", "ddl", "insert_list", "documented", "insert_alias")
 
 
 class Listing(NamedTuple):
     """A table's columns as the repository says them, in order."""
     names: Tuple[str, ...]
-    known_from: str  # sql_output | ddl | documented | insert_alias
+    known_from: str  # sql_output | ddl | insert_list | documented | insert_alias
     open: bool  # more columns may exist (documentation, or a SELECT * from an unknown source)
     displays: Tuple[str, ...]
     where: Tuple[str, int] = ("", 0)  # (path, statement index) of the SQL or DDL that gave it
@@ -119,9 +120,12 @@ def build_catalog(results: Dict[str, list], documented: Dict[str, Listing]
                 continue
             names = _unique(column[0] for column in written.columns)
             displays = {column[0]: column[1] for column in reversed(written.columns)}
-            _offer(found, written.table, Listing(names, "sql_output" if written.defines else "insert_alias",
-                                                 bool(written.stars), tuple(displays[n] for n in names),
-                                                 (path, item.index)))
+            listing = Listing(names, _kind(written), bool(written.stars) or written.partial_list,
+                              tuple(displays[n] for n in names), (path, item.index))
+            if listing.known_from == "insert_list" and "insert_list" in found.get(written.table, {}):
+                listing = _merge(found[written.table]["insert_list"], listing)
+                found[written.table]["insert_list"] = listing
+            _offer(found, written.table, listing)
     for table, listing in documented.items():
         _offer(found, table, listing)
     catalog: Dict[str, Listing] = {}
@@ -133,6 +137,20 @@ def build_catalog(results: Dict[str, list], documented: Dict[str, Listing]
                 set(offered["sql_output"].names) != set(offered["ddl"].names) and not offered["sql_output"].open:
             disagree.append(_difference(table, offered["sql_output"], offered["ddl"]))
     return catalog, disagree
+
+
+def _kind(written) -> str:
+    if written.partial_list:
+        return "insert_list"
+    return "sql_output" if written.defines else "insert_alias"
+
+
+def _merge(first: Listing, later: Listing) -> Listing:
+    """Several INSERT column lists into one table: one open list, names in the order first seen."""
+    names = _unique(first.names + later.names)
+    displays = dict(zip(later.names, later.displays))
+    displays.update(zip(first.names, first.displays))
+    return first._replace(names=names, displays=tuple(displays[n] for n in names))
 
 
 def _offer(found: Dict[str, Dict[str, Listing]], table: str, listing: Listing) -> None:

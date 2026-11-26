@@ -8,7 +8,7 @@ from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
 from . import dbt
 from .column_catalog import Listing, Tables, build_catalog
-from .column_document import document
+from .column_document import TempWrite, document, newline_positions
 from .sqlcol.ast import Statement, TableName
 from .sqlcol.derive import Derived, Lookup, derive
 from .sqlcol.parser import ParseError
@@ -37,9 +37,10 @@ class Written(NamedTuple):
     stars: Tuple[str, ...]  # tables a SELECT * read without knowing their columns
     status_cap: Tuple[str, str]  # (status, rule) that no edge into this table may pass; rule "" for none
     misses: Tuple[str, ...]  # reasons the statement is only partly mapped
+    partial_list: bool = False  # an INSERT's column list: the table may have other columns
 
 
-Row = Tuple[Parsed, Optional[Derived], Optional[Written]]
+Row = Tuple[Parsed, Optional[Derived], Optional[Written]]  # the third may be a TempWrite
 
 
 def parse_file(text: str) -> List[Parsed]:
@@ -68,51 +69,90 @@ def build_columns(paths: List[str], read_path: Callable[[str], Optional[str]], e
     if not sql_paths:
         return None
     texts = {path: read_path(path) or "" for path in sql_paths}
+    newlines = {path: newline_positions(texts[path]) for path in sql_paths}
     parsed = {path: parse_file(texts[path]) for path in sql_paths}
     tables = Tables(extracted, projects, models, sources, dbt_models)
     catalog: Dict[str, Listing] = dict(tables.documented)
     settled = False
     for _ in range(MAX_ROUNDS):
-        results = _round(sql_paths, texts, parsed, tables, catalog)
+        results = _round(sql_paths, texts, newlines, parsed, tables, catalog)
         following, disagree = build_catalog(results, tables.documented)
         settled = following == catalog
         catalog = following
         if settled:
             break
-    return document(sql_paths, texts, results, catalog, disagree, inventory_sha256, not settled)
+    return document(sql_paths, texts, newlines, results, catalog, disagree, inventory_sha256, not settled)
 
 
-def _round(paths: List[str], texts: Dict[str, str], parsed: Dict[str, List[Parsed]], tables: Tables,
-           catalog: Dict[str, Listing]) -> Dict[str, List[Row]]:
+class _Temps(dict):
+    """The file's temporary tables, noting which ones a statement reads."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.read: set = set()
+
+    def __getitem__(self, name: str) -> QueryRelation:
+        self.read.add(name)
+        return super().__getitem__(name)
+
+
+def _round(paths: List[str], texts: Dict[str, str], newlines: Dict[str, List[int]],
+           parsed: Dict[str, List[Parsed]], tables: Tables, catalog: Dict[str, Listing]) -> Dict[str, List[Row]]:
     """path -> rows for one pass over every file, with the column lists of the pass before."""
-    results: Dict[str, List[Row]] = {}
-    for path in paths:
-        temps: Dict[str, QueryRelation] = {}
-        lookup = _lookup(path, tables, catalog)
-        newlines = [i for i, char in enumerate(texts[path]) if char == "\n"]
-        rows: List[Row] = []
-        first_query = True
-        for item in parsed[path]:
-            if item.statement is None:
-                rows.append((item, None, None))
-                continue
-            try:
-                derived = derive(texts[path], item.statement, lookup, temps, newlines)
-            except RecursionError:  # a last guard; the derivation's own depth limit comes first
-                rows.append((item._replace(statement=None, status="parse_error", reason="too_deep"), None, None))
-                continue
-            model = tables.model_tables.get(path) if first_query and item.statement.kind == "query" else None
-            first_query = first_query and item.statement.kind != "query"
-            written = _written(path, item, derived, lookup, model)
-            if written is not None and item.statement.temp and item.statement.target.name:
-                temps[item.statement.target.name] = QueryRelation(
-                    f"temp:{item.statement.target.name}",
-                    [output._replace(name=name, display=display) for name, display, output, _ in written.columns],
-                    list(derived.stars))
-                written = None  # a temporary table is not a node; later statements pass through it
-            rows.append((item, derived, written))
-        results[path] = rows
-    return results
+    return {path: _file_rows(path, texts[path], newlines[path], parsed[path], tables, catalog) for path in paths}
+
+
+def _file_rows(path: str, text: str, newlines: List[int], items: List[Parsed], tables: Tables,
+               catalog: Dict[str, Listing]) -> List[Row]:
+    temps = _Temps()
+    lookup = _lookup(path, tables, catalog)
+    rows: List[Row] = []
+    reads: List[set] = []  # per row, the temporary tables it read
+    first_query = True  # a model's query is its first query, or its first statement that failed to parse
+    for item in items:
+        is_main = first_query and (item.statement is None or item.statement.kind == "query")
+        first_query = first_query and not is_main
+        reads.append(set())
+        if item.statement is None:
+            rows.append((item, None, None))
+            continue
+        temps.read = reads[-1]
+        try:
+            derived = derive(text, item.statement, lookup, temps, newlines)
+        except RecursionError:  # a last guard; the derivation's own depth limit comes first
+            rows.append((item._replace(statement=None, status="parse_error", reason="too_deep"), None, None))
+            continue
+        written = _written(path, item, derived, lookup, tables.model_tables.get(path) if is_main else None)
+        if written is not None and item.statement.temp and item.statement.target.name:
+            name = item.statement.target.name
+            temps[name] = QueryRelation(
+                f"temp:{name}",
+                [output._replace(name=name, display=display) for name, display, output, _ in written.columns],
+                list(derived.stars))
+            # A temporary table is not a node; later statements pass through it.
+            written = TempWrite(name, written.misses, ())
+        rows.append((item, derived, written))
+    return _temp_readers(rows, reads)
+
+
+def _temp_readers(rows: List[Row], reads: List[set]) -> List[Row]:
+    """Each temporary table's uses go to the tables written by the later statements that read it."""
+    readers: Dict[str, set] = {}  # temp name -> tables
+    done: List[Row] = list(rows)
+    for index in range(len(rows) - 1, -1, -1):
+        item, derived, written = rows[index]
+        if isinstance(written, TempWrite):
+            found = readers.pop(written.name, set())  # a later CREATE of the same name starts over
+            written = written._replace(tables=tuple(sorted(found)) or (f"temp:{written.name}",))
+            done[index] = (item, derived, written)
+            into = set(written.tables)
+        elif written is not None and written.table:
+            into = {written.table}
+        else:
+            continue
+        for name in reads[index]:
+            readers.setdefault(name, set()).update(into)
+    return done
 
 
 def _lookup(path: str, tables: Tables, catalog: Dict[str, Listing]) -> Lookup:
@@ -185,7 +225,8 @@ def _insert(table: str, statement: Statement, outputs: List[Output], derived: De
             constants: tuple, lookup: Lookup) -> Written:
     """INSERT: by its column list, else by position against the table's columns, else by SELECT alias."""
     misses: List[str] = []
-    if statement.columns is not None:
+    listed = statement.columns is not None
+    if listed:
         expected = list(statement.columns) + list(statement.partitions)
         rule, defines = None, True
     else:
@@ -200,15 +241,15 @@ def _insert(table: str, statement: Statement, outputs: List[Output], derived: De
                 misses.append("unnamed")
             rule, defines = "select_alias", False
     if derived.stars and rule == "positional":
-        return Written(table, constants, defines, stars, ("verified", ""), ("unknown_star",))
+        return Written(table, constants, defines, stars, ("verified", ""), ("unknown_star",), listed)
     if not derived.stars and len(expected) != len(outputs):
-        return Written(table, constants, defines, stars, ("verified", ""), ("arity",))
+        return Written(table, constants, defines, stars, ("verified", ""), ("arity",), listed)
     names = []
     for (name, display), output in zip(expected, outputs):
         mismatch = rule == "positional" and output.name is not None and output.name != name
         names.append((name, display, "alias_mismatch" if mismatch else rule))
     pairs = tuple(pair for pair in _pair(names, outputs) if pair[0])
-    return Written(table, pairs + constants, defines, stars, ("verified", ""), tuple(misses))
+    return Written(table, pairs + constants, defines, stars, ("verified", ""), tuple(misses), listed)
 
 
 def _merge_outputs(outputs: List[Output]) -> List[Output]:

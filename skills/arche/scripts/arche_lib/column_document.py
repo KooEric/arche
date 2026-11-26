@@ -3,18 +3,30 @@ sorted so that the same input gives the same bytes."""
 from __future__ import annotations
 
 from bisect import bisect_left
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 from .sqlcol import COLUMNS_VERSION, MAX_EDGES, MAX_EXPRESSION_CHARS, MAX_FILE_EDGES
 from .sqlcol.scope import Leaf, Miss, cap
 
 
+class TempWrite(NamedTuple):
+    """A temporary table's statement: no column nodes, but its uses and misses count against `tables`."""
+    name: str
+    misses: Tuple[str, ...]  # reasons the statement is only partly mapped
+    tables: Tuple[str, ...]  # tables written by later statements that read it; `temp:<name>` when none
+    table: str = ""  # writes no table of its own
+
+
+def newline_positions(text: str) -> List[int]:
+    return [i for i, char in enumerate(text) if char == "\n"]
+
+
 class _Places:
     """Evidence for one file: one shared dict per line."""
 
-    def __init__(self, path: str, text: str) -> None:
+    def __init__(self, path: str, text: str, newlines: List[int]) -> None:
         self.path, self.lines = path, text.split("\n")
-        self.newlines = [i for i, char in enumerate(text) if char == "\n"]
+        self.newlines = newlines
         self.cache: Dict[int, dict] = {}
 
     def line(self, position: int) -> int:
@@ -36,19 +48,36 @@ class _Builder:
         self.unresolved: Dict[tuple, dict] = {}
         self.statements: List[dict] = []
         self.stars: Dict[str, List[Tuple[str, dict]]] = {}
+        self.budgets: Dict[str, int] = {}  # path -> edges that file may still add
+        self.read: set = set()  # column ids some edge comes from
         self.truncated = False
 
-    def file(self, path: str, text: str, rows) -> None:
-        places = _Places(path, text)
-        budget = [MAX_FILE_EDGES]
+    def add(self, key: tuple, edge: dict) -> bool:
+        """Keep a new edge unless its file's budget or the total budget is spent; False when refused."""
+        if key in self.edges:
+            return True
+        path = edge["evidence"]["path"]
+        left = self.budgets.get(path, MAX_FILE_EDGES)
+        if left <= 0 or len(self.edges) >= MAX_EDGES:
+            self.truncated = True
+            return False
+        self.budgets[path] = left - 1
+        self.edges[key] = edge
+        return True
+
+    def file(self, path: str, text: str, newlines: List[int], rows) -> None:
+        places = _Places(path, text, newlines)
         for item, derived, written in rows:
             target = written.table if written is not None else (
                 item.statement.target.name if item.statement is not None and item.statement.target else None)
+            if isinstance(written, TempWrite):
+                target = written.name
             record = {"path": path, "index": item.index, "line": places.line(item.start), "target": target or None,
                       "status": item.status, "reason": item.reason}
             if derived is None or written is None:
                 statement = item.statement
-                if statement is not None and statement.kind == "ddl" and statement.target.name:
+                if statement is not None and statement.kind == "ddl" and statement.target is not None \
+                        and statement.target.name:
                     for name, display in statement.columns:
                         self.column(statement.target.name, name, display, "ddl", places.at(statement.start))
                 self.statements.append(record)
@@ -56,19 +85,21 @@ class _Builder:
             if item.statement.tail or written.misses:
                 record = {**record, "status": "partial", "reason": "tail" if item.statement.tail else written.misses[0]}
             self.statements.append(record)
+            if isinstance(written, TempWrite):
+                for table in written.tables:
+                    self.uses(places, derived, written.misses, f"table:{table}")
+                continue
             if not written.table:
                 target = item.statement.target
                 end = target.end if target is not None and target.end > item.start else item.start
                 self.unresolve(None, "dynamic", _spec(text, item.start, end), places.at(item.start))
                 continue
-            self.statement(text, places, derived, written, budget)
+            self.statement(text, places, derived, written)
 
-    def statement(self, text: str, places: _Places, derived, written, budget: List[int]) -> None:
+    def statement(self, text: str, places: _Places, derived, written) -> None:
         table_id = f"table:{written.table}"
         for table in written.stars:
             self.stars.setdefault(written.table, []).append((table, places.at(derived.statement.start)))
-        for reason in written.misses:
-            self.unresolve(table_id, reason, "*", places.at(derived.statement.start))
         for name, display, output, rule in written.columns:
             to = _col_id(written.table, name)
             where = places.at(output.start)
@@ -76,36 +107,31 @@ class _Builder:
             expression = _spec(text, output.start, output.end)
             if output.constant:
                 fixed = written.status_cap if written.status_cap[1] else ("verified", "literal")
-                self.edges.setdefault((to, "", "constant", where["path"], where["line"]), {
+                self.add((to, "", "constant", where["path"], where["line"]), {
                     "from": None, "to": to, "kind": "constant", "status": fixed[0], "rule": fixed[1],
                     "expression": expression, "via": [], "evidence": where})
             elif not output.leaves and output.misses and not output.misses[0].reason.startswith("table_"):
                 self.unresolve(to, output.misses[0].reason, expression, where, output.misses[0])
             for leaf in output.leaves:
-                if budget[0] <= 0 or len(self.edges) >= MAX_EDGES:
-                    self.truncated = True
-                    break
                 if written.status_cap[1]:
                     leaf = cap(leaf, *written.status_cap)
                 if rule is not None:
                     leaf = cap(leaf, "inferred", rule)
                 edge = _edge(leaf, to, name, expression, where, rule)
-                key = (to, edge["from"], edge["kind"], where["path"], where["line"])
-                if key not in self.edges:
-                    budget[0] -= 1
-                    self.edges[key] = edge
-                self.column(leaf.table, leaf.column, leaf.display, None, None, leaf.external)
+                self.add((to, edge["from"], edge["kind"], where["path"], where["line"]), edge)
+                self.reached(leaf.table, leaf.column, leaf.display, leaf.external)
+        self.uses(places, derived, written.misses, table_id)
+
+    def uses(self, places: _Places, derived, misses: Tuple[str, ...], table_id: str) -> None:
+        """The statement's misses, joins, filters and other reads, as edges and entries on `table_id`."""
+        for reason in misses:
+            self.unresolve(table_id, reason, "*", places.at(derived.statement.start))
         for usage in derived.usages:
             leaf, where = usage.leaf, places.at(usage.start)
             edge = {"from": _col_id(leaf.table, leaf.column), "to": table_id, "kind": usage.kind,
                     "status": leaf.status, "rule": leaf.rule, "via": list(leaf.via), "evidence": where}
-            if (table_id, edge["from"], usage.kind, where["path"], where["line"]) not in self.edges:
-                if budget[0] <= 0 or len(self.edges) >= MAX_EDGES:
-                    self.truncated = True
-                    break
-                budget[0] -= 1
-                self.edges[(table_id, edge["from"], usage.kind, where["path"], where["line"])] = edge
-            self.column(leaf.table, leaf.column, leaf.display, None, None, leaf.external)
+            self.add((table_id, edge["from"], usage.kind, where["path"], where["line"]), edge)
+            self.reached(leaf.table, leaf.column, leaf.display, leaf.external)
         for missed in derived.missed:
             self.unresolve(table_id, missed.miss.reason, missed.spec, places.at(missed.start), missed.miss)
 
@@ -120,6 +146,11 @@ class _Builder:
             entry["defined"] = defined
         if not external:
             entry["external"] = False
+
+    def reached(self, table: str, name: str, display: str, external: bool) -> None:
+        """A column some edge comes from."""
+        self.column(table, name, display, None, None, external)
+        self.read.add(_col_id(table, name))
 
     def unresolve(self, to: Optional[str], reason: str, spec: str, where: dict, miss: Optional[Miss] = None) -> None:
         entry = {"to": to, "spec": spec or "", "reason": reason, "evidence": where}
@@ -140,14 +171,16 @@ class _Builder:
             seen.add(key)
             column = self.columns[key]
             listing = self.catalog.get(column["table"])
-            if listing is not None and column["column"] in listing.names:
-                continue
+            if listing is not None and column["column"] in listing.names and \
+                    (listing.known_from != "ddl" or key not in self.read):
+                continue  # the SQL that lists it has its edges; DDL says only that it exists
             for source, where in self.stars.get(column["table"], ()):
                 origin = _col_id(source, column["column"])
-                self.edges.setdefault((key, origin, "direct", where["path"], where["line"]), {
-                    "from": origin, "to": key, "kind": "direct", "status": "inferred", "rule": "star_passthrough",
-                    "expression": "*", "via": [], "evidence": where})
-                self.column(source, column["column"], column["display"], None, None, source not in self.catalog)
+                if not self.add((key, origin, "direct", where["path"], where["line"]), {
+                        "from": origin, "to": key, "kind": "direct", "status": "inferred", "rule": "star_passthrough",
+                        "expression": "*", "via": [], "evidence": where}):
+                    continue
+                self.reached(source, column["column"], column["display"], source not in self.catalog)
                 if source in self.stars:
                     pending.append(origin)
 
@@ -160,11 +193,11 @@ class _Builder:
                 entry["known_from"] = sorted(entry["known_from"] + ["documented"])
 
 
-def document(paths: List[str], texts: Dict[str, str], results, catalog, disagree: List[dict], digest: str,
-             unsettled: bool) -> dict:
+def document(paths: List[str], texts: Dict[str, str], newlines: Dict[str, List[int]], results, catalog,
+             disagree: List[dict], digest: str, unsettled: bool) -> dict:
     builder = _Builder(catalog)
     for path in paths:
-        builder.file(path, texts[path], results[path])
+        builder.file(path, texts[path], newlines[path], results[path])
     builder.passthrough()
     builder.documented()
     return {
