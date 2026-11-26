@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: orders
+    latest_version: 2
+    description: >
+      One row per order.
+      Built from staged shop orders.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "amount >= 0"
+    columns:
+      - name: order_id
+        data_type: bigint
+        description: Primary key of the order.
+        tests:
+          - not_null
+          - unique
+      - name: status
+        data_type: varchar(20)
+        description: |
+          Where the order is.
+          # Not a comment: placed, shipped or returned.
+        tests:
+          - accepted_values:
+              values: ['placed', 'shipped', 'returned']
+      - name: customer_id
+        data_type: string
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('customers')
+              field: customer_id
+      - name: discount
+        data_type: decimal
+    versions:
+      - v: 1
+      - v: 2
+
+  - name: customers
+    description: "{{ doc('customers') }}"
+    columns:
+      - name: customer_id
+        tests: [not_null]
+
+  - name: old_orders
+    description: Removed in 2025.

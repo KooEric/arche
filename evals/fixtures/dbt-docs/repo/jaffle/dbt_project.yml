@@ -1,0 +1,13 @@
+name: jaffle
+version: "1.0"
+model-paths: ["models"]
+snapshot-paths: ["snapshots"]
+
+models:
+  jaffle:
+    staging:
+      +schema: staging
+    marts:
+      +schema: marts
+      finance:
+        schema: finance
