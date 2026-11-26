@@ -211,18 +211,14 @@ def model_table(path: str, project: Project, extracted: Dict[str, dict]) -> Opti
 
 def models(projects: Dict[str, Project], extracted: Dict[str, dict]) -> List[dict]:
     """[{"file", "project", "model", **model_table}] for every model and snapshot file, by file."""
-    found: Dict[str, dict] = {}
-    paths = sorted(extracted)
-    for directory in sorted(projects):
-        project = projects[directory]
-        for path in paths:
-            if path in found:
-                continue
-            table = model_table(path, project, extracted)
-            if table:
-                found[path] = {"file": path, "project": project.name,
-                               "model": posixpath.splitext(posixpath.basename(path))[0], **table}
-    return [found[path] for path in sorted(found)]
+    found: List[dict] = []
+    for path in sorted(extracted):
+        project = project_of(path, projects)  # the nearest project owns the file
+        table = model_table(path, project, extracted) if project else None
+        if table:
+            found.append({"file": path, "project": project.name,
+                          "model": posixpath.splitext(posixpath.basename(path))[0], **table})
+    return found
 
 
 def _part(value: Optional[str], default: str) -> str:

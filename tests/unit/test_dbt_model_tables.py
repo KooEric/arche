@@ -116,3 +116,16 @@ def test_two_definitions_at_one_step_are_ambiguous_and_unknown_sources_are_none(
     assert _source(["twice", "t"]) == ("ambiguous", "twice.t", ["dbt/models/dupe.yml", "dbt/models/dupe2.yml"])
     assert _source(["nope", "t"]) is None
     assert _source(["raw", "events"], "elsewhere/q.sql") is None
+
+
+def test_the_nearest_project_owns_a_model_file_when_projects_nest():
+    projects, extracted = _projects({
+        "dbt_project.yml": "name: outer\nmodel-paths: [models]\nmodels:\n  outer:\n    +schema: o\n",
+        "models/a.sql": "select 1\n",
+        "models/inner/dbt_project.yml": "name: inner\nmodel-paths: [models]\nmodels:\n  inner:\n    +schema: i\n",
+        "models/inner/models/b.sql": "select 1\n",
+    })
+
+    owned = {item["file"]: (item["project"], item["table"]) for item in dbt.models(projects, extracted)}
+
+    assert owned == {"models/a.sql": ("outer", "{}_o.a"), "models/inner/models/b.sql": ("inner", "{}_i.b")}
