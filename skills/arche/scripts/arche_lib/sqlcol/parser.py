@@ -11,6 +11,7 @@ from .tokens import DBT, NUMBER, QUOTED, STRING, WORD
 
 __all__ = ["ParseError", "Parser"]
 
+# Words after a table or a query in FROM that are never its alias (sql_tables._KEYWORDS and more).
 _NOT_ALIAS = _words("""
     ANTI AS CLUSTER CROSS DELETE DIRECTORY DISTRIBUTE EXCEPT FETCH FOR FROM FULL GROUP HAVING INNER INSERT
     INTERSECT INTO JOIN LATERAL LEFT LIMIT LOCAL MERGE NATURAL OFFSET ON ORDER OUTER PARTITION PIVOT QUALIFY
@@ -145,8 +146,11 @@ class Parser(ExpressionParser):
                 self.advance()
                 self.skip_parens()
         self.accept("ALL")
-        if self.word() == "TOP":
-            self.i += 2
+        if self.accept("TOP"):  # TOP 10 or TOP (10)
+            if self.is_op("("):
+                self.skip_parens()
+            else:
+                self.advance()
         if self.word() == "AS" and self.word(1) in ("STRUCT", "VALUE"):
             self.i += 2
         items = self.items()
@@ -174,7 +178,7 @@ class Parser(ExpressionParser):
                 self.accept("ALL", "DISTINCT")
                 if self.word() == "GROUPING" and self.word(1) == "SETS":
                     self.i += 2  # the sets are read as one parenthesised expression
-                if self.word() in ("", ) or self.word() not in _HARD_STOP | {"WINDOW"}:
+                if self.word() not in _HARD_STOP | {"WINDOW"}:
                     if not (self.peek() is None or self.is_op(")")):
                         groups.extend(self.expr_list(frozenset(), 0))
                 if self.word() == "WITH" and self.word(1) in ("ROLLUP", "CUBE"):
@@ -414,6 +418,8 @@ class Parser(ExpressionParser):
 
     def table_name(self) -> TableName:
         token = self.peek()
+        if token is None:
+            raise ParseError("expected table", self.place())
         start = token.start
         if token.kind == DBT:
             self.advance()

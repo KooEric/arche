@@ -57,7 +57,9 @@ _CALL_NOISE = _words("DISTINCT ALL BOTH LEADING TRAILING FROM FOR SEPARATOR IGNO
                      "FIRST LAST LIMIT USING FORMAT")
 _OVER_NOISE = _words("PARTITION BY ORDER ROWS RANGE GROUPS BETWEEN UNBOUNDED PRECEDING FOLLOWING CURRENT ROW "
                      "AND ASC DESC NULLS FIRST LAST EXCLUDE TIES OTHERS NO")
-# Words after a table or a query in FROM that are never its alias (sql_tables._KEYWORDS and more).
+# Constructors (ARRAY[a, b], STRUCT<x INT>(b), MAP(k, v)): never a column when one of these follows.
+_CONSTRUCTORS = _words("ARRAY STRUCT MAP")
+
 
 class _Collector:
     """What one expression has read so far."""
@@ -68,6 +70,15 @@ class _Collector:
         self.dynamic = False
         self.calls = False
         self.operands = 0
+
+
+class _Lambdas:
+    """Lambda parameters met in one run of operands, and the last operand read: (first token, end, first ref)."""
+
+    def __init__(self) -> None:
+        self.params: set = set()
+        self.drop_from: Optional[int] = None
+        self.last: Optional[Tuple[int, int, int]] = None
 
 
 class ExpressionParser:
@@ -95,6 +106,8 @@ class ExpressionParser:
         return token.start if token is not None else (self.tokens[-1].end if self.tokens else 0)
 
     def advance(self) -> Token:
+        if self.i >= len(self.tokens):
+            raise ParseError("unexpected end", self.place())
         token = self.tokens[self.i]
         self.i += 1
         return token
@@ -166,14 +179,20 @@ class ExpressionParser:
                     collector.calls)
 
     def expr_into(self, collector: _Collector, stop: FrozenSet[str], context: int) -> None:
-        expect, first_ref, params = True, len(collector.refs), set()
+        expect, first_ref, lambdas = True, len(collector.refs), _Lambdas()
         while self.i < len(self.tokens):
-            token, before = self.peek(), self.i
+            token, before, mark = self.peek(), self.i, len(collector.refs)
             upper = token.text.upper() if token.kind == WORD else ""
             if token.kind == OP:
                 if token.text in (",", ")", "]", ";") or (token.text == "(" and not expect):
                     break
-                expect = self.operator(token.text, collector, context, expect, first_ref, params)
+                if token.text == "->":
+                    self.arrow(collector, lambdas)
+                    expect = True
+                    continue
+                expect = self.operator(token.text, collector, context, expect, first_ref)
+                if token.text == "(":
+                    lambdas.last = (before, self.i, mark)
                 continue
             if upper in _HARD_STOP or upper in stop:
                 break
@@ -192,11 +211,38 @@ class ExpressionParser:
             expect = False
             if self.i == before:
                 self.i += 1
-        if params:
-            collector.refs[first_ref:] = [ref for ref in collector.refs[first_ref:] if ref.parts[0] not in params]
+            lambdas.last = (before, self.i, mark)
+        if lambdas.params:
+            start = lambdas.drop_from
+            collector.refs[start:] = [ref for ref in collector.refs[start:] if ref.parts[0] not in lambdas.params]
 
-    def operator(self, text: str, collector: _Collector, context: int, expect: bool, first_ref: int,
-                 params: set) -> bool:
+    def arrow(self, collector: _Collector, lambdas: _Lambdas) -> None:
+        """`->`: a JSON operator before a string or a number, else a lambda when bare names come right before it.
+        Only that operand is looked at, so a run of arrows stays linear."""
+        at = self.i
+        self.advance()
+        following = self.peek()
+        if lambdas.last is None or (following is not None and following.kind in (STRING, NUMBER)):
+            return
+        start, end, mark = lambdas.last
+        params = collector.refs[mark:]
+        if end != at or not self.lambda_params(start, end, params):
+            return
+        lambdas.params.update(ref.parts[0] for ref in params)
+        if lambdas.drop_from is None:
+            lambdas.drop_from = mark
+
+    def lambda_params(self, start: int, end: int, params: List[Ref]) -> bool:
+        """Whether tokens [start, end) are one one-part name or a parenthesised group of them."""
+        if not params or any(len(ref.parts) != 1 for ref in params):
+            return False
+        if end - start == 1:
+            return len(params) == 1 and self.tokens[start].kind in (WORD, QUOTED)
+        first, last = self.tokens[start], self.tokens[end - 1]
+        return (first.kind == OP and first.text == "(" and last.kind == OP and last.text == ")"
+                and end - start == 2 * len(params) + 1)
+
+    def operator(self, text: str, collector: _Collector, context: int, expect: bool, first_ref: int) -> bool:
         """Read one operator token; returns whether an operand is expected next."""
         self.advance()
         if text == "(":
@@ -223,11 +269,7 @@ class ExpressionParser:
             return False
         if text == "*":
             return not expect  # COUNT(*) has no operand after it; a * b does
-        if text == "->":
-            for ref in collector.refs[first_ref:]:
-                if len(ref.parts) == 1:
-                    params.add(ref.parts[0])
-        elif text == "=>":
+        if text == "=>":
             if len(collector.refs) > first_ref and collector.refs[-1].start == self.tokens[self.i - 2].start:
                 collector.refs.pop()  # a named argument, not a column
         elif text == ".":
@@ -256,15 +298,35 @@ class ExpressionParser:
         elif upper in _TYPED_LITERALS and self.peek(1) is not None and self.peek(1).kind == STRING:
             self.i += 2
         elif upper == "INTERVAL":
-            self.advance()
-            if self.peek() is not None and self.peek().kind in (STRING, NUMBER):
-                self.advance()
-            elif not self.is_op("("):
-                self.operand(collector, context)
-            while self.word() in _DATE_PARTS or self.word() == "TO":
-                self.advance()
+            self.interval(collector, context)
+        elif upper in _CONSTRUCTORS and (self.is_op("[", 1) or self.is_op("(", 1) or self.is_op("<", 1)):
+            self.constructor(collector, context)
         else:
             self.name_or_call(collector, context)
+
+    def interval(self, collector: _Collector, context: int) -> None:
+        self.advance()
+        if self.peek() is None:
+            raise ParseError("unexpected end", self.place())
+        if self.peek().kind in (STRING, NUMBER):
+            self.advance()
+        elif not self.is_op("("):
+            self.enter()
+            self.operand(collector, context)
+            self.leave()
+        while self.word() in _DATE_PARTS or self.word() == "TO":
+            self.advance()
+
+    def constructor(self, collector: _Collector, context: int) -> None:
+        """ARRAY[…], ARRAY<T>[…], STRUCT<…>(…), MAP(…): the elements are read, the word is not a column."""
+        if self.is_op("(", 1):
+            self.name_or_call(collector, context)
+            return
+        self.advance()
+        if self.is_op("<"):
+            self.skip_angles()
+        if self.is_op("("):
+            self.paren(collector, context)
 
     def dotted(self) -> Tuple[List[Token], bool]:
         """Name parts joined by `.`; True when it ends in `.*`."""
@@ -415,15 +477,19 @@ class ExpressionParser:
             if self.is_op("("):
                 self.skip_parens()
             if self.is_op("<"):
-                level = 0
-                while self.peek() is not None:
-                    token = self.advance()
-                    level += {"<": 1, ">": -1}.get(token.text, 0) if token.kind == OP else 0
-                    if level == 0:
-                        break
+                self.skip_angles()
             while self.is_op("[") and self.is_op("]", 1):
                 self.i += 2
             if self.word() not in ("PRECISION", "VARYING", "WITH", "WITHOUT", "ZONE", "TIME", "LOCAL"):
+                break
+
+    def skip_angles(self) -> None:
+        """Skip a balanced `< … >` type argument group at the current token."""
+        level = 0
+        while self.peek() is not None:
+            token = self.advance()
+            level += {"<": 1, ">": -1}.get(token.text, 0) if token.kind == OP else 0
+            if level == 0:
                 break
 
     def query(self) -> Query:

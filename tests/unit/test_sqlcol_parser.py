@@ -516,3 +516,54 @@ def test_values_statement_is_a_query():
 
 def test_select_body_is_a_select_node():
     assert isinstance(_select("SELECT 1"), Select)
+
+
+# -- fix round 1 -------------------------------------------------------------------------
+def _ddl_names(text):
+    return [name for name, _ in _one(text).columns]
+
+
+def test_a_check_with_greater_than_keeps_the_next_column():
+    assert _ddl_names("CREATE TABLE t (a INT CHECK (a > 0), b INT)") == ["a", "b"]
+
+
+def test_a_check_with_less_than_keeps_the_next_column():
+    assert _ddl_names("CREATE TABLE t (a INT CHECK (a < 0), b INT)") == ["a", "b"]
+
+
+def test_struct_array_and_map_column_types_keep_the_right_names():
+    text = "CREATE TABLE t (s STRUCT<a INT, b STRING>, xs ARRAY<STRUCT<c INT, d ARRAY<INT>>>, m MAP<STRING, INT>, z INT)"
+
+    assert _ddl_names(text) == ["s", "xs", "m", "z"]
+
+
+def test_top_with_parentheses_is_skipped():
+    statement = _one("SELECT TOP (10) a FROM t")
+
+    assert [item.name for item in statement.query.body.items] == ["a"]
+    assert statement.tail is False
+
+
+def test_top_with_a_number_is_skipped():
+    assert _items("SELECT TOP 10 a, b FROM t") == ["a", "b"]
+
+
+_PREFIX_SOURCES = [
+    "INSERT INTO db.t PARTITION (dt = '1', h) (a, b) SELECT a, b + INTERVAL 1 DAY FROM s",
+    "CREATE TABLE db.t AS SELECT a, CAST(b AS INT) AS b FROM s",
+    "CREATE TABLE t (a INT CHECK (a > 0), s STRUCT<x INT, y STRING>, b INT) PARTITIONED BY (dt STRING)",
+    "MERGE INTO t AS x USING (SELECT * FROM s) AS y ON x.id = y.id WHEN MATCHED AND y.d = 1 THEN DELETE "
+    "WHEN MATCHED THEN UPDATE SET x.a = y.a, b = y.b WHEN NOT MATCHED BY TARGET THEN INSERT (id, a) VALUES (y.id, y.a)",
+    "WITH c (k) AS (SELECT a FROM t) SELECT k, ARRAY[k], TRANSFORM(k, e -> e + 1) FROM c ORDER BY k LIMIT 3",
+    "FROM s INSERT OVERWRITE TABLE a SELECT x WHERE y > 0 INSERT INTO TABLE b SELECT TOP (1) z GROUP BY z",
+]
+
+
+@pytest.mark.parametrize("text", _PREFIX_SOURCES)
+def test_every_prefix_of_a_statement_parses_or_is_a_parse_error(text):
+    toks = list(tokens(text))
+    for end in range(len(toks) + 1):
+        try:
+            parse(toks[:end])
+        except ParseError:
+            pass

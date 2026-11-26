@@ -92,21 +92,30 @@ def _ddl_columns(parser: Parser) -> List[Tuple[str, str]]:
         token = parser.peek()
         if token.kind in (WORD, QUOTED) and not (token.kind == WORD and token.text.upper() in _DDL_SKIP):
             names.append((token.text.lower(), token.text))
-        level = 0
-        while parser.peek() is not None:  # to the next top-level comma or the closing parenthesis
-            token = parser.peek()
-            if token.kind == OP and token.text in "(<":
-                level += 1
-            elif token.kind == OP and token.text in ")>":
-                if level == 0 and token.text == ")":
-                    break
-                level -= 1
-            elif token.kind == OP and token.text == "," and level == 0:
-                parser.advance()
-                break
             parser.advance()
+            if parser.peek() is not None and parser.peek().kind == WORD and parser.is_op("<", 1):
+                parser.advance()
+                parser.skip_angles()  # ARRAY<STRING>, STRUCT<a INT, b STRING>, MAP<STRING, INT>
+        _to_next_column(parser)
     parser.expect_op(")")
     return names
+
+
+def _to_next_column(parser: Parser) -> None:
+    """Past the next top-level comma, or up to the closing parenthesis; only `(`/`)` nest here."""
+    level = 0
+    while parser.peek() is not None:
+        token = parser.peek()
+        if token.kind == OP and token.text == "(":
+            level += 1
+        elif token.kind == OP and token.text == ")":
+            if level == 0:
+                return
+            level -= 1
+        elif token.kind == OP and token.text == "," and level == 0:
+            parser.advance()
+            return
+        parser.advance()
 
 
 def _create(parser: Parser) -> List[Statement]:

@@ -268,3 +268,55 @@ def test_deeply_nested_case_is_too_deep_not_a_recursion_error():
 def test_an_unclosed_parenthesis_is_a_parse_error():
     with pytest.raises(ParseError):
         _expr("(a + b")
+
+
+# -- fix round 1 -------------------------------------------------------------------------
+def test_chained_arrows_are_read_in_linear_time():
+    import time
+
+    text = "TRANSFORM(x, " + " -> ".join("a%d" % i for i in range(20000)) + ")"
+    began = time.perf_counter()
+    _expr(text)
+
+    assert time.perf_counter() - began < 2.0
+
+
+def test_a_json_arrow_keeps_the_columns_around_it():
+    assert _refs("amt + payload->'k'") == [("amt", 0), ("payload", 0)]
+
+
+def test_a_json_arrow_with_a_number_keeps_its_column():
+    assert _refs("x->0") == [("x", 0)]
+
+
+def test_a_json_arrow_on_a_lone_column_keeps_it():
+    (statement,) = parse(list(tokens("SELECT x->'a' AS j, d FROM t")))
+
+    assert [[r.parts for r in item.expr.refs] for item in statement.query.body.items] == [[("x",)], [("d",)]]
+
+
+def test_a_lambda_still_drops_its_parameter():
+    assert _refs("transform(arr, x -> x + 1)") == [("arr", 0)]
+
+
+def test_a_qualified_name_before_an_arrow_is_not_a_lambda_parameter():
+    assert _refs("t.payload -> k") == [("t.payload", 0), ("k", 0)]
+
+
+def test_deeply_chained_interval_is_too_deep_not_a_recursion_error():
+    with pytest.raises(ParseError) as error:
+        _expr("INTERVAL " * 3000 + "1")
+
+    assert error.value.reason == "too_deep"
+
+
+def test_an_array_constructor_is_not_a_column():
+    assert _refs("ARRAY[a, b]") == [("a", 0), ("b", 0)]
+
+
+def test_a_typed_array_and_struct_constructor_are_not_columns():
+    assert _refs("ARRAY<INT64>[a] || STRUCT<x INT64>(b)") == [("a", 0), ("b", 0)]
+
+
+def test_a_column_named_like_a_constructor_is_still_a_column():
+    assert _refs("map + 1") == [("map", 0)]
