@@ -285,3 +285,20 @@ def test_hostile_columns_json_entries_are_skipped_without_a_crash(make_repo, git
     assert result.returncode == 0, result.stderr
     impact = json.loads((out / "changes.json").read_text())["column_impact"]
     assert [a["column"] for a in impact["affected"]] == ["col:m.v.total"]
+
+
+_BROKEN_JSON = (b"[" * 200_000, b'{"columns": "\xff\xfe"}')  # nested past the parser's limit; not UTF-8
+
+
+def test_a_malformed_columns_json_is_an_integrity_error_not_a_traceback(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    head = _edit_load(repo, git_cmd, "r.c", "r.c AS d")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    for broken in _BROKEN_JSON:
+        (out / "columns.json").write_bytes(broken)
+        result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+        assert result.returncode == 3, result.stderr
+        assert "Traceback" not in result.stderr and "columns.json" in result.stderr

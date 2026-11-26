@@ -107,11 +107,17 @@ class _Builder:
             expression = _spec(text, output.start, output.end)
             if output.constant:
                 fixed = written.status_cap if written.status_cap[1] else ("verified", "literal")
+                if rule is not None and fixed[0] == "verified":  # matched by place or by alias only
+                    fixed = ("inferred", rule)
                 self.add((to, "", "constant", where["path"], where["line"]), {
                     "from": None, "to": to, "kind": "constant", "status": fixed[0], "rule": fixed[1],
                     "expression": expression, "via": [], "evidence": where})
             elif not output.leaves and output.misses and not output.misses[0].reason.startswith("table_"):
                 self.unresolve(to, output.misses[0].reason, expression, where, output.misses[0])
+            if output.leaves:  # a column only partly followed: each reference that reached nothing
+                for miss in output.misses:
+                    if not miss.reason.startswith("table_"):
+                        self.unresolve(to, miss.reason, expression, where, miss)
             for leaf in output.leaves:
                 if written.status_cap[1]:
                     leaf = cap(leaf, *written.status_cap)

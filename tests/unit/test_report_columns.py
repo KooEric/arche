@@ -85,6 +85,17 @@ def test_condition_sources_and_constants_are_labelled_and_status_is_the_lowest()
     assert '<span class="status" data-state="inferred">inferred</span>' in total
 
 
+def test_a_column_with_a_verified_source_and_an_unresolved_reference_shows_the_lower_status():
+    columns = [_column("raw.o", "a", ()), _column("m.t", "v")]
+    doc = _doc(columns, [_edge("col:raw.o.a", "col:m.t.v", "transform", expression="o.a + b")],
+               unresolved=[{"to": "col:m.t.v", "spec": "o.a + b", "reason": "ambiguous", "evidence": WHERE}])
+
+    row = _row(ColumnLineage(doc).panel("m.t"), "v").split("</details>")[1]
+
+    assert '<span class="status" data-state="unresolved">unresolved</span>' in row
+    assert 'data-state="verified"' not in row and "not followed: <code>ambiguous</code>" in row
+
+
 def test_removing_a_column_walks_value_edges_and_stops_at_uses():
     lineage = ColumnLineage(_chain())
     removed = _row(lineage.panel("stage.orders"), "amount")

@@ -187,7 +187,17 @@ def _star_tables(stars) -> Tuple[str, ...]:
 
 def _written(path: str, item: Parsed, derived: Derived, lookup: Lookup,
              model: Optional[Tuple[str, bool]]) -> Optional[Written]:
-    """The statement's outputs as columns of the table it writes; None for DDL."""
+    """The statement's outputs as columns of the table it writes; None for DDL. Set operation branches
+    whose widths differ leave the statement partial."""
+    written = _write(path, item, derived, lookup, model)
+    if written is not None and written.table and "arity" not in written.misses and \
+            any(missed.miss.reason == "arity" for missed in derived.missed):
+        written = written._replace(misses=written.misses + ("arity",))
+    return written
+
+
+def _write(path: str, item: Parsed, derived: Derived, lookup: Lookup,
+           model: Optional[Tuple[str, bool]]) -> Optional[Written]:
     statement = item.statement
     outputs = list(derived.outputs)
     stars = _star_tables(derived.stars)

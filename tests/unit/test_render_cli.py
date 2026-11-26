@@ -161,6 +161,16 @@ def test_render_refuses_columns_json_of_another_snapshot(make_repo, run_script, 
         assert done.returncode == 3 and "columns.json" in done.stderr
 
 
+def test_render_refuses_columns_json_that_is_too_deep_or_not_utf8(make_repo, run_script, tmp_path):
+    out = _scan_and_import(make_repo, run_script, tmp_path, SQL_FILES)
+
+    for broken in (b"[" * 200_000, b'{"columns": "\xff\xfe"}'):
+        (out / "columns.json").write_bytes(broken)
+        done = run_script("render.py", "--out", out)
+        assert done.returncode == 3, done.stderr
+        assert "Traceback" not in done.stderr and "columns.json" in done.stderr
+
+
 def test_report_without_columns_json_has_no_column_lineage(make_repo, run_script, tmp_path):
     out = _scan_and_import(make_repo, run_script, tmp_path, SQL_FILES)
     assert run_script("render.py", "--out", out).returncode == 0

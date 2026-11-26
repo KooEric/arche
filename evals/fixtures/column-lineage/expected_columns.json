@@ -90,6 +90,7 @@
     [null, "dynamic", "INSERT INTO ledger.daily_{{ ds_nodash }}"],
     ["col:mart.star_slots.slot_rest", "unknown_star", "s.*"],
     ["col:mart.star_slots.slot_tail", "unknown_star", "s.*"],
+    ["col:mart.star_union.kind", "unknown_star", "s.kind"],
     ["col:{}.stg_pay.currency", "dynamic", "{{ var('currency') }} as currency"],
     ["table:mart.star_slots", "unknown_star", "*"],
     ["table:mart.star_slots", "unknown_star", "s.*"],

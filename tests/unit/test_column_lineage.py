@@ -286,6 +286,34 @@ def test_union_after_an_unknown_star_in_the_first_branch_takes_no_later_branch()
     assert [e[0] for e in _edges(columns, to="col:mart.u.z")] == ["col:raw.unk.z"]
 
 
+def test_a_constant_matched_by_position_is_only_inferred():
+    columns = _columns({"q/ddl.sql": "CREATE TABLE m.t (id INT, total INT);\n",
+                        "q/a.sql": "INSERT INTO m.t SELECT r.id, 0 FROM raw.x r;\n"})
+
+    assert _edges(columns, to="col:m.t.total") == [(None, "col:m.t.total", "constant", "inferred", "positional")]
+
+
+def test_a_constant_matched_by_select_alias_is_only_inferred():
+    columns = _columns({"q/a.sql": "INSERT INTO m.u SELECT 1 AS flag;\n"})
+
+    assert _edges(columns, to="col:m.u.flag") == [(None, "col:m.u.flag", "constant", "inferred", "select_alias")]
+
+
+def test_a_union_of_different_widths_written_to_a_table_is_partial_arity():
+    columns = _columns({"q/a.sql": "CREATE TABLE m.t AS SELECT a FROM raw.t UNION ALL SELECT a, b FROM raw.u;\n"})
+
+    assert _states(columns) == [("partial", "arity")]
+    assert ("table:m.t", "arity") in [(u["to"], u["reason"]) for u in columns["unresolved"]]
+
+
+def test_a_column_partly_unresolved_records_its_miss_on_the_column():
+    columns = _columns({"q/a.sql": "CREATE TABLE m.t AS SELECT o.a + b AS v FROM raw.o o JOIN raw.p p "
+                                   "ON o.id = p.id;\n"})
+
+    assert [e[0] for e in _edges(columns, to="col:m.t.v")] == ["col:raw.o.a"]
+    assert _column_misses(columns) == [("col:m.t.v", "ambiguous")]
+
+
 def test_an_insert_into_an_unlisted_table_matches_by_select_alias():
     columns = _columns({"q/load.sql": "INSERT INTO m.t SELECT r.id FROM raw.x r;\n"})
 
