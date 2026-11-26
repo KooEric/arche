@@ -63,6 +63,27 @@ def read_profile(out, graph):
     return profile
 
 
+COLUMN_SECTIONS = ("columns", "edges", "unresolved", "statements")
+
+
+def read_columns(out, graph):
+    """columns.json of this snapshot, or None when imports.py found no SQL to read."""
+    path = out / "columns.json"
+    if not path.exists():
+        return None
+    columns = read_json(path)
+    if not isinstance(columns, dict):
+        raise IntegrityError("columns.json is not a JSON object; run imports.py again")
+    if columns.get("columns_version") != 1:
+        raise IntegrityError("columns.json has an unsupported columns_version; run imports.py again")
+    if columns.get("inventory_sha256") != graph["inventory_sha256"]:
+        raise IntegrityError("columns.json describes a different snapshot; run imports.py again")
+    missing = [key for key in COLUMN_SECTIONS if not isinstance(columns.get(key), list)]
+    if missing:
+        raise IntegrityError(f"columns.json lacks {', '.join(missing)}; run imports.py again")
+    return columns
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory holding inventory.json and graph.json")
@@ -129,7 +150,7 @@ def main(argv):
             base_findings = base_audit["findings"]
             finding_delta = delta(base_findings, findings)
         profile = read_profile(out, graph)
-        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang, profile=profile,
+        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang, profile=profile, columns=read_columns(out, graph),
                         **({"lazy_file_limit": float("inf")} if args.full_details else {}))
         atlas_path = out / "atlas.json"
         atlas = read_json(atlas_path) if atlas_path.exists() else None

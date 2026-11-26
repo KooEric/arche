@@ -106,7 +106,7 @@ def _summary(table: str, found: List[tuple], model: Optional[dict], T: Translate
 
 
 def _table_block(table: str, found: List[tuple], writers: Dict[str, List[str]], readers: Dict[str, List[str]],
-                 link: Link, T: Translate, model: Optional[dict] = None) -> str:
+                 link: Link, T: Translate, model: Optional[dict] = None, extra: Optional[Callable[[str], str]] = None) -> str:
     lineage = (f'<p>{T("Written by")}: {", ".join(link(node) for node in writers.get(table, [])) or T("none scanned")}</p>'
                f'<p>{T("Read by")}: {", ".join(link(node) for node in readers.get(table, [])) or T("none scanned")}</p>')
     flags = partial(_flags, T=T)
@@ -119,7 +119,8 @@ def _table_block(table: str, found: List[tuple], writers: Dict[str, List[str]], 
                       for m, item in found)
     if model and not found:
         sources = report_docs.columns(model, None, _metric_cells, flags, T)
-    return f'<details class="group table-data"><summary>{_summary(table, found, model, T)}</summary>{lineage}{sources}</details>'
+    more = extra(table) if extra else ""
+    return f'<details class="group table-data"><summary>{_summary(table, found, model, T)}</summary>{lineage}{sources}{more}</details>'
 
 
 def _model_tables(graph: dict) -> Dict[str, dict]:
@@ -136,14 +137,21 @@ def has_tables(graph: dict, profile: Optional[dict]) -> bool:
     return bool(profile) or bool(_model_tables(graph))
 
 
-def table_data(graph: dict, profile: Optional[dict], link: Link, T: Translate) -> str:
-    """The table blocks of the Tables section: profiled data, dbt model docs, or both."""
+def shown_tables(graph: dict, profile: Optional[dict]) -> set:
+    """The tables that table_data draws a block for."""
+    models = set(_model_tables(graph))
+    return models | {match["table"] for match in profile["matches"]} if profile else models
+
+
+def table_data(graph: dict, profile: Optional[dict], link: Link, T: Translate,
+               extra: Optional[Callable[[str], str]] = None) -> str:
+    """The table blocks of the Tables section: profiled data, dbt model docs, or both. `extra(table)` adds to a block."""
     models = _model_tables(graph)
     if not profile:
-        blocks = "".join(_table_block(table, [], *_lineage(graph), link, T, models[table]) for table in sorted(models))
+        blocks = "".join(_table_block(table, [], *_lineage(graph), link, T, models[table], extra) for table in sorted(models))
         return (f'<h3>{T("dbt model tables")} <span class="count">{len(models)}</span></h3>'
                 f'<p>{T(report_docs.DBT_CAVEAT)}</p>{blocks}')
-    return _profiled(graph, profile, models, link, T)
+    return _profiled(graph, profile, models, link, T, extra)
 
 
 def _lineage(graph: dict) -> tuple:
@@ -161,7 +169,8 @@ def _lineage(graph: dict) -> tuple:
     return writers, readers
 
 
-def _profiled(graph: dict, profile: dict, models: Dict[str, dict], link: Link, T: Translate) -> str:
+def _profiled(graph: dict, profile: dict, models: Dict[str, dict], link: Link, T: Translate,
+              extra: Optional[Callable[[str], str]] = None) -> str:
     datasets = {item["id"]: item for item in profile["datasets"]}
     writers, readers = _lineage(graph)
     by_table: Dict[str, List[tuple]] = defaultdict(list)
@@ -171,7 +180,7 @@ def _profiled(graph: dict, profile: dict, models: Dict[str, dict], link: Link, T
     lead = (f'<p>{T("Datasets")} {len(datasets)} · {T("profiled")} {profiled} · {T("matched tables")} {len(by_table)} · '
             f'{T("tables without data")} {len(profile["tables_without_data"])} · '
             f'{T("datasets the code does not name")} {len(profile["orphan_datasets"]) + len(profile["unresolved"])}</p>')
-    blocks = "".join(_table_block(table, by_table.get(table, []), writers, readers, link, T, models.get(table))
+    blocks = "".join(_table_block(table, by_table.get(table, []), writers, readers, link, T, models.get(table), extra)
                      for table in sorted(set(by_table) | set(models)))
     missing = "".join(f"<li>{_code(table)}</li>" for table in profile["tables_without_data"])
     loose = [f"<li>{_code(item)}</li>" for item in profile["orphan_datasets"]]
