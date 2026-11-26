@@ -13,13 +13,14 @@ from pathlib import Path
 
 from arche_lib import cli
 from arche_lib.errors import IntegrityError, UsageError
-from arche_lib.graph import build_graph
+from arche_lib.graph import build_graph_and_columns
 from arche_lib.jsonio import read_snapshot, write_json
 from arche_lib.runlog import record_step
 from arche_lib.sources import make_reader
 
 INVENTORY_FILE = "inventory.json"
 GRAPH_FILE = "graph.json"
+COLUMNS_FILE = "columns.json"
 
 
 def _parser():
@@ -54,12 +55,24 @@ def main(argv):
             raise UsageError(f"--jpath must be a directory inside the repository, relative to its root: {directory}")
     inventory = read_snapshot(out_dir / INVENTORY_FILE)
     try:
-        graph = build_graph(inventory, make_reader(inventory), {"jpath": args.jpath})
+        graph, columns = build_graph_and_columns(inventory, make_reader(inventory), {"jpath": args.jpath})
     except (KeyError, TypeError) as exc:
         raise IntegrityError(f"{INVENTORY_FILE} is malformed: {exc!r}") from None
     write_json(out_dir / GRAPH_FILE, graph)
+    if columns is not None:
+        write_json(out_dir / COLUMNS_FILE, columns)
+    elif (out_dir / COLUMNS_FILE).exists():
+        (out_dir / COLUMNS_FILE).unlink()  # a columns.json from an earlier scan would not match this graph
     record_step(out_dir, "imports", started)
-    return _summary(graph, out_dir)
+    summary = _summary(graph, out_dir)
+    if columns is not None:
+        summary["columns"] = {
+            "columns": len(columns["columns"]),
+            "edges": dict(sorted(Counter(edge["status"] for edge in columns["edges"]).items())),
+            "unresolved": len(columns["unresolved"]),
+            "statements": dict(sorted(Counter(s["status"] for s in columns["statements"]).items())),
+        }
+    return summary
 
 
 if __name__ == "__main__":
