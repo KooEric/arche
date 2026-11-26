@@ -186,3 +186,102 @@ def test_column_impact_is_unavailable_when_the_graph_matches_neither_commit(make
     impact = json.loads((out / "changes.json").read_text())["column_impact"]
     assert impact == {"available": False, "seeds": [], "affected": [], "used_by": [], "affected_files": [],
                       "affected_tables": [], "truncated": False}
+
+
+def _edit_load(repo, git_cmd, old, new):
+    (repo / "q" / "load.sql").write_text(_LOAD.replace(old, new))
+    return _commit_all(repo, git_cmd, "edit")
+
+
+def test_column_impact_from_two_snapshots_reports_redefined_seeds_and_affected_columns(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _snapshot(repo, base_out, run_script)
+    head = _edit_load(repo, git_cmd, "r.a AS b", "r.a + 1 AS b")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert [(s["column"], s["change"], s["seed"], s["path"]) for s in impact["seeds"]] == [
+        ("col:s.t.b", "redefined", "column_diff", "q/load.sql")]
+    assert [(a["column"], a["depth"], a["files"]) for a in impact["affected"]] == [
+        ("col:m.v.total", 1, ["q/mart.sql"])]
+    assert impact["affected_tables"] == ["m.v"]
+
+
+def test_base_with_sql_files_but_no_columns_json_marks_column_impact_unavailable(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _snapshot(repo, base_out, run_script)
+    (base_out / "columns.json").unlink()
+    head = _edit_load(repo, git_cmd, "r.c", "r.c AS d")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert impact == {"available": False, "seeds": [], "affected": [], "used_by": [], "affected_files": [],
+                      "affected_tables": [], "truncated": False, "reason": "base_without_columns"}
+
+
+def test_base_without_sql_files_treats_every_head_column_as_added(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"a.py": "x = 1\n"})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _snapshot(repo, base_out, run_script)
+    assert not (base_out / "columns.json").exists()
+    (repo / "q").mkdir()
+    (repo / "q" / "load.sql").write_text(_LOAD)
+    head = _commit_all(repo, git_cmd, "add sql")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert impact["available"] is True and "reason" not in impact
+    assert {(s["column"], s["change"]) for s in impact["seeds"]} == {("col:s.t.b", "added"), ("col:s.t.c", "added")}
+
+
+def _column_run(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo({"q/load.sql": _LOAD, "q/mart.sql": _MART})
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    head = _edit_load(repo, git_cmd, "r.a AS b", "r.a + 1 AS b")
+    out = tmp_path / "run"
+    _snapshot(repo, out, run_script)
+    return out, base, head, json.loads((out / "columns.json").read_text())
+
+
+def test_malformed_columns_json_shape_is_an_integrity_error(make_repo, git_cmd, run_script, tmp_path):
+    out, base, head, columns = _column_run(make_repo, git_cmd, run_script, tmp_path)
+    for shape in ([], {**columns, "columns": {}}, {**columns, "edges": "x"}):
+        (out / "columns.json").write_text(json.dumps(shape))
+
+        result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+        assert result.returncode != 0
+        assert "columns.json is malformed; run imports.py again" in result.stderr
+        assert "Traceback" not in result.stderr
+        assert not (out / "changes.json").exists()
+
+
+def test_hostile_columns_json_entries_are_skipped_without_a_crash(make_repo, git_cmd, run_script, tmp_path):
+    out, base, head, columns = _column_run(make_repo, git_cmd, run_script, tmp_path)
+    hostile = [{"from": "col:s.t.b", "to": "col:x.y", "status": []}, {"from": "col:s.t.b", "to": "table:z", "kind": {}},
+               {"from": ["col:s.t.b"], "to": "col:x.z"}, [1, [2]], None]
+    (out / "columns.json").write_text(json.dumps({**columns, "columns": columns["columns"] + [[], {"id": []}],
+                                                  "edges": columns["edges"] + hostile}))
+
+    result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
+
+    assert result.returncode == 0, result.stderr
+    impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert [a["column"] for a in impact["affected"]] == ["col:m.v.total"]

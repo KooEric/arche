@@ -9,7 +9,7 @@ if sys.version_info < (3, 9):
 import argparse
 from pathlib import Path
 
-from arche_lib import cli
+from arche_lib import cli, column_impact
 from arche_lib.changes import build_changes
 from arche_lib.errors import IntegrityError, UsageError
 from arche_lib.paths import is_within
@@ -33,6 +33,12 @@ def read_columns(out: Path, graph: dict):
     return columns
 
 
+def has_sql_files(graph: dict) -> bool:
+    nodes = graph.get("nodes")
+    return isinstance(nodes, list) and any(isinstance(node, dict) and node.get("type") == "file"
+                                           and node.get("lang") == "sql" for node in nodes)
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, help="run directory containing inventory.json and graph.json")
@@ -52,12 +58,18 @@ def main(argv):
         raise IntegrityError(f"malformed snapshot: {exc!r}") from None
     columns = read_columns(out, graph)
     base_graph = base_columns = None
+    base_predates_columns = False
     if args.base_out:
         base_graph = read_snapshot(args.base_out / "graph.json")
         check_graph(read_snapshot(args.base_out / "inventory.json"), base_graph)
         if columns is not None:
-            base_columns = read_columns(args.base_out, base_graph) or {"columns": [], "edges": []}
+            base_columns = read_columns(args.base_out, base_graph)
+            # A base with SQL files but no columns.json was scanned before column lineage existed.
+            base_predates_columns = base_columns is None and has_sql_files(base_graph)
+            base_columns = base_columns or {"columns": [], "edges": []}
     changes = build_changes(root, graph, args.base, args.head, base_graph, columns, base_columns)
+    if base_predates_columns:
+        changes["column_impact"] = {**column_impact.empty(available=False), "reason": "base_without_columns"}
     write_json(out / "changes.json", changes)
     return {"step": "changes", "out": str(out), "files": len(changes["files"]),
             "impact_available": changes["impact_available"]}

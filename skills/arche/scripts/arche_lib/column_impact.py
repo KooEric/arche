@@ -19,13 +19,22 @@ def empty(available: bool = False) -> dict:
             "affected_files": [], "affected_tables": [], "truncated": False}
 
 
+_TEXT_FIELDS = ("from", "kind", "status", "role", "expression")
+
+
+def _valid_edge(edge) -> bool:
+    """A dict whose `to` is a string and whose other text fields are strings or absent."""
+    return isinstance(edge, dict) and isinstance(edge.get("to"), str) \
+        and all(edge.get(field) is None or isinstance(edge.get(field), str) for field in _TEXT_FIELDS)
+
+
 def _edges(doc: Optional[dict]) -> List[dict]:
-    edges = (doc or {}).get("edges")
-    return [edge for edge in edges if isinstance(edge, dict)] if isinstance(edges, list) else []
+    edges = doc.get("edges") if isinstance(doc, dict) else None
+    return [edge for edge in edges if _valid_edge(edge)] if isinstance(edges, list) else []
 
 
 def _columns(doc: Optional[dict]) -> List[dict]:
-    columns = (doc or {}).get("columns")
+    columns = doc.get("columns") if isinstance(doc, dict) else None
     if not isinstance(columns, list):
         return []
     return [column for column in columns if isinstance(column, dict) and isinstance(column.get("id"), str)]
@@ -124,22 +133,30 @@ def _target(edge: dict) -> Optional[Tuple[str, str]]:
 
 
 def _reach(entries: Dict[str, dict], key: str, depth: int, status: int, edge: dict) -> bool:
-    """Record one edge into `key`; True when `key` is new."""
+    """Record one edge into `key`; True when `key` is new or its status improved, so it must be walked."""
     entry = entries.get(key)
     is_new = entry is None
     if is_new:
         entry = entries[key] = {"depth": depth, "status": status, "kinds": set(), "files": set()}
+    improved = status > entry["status"]
     entry["status"] = max(entry["status"], status)
     entry["kinds"].add(str(edge.get("kind") or ""))
     path = _evidence_path(edge)
     if path is not None:
         entry["files"].add(path)
-    return is_new
+    return is_new or improved
 
 
 def downstream(doc_edges: Iterable[dict], seed_ids: Iterable[str], limit: int = LIMIT) -> dict:
-    """Breadth-first walk from the seeds; each column is walked once, so cycles end and time is linear."""
-    index = _index(edge for edge in doc_edges if isinstance(edge, dict))
+    """Breadth-first walk from the seeds; a column is walked again only when its status improves, at most
+    three times, so cycles end and time is linear."""
+    found, truncated = _walk(doc_edges, seed_ids, limit)
+    return {"affected": _listing(found["affected"], "column"), "used_by": _listing(found["used_by"], "table"),
+            "truncated": truncated}
+
+
+def _walk(doc_edges: Iterable[dict], seed_ids: Iterable[str], limit: int) -> Tuple[Dict[str, Dict[str, dict]], bool]:
+    index = _index(edge for edge in doc_edges if _valid_edge(edge))
     seeds = frozenset(seed_ids)
     found: Dict[str, Dict[str, dict]] = {"affected": {}, "used_by": {}}
     queue = deque(sorted(seeds))
@@ -159,17 +176,16 @@ def downstream(doc_edges: Iterable[dict], seed_ids: Iterable[str], limit: int = 
             reached = min(here["status"], _RANK.get(edge.get("status"), 0))
             if _reach(entries, key, here["depth"] + 1, reached, edge) and group == "affected":
                 queue.append(key)
-    return {"affected": _listing(found["affected"], "column"), "used_by": _listing(found["used_by"], "table"),
-            "truncated": truncated}
+    return found, truncated
 
 
-def _listing(entries: Dict[str, dict], name: str) -> List[dict]:
+def _listing(entries: Dict[str, dict], name: str, depth: bool = False) -> List[dict]:
     result = []
     for key in sorted(entries):
         entry = entries[key]
         item = {name: key, "kinds": sorted(entry["kinds"]), "status": _NAMES[entry["status"]],
                 "files": sorted(entry["files"])}
-        if name == "column":
+        if name == "column" or depth:
             item = {name: key, "depth": entry["depth"], **{k: v for k, v in item.items() if k != name}}
         result.append(item)
     return result
@@ -204,12 +220,15 @@ def _tables(docs: Iterable[Optional[dict]]) -> Dict[str, str]:
 
 
 def _cap(affected: List[dict], used_by: List[dict], limit: int) -> Tuple[List[dict], List[dict], bool]:
-    if len(affected) + len(used_by) <= limit:
-        return affected, used_by, False
-    keep = sorted([(a["depth"], a["column"]) for a in affected])[:limit]
-    kept = {column for _, column in keep}
-    affected = [a for a in affected if a["column"] in kept]
-    return affected, used_by[:max(0, limit - len(affected))], True
+    """Keep the shallowest `limit` entries of both lists; ties put affected columns first, then sort by id.
+    The internal used_by depth is dropped here."""
+    capped = len(affected) + len(used_by) > limit
+    if capped:
+        ranked = sorted([(a["depth"], 0, a["column"]) for a in affected] + [(u["depth"], 1, u["table"]) for u in used_by])
+        kept = {(group, key) for _, group, key in ranked[:limit]}
+        affected = [a for a in affected if (0, a["column"]) in kept]
+        used_by = [u for u in used_by if (1, u["table"]) in kept]
+    return affected, [{k: v for k, v in u.items() if k != "depth"} for u in used_by], capped
 
 
 def build(head_doc: dict, changed_paths: Iterable[str], base_doc: Optional[dict] = None,
@@ -222,7 +241,10 @@ def build(head_doc: dict, changed_paths: Iterable[str], base_doc: Optional[dict]
         seeds = seeds_from_diff(base_doc, head_doc)
         walks = [(base_doc, [s["column"] for s in seeds if s["change"] == "removed"]),
                  (head_doc, [s["column"] for s in seeds if s["change"] != "removed"])]
-    results = [downstream(_edges(doc), ids, limit) for doc, ids in walks if ids]
+    walked = [_walk(_edges(doc), ids, limit) for doc, ids in walks if ids]
+    results = [{"affected": _listing(found["affected"], "column"),
+                "used_by": _listing(found["used_by"], "table", depth=True), "truncated": truncated}
+               for found, truncated in walked]
     exclude = {s["column"] for s in seeds}
     affected = _merge([r["affected"] for r in results], "column", exclude)
     used_by = _merge([r["used_by"] for r in results], "table", set())

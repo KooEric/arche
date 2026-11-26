@@ -190,3 +190,74 @@ def test_build_tolerates_malformed_entries_and_empty_shape():
     assert result == {**column_impact.empty(True)}
     assert column_impact.empty() == {"available": False, "seeds": [], "affected": [], "used_by": [],
                                      "affected_files": [], "affected_tables": [], "truncated": False}
+
+
+_HOSTILE = [None, True, 0, 1.5, "", "col:x", [], [1, [2]], {}, {"a": []}]
+
+
+def _hostile_documents():
+    good_edge = _value("col:s.a", "col:m.b", path="a.sql")
+    good_column = _column("s", "a")
+    yield from _HOSTILE
+    for value in _HOSTILE:
+        yield {"columns": value, "edges": value}
+        yield {"columns": [value], "edges": [value, good_edge]}
+        for field in ("from", "to", "kind", "status", "role", "expression", "evidence"):
+            yield {"columns": [good_column], "edges": [{**good_edge, field: value},
+                                                       _usage("col:s.a", "table:u", path="a.sql") | {field: value}]}
+        yield {"columns": [good_column], "edges": [{**good_edge, "evidence": {"path": value}}]}
+        for field in ("id", "table", "known_from", "defined"):
+            yield {"columns": [{**good_column, field: value}], "edges": [good_edge]}
+        yield {"columns": [{**good_column, "defined": {"path": value}}], "edges": [good_edge]}
+
+
+def test_build_never_raises_on_hostile_documents():
+    documents = list(_hostile_documents())
+    good = {"columns": [_column("s", "a")], "edges": [_value("col:s.a", "col:m.b", path="a.sql")]}
+
+    for doc in documents:
+        column_impact.build(doc, ["a.sql"])
+        column_impact.build(doc, ["a.sql"], good)
+        column_impact.build(good, ["a.sql"], doc)
+        column_impact.downstream(doc.get("edges") if isinstance(doc, dict) and isinstance(doc.get("edges"), list)
+                                 else [], ["col:s.a"])
+
+
+def test_unhashable_status_or_kind_skips_the_edge():
+    doc = {"columns": [], "edges": [_value("col:r.a", "col:a.x"),
+                                    {**_value("col:a.x", "col:b.x", path="b.sql"), "status": []},
+                                    {**_usage("col:a.x", "table:z", path="b.sql"), "kind": []},
+                                    _value("col:a.x", "col:c.x", path="b.sql")]}
+
+    result = column_impact.build(doc, ["a.sql"])
+
+    assert [a["column"] for a in result["affected"]] == ["col:c.x"]
+    assert result["used_by"] == []
+
+
+def test_a_better_status_found_later_reaches_downstream_columns():
+    edges = [_value("col:s.x", "col:b.x", status="inferred"), _value("col:s.x", "col:e.x"),
+             _value("col:e.x", "col:f.x"), _value("col:f.x", "col:b.x"), _value("col:b.x", "col:c.x")]
+
+    result = {a["column"]: (a["depth"], a["status"]) for a in column_impact.downstream(edges, ["col:s.x"])["affected"]}
+
+    assert result == {"col:b.x": (1, "verified"), "col:c.x": (2, "verified"), "col:e.x": (1, "verified"),
+                      "col:f.x": (2, "verified")}
+
+
+def test_cap_keeps_the_shallowest_entries_across_affected_and_used_by():
+    chain = [_value("col:s.keep" if i == 0 else f"col:t.c{i - 1}", f"col:t.c{i}", path="b.sql") for i in range(3)]
+    columns = [_column("t", f"c{i}") for i in range(3)] + [_column("s", "keep")]
+    base = {"columns": columns + [_column("s", "gone")],
+            "edges": [_value("col:r.a", "col:s.gone", expression="x"), _value("col:r.a", "col:s.keep", expression="x"),
+                      _usage("col:s.gone", "table:u", path="u.sql")] + chain}
+    head = {"columns": columns, "edges": [_value("col:r.a", "col:s.keep", expression="y")] + chain}
+
+    result = column_impact.build(head, [], base, limit=3)
+
+    assert [(s["column"], s["change"]) for s in result["seeds"]] == [
+        ("col:s.gone", "removed"), ("col:s.keep", "redefined")]
+    assert [(a["column"], a["depth"]) for a in result["affected"]] == [("col:t.c0", 1), ("col:t.c1", 2)]
+    assert [u["table"] for u in result["used_by"]] == ["table:u"]
+    assert set(result["used_by"][0]) == {"table", "kinds", "status", "files"}
+    assert result["truncated"] is True
