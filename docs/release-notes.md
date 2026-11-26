@@ -1,5 +1,16 @@
 # Arche 릴리스 노트
 
+## 1.3.0
+
+- 컬럼 lineage: SQL·HQL 파일의 SELECT를 작은 파서로 읽어, 테이블에 쓰는 컬럼마다 어느 상류 `table.column`에서 어떤 식(`direct`, `rename`, `transform`, `aggregate`, `window`, `constant`)을 거쳐 오는지 `columns.json`에 남깁니다. `imports.py`가 `graph.json` 다음에 쓰고, SQL 파일이 없으면 쓰지 않습니다. `graph.json`은 바뀌지 않습니다.
+- 읽는 문법: CTE(`RECURSIVE` 포함), 파생 테이블과 서브쿼리, 집합 연산, 모든 JOIN과 `USING`, `LATERAL VIEW`·`UNNEST`, 윈도 함수, `CASE`·`CAST`·`::`·`EXTRACT`·`INTERVAL`·람다, `* EXCEPT/EXCLUDE/REPLACE/RENAME`, `QUALIFY`, 그리고 `INSERT … SELECT`(열 목록, Hive `PARTITION`, 열 목록 없는 위치 맞추기), `CREATE … AS`, `CREATE TABLE (…)`, `MERGE`, Hive `FROM … INSERT … INSERT …`입니다. dbt의 `{{ ref() }}`·`{{ source() }}`는 1.2.0이 정한 테이블로 잇습니다. `PIVOT`, 저장 프로시저, `SELECT INTO`는 그 문장만 `unsupported`로 남기고 다음 문장을 읽습니다.
+- 상태: 한정자나 레포 SQL의 컬럼 목록으로 소스 하나가 정해지면 `verified`, 한정자 없이 소스가 하나뿐이거나 목록이 dbt 문서에서 왔거나 `SELECT *`를 펼쳤거나 위치로 맞췄으면 `inferred`입니다. 열 목록이 있는 `INSERT`는 그 테이블의 열 목록을 열린 목록(다른 컬럼이 있을 수 있음)으로 보고 DDL보다 낮게 칩니다. 임시 테이블의 필터, JOIN 키, 따라가지 못한 참조는 그 임시 테이블을 읽는 문장이 쓰는 테이블로 넘깁니다. 따라가지 못한 참조는 `ambiguous`, `unknown_star`, `dynamic`, `table_dynamic` 같은 사유와 함께 `unresolved`에 남깁니다. 컬럼을 모르는 테이블의 `SELECT *`는 펼치지 않고, 하류가 실제로 읽는 컬럼만 같은 이름으로 잇습니다(`star_passthrough`).
+- 사용처: WHERE·HAVING·QUALIFY(`filter`), JOIN 키(`join_key`), GROUP BY(`group_key`), ORDER BY와 윈도 키(`order_key`)에 쓰인 컬럼도 그 문장이 쓰는 테이블로 가는 edge로 남깁니다. CASE 조건에 쓰인 컬럼은 `role: condition`입니다.
+- 변경 영향: `changes.py`가 `columns.json`이 있으면 `changes.json`에 `column_impact`를 더합니다. `--base-out`으로 두 스냅샷을 주면 사라진 컬럼, 새 컬럼, 정의가 바뀐 컬럼에서 하류 컬럼·파일·테이블을 따라가고, 스냅샷이 하나면 바뀐 SQL 파일이 쓰는 컬럼 전부에서 시작합니다(거친 추정). 기준 스냅샷에 SQL 파일은 있는데 `columns.json`이 없으면 `column_impact`를 `available: false`, `reason: base_without_columns`로 표시합니다.
+- 리포트의 **테이블** 구역: 테이블마다 컬럼 lineage 패널(출처, 식 종류, 식, 상태, 근거)과 "이 컬럼을 지우면" 하류 목록, 따라가지 못한 컬럼, 문장 해석 통계를 보여 줍니다. **변경** 구역에 영향받는 컬럼이 나옵니다. 각 컬럼의 근거는 그 파일 카드로 연결됩니다.
+- 신뢰할 수 없는 SQL에도 일은 선형입니다. 문장 하나 20만 토큰, 중첩 깊이 128, SELECT 항목 2,000개, 파일당 edge 2만 개, 전체 edge 50만 개에서 멈추고 그 문장만 낮춰 기록합니다. jaffle-shop(SQL 15개)은 0.2초, dbt-project-evaluator(123개)는 0.3초, 합성 3,000 파일 레포는 11초에 끝났습니다.
+- 읽지 않는 것: 뷰 안, Python 문자열 안의 SQL, `ALTER`로 바뀐 이름, `UPDATE`, 매크로가 만드는 컬럼(`{% for %}`, `dbt_utils.star()`), 구조체 필드 단위 lineage, `map.html`의 컬럼 표시입니다.
+
 ## 1.2.0
 
 - dbt 모델 테이블: 모델과 스냅숏 파일마다 만드는 테이블 이름을 정해 `written_tables`에 `via: dbt:model`로 더합니다. 이름은 `{{ config(alias=...) }}`, `dbt_project.yml` 폴더 설정의 `+alias`, 파일 이름 순으로 정하고, 스키마는 `{{ config(schema=...) }}`, 폴더 설정의 `+schema` 순으로 정합니다. 스키마 앞부분은 실행 환경이 정하므로 `{}`(`+schema: marts`가 있으면 `{}_marts`)로 둡니다. dbt 밖의 SQL이 `analytics_marts.orders`를 읽으면 그 모델 파일로 추정 연결되고, 데이터 프로파일의 `orders` 데이터셋도 그 테이블과 추정으로 맞춥니다. alias가 리터럴이 아니거나 config가 `{% if %}`·`{% for %}` 안에 있으면 `dynamic`으로 두고 테이블을 만들지 않습니다. SQL·Jinja 스캔(주석, `{{ }}`, `{% %}`, `ref` 찾기)은 이제 한 번의 선형 패스입니다. 닫히지 않은 `{{`·`{%`·`{#`가 수만 개 있는 SQL에서 스캔이 몇 초씩 걸리던 예전 문제도 함께 고쳤습니다.
