@@ -113,11 +113,11 @@ class _Builder:
                     "from": None, "to": to, "kind": "constant", "status": fixed[0], "rule": fixed[1],
                     "expression": expression, "via": [], "evidence": where})
             elif not output.leaves and output.misses and not output.misses[0].reason.startswith("table_"):
-                self.unresolve(to, output.misses[0].reason, expression, where, output.misses[0])
+                self.missing(text, places, to, output.misses[0], expression, where)
             if output.leaves:  # a column only partly followed: each reference that reached nothing
                 for miss in output.misses:
                     if not miss.reason.startswith("table_"):
-                        self.unresolve(to, miss.reason, expression, where, miss)
+                        self.missing(text, places, to, miss, expression, where)
             for leaf in output.leaves:
                 if written.status_cap[1]:
                     leaf = cap(leaf, *written.status_cap)
@@ -128,10 +128,20 @@ class _Builder:
                 self.reached(leaf.table, leaf.column, leaf.display, leaf.external)
         self.uses(places, derived, written.misses, table_id)
 
+    def missing(self, text: str, places: _Places, to: str, miss: Miss, expression: str, where: dict) -> None:
+        """A column's miss; one a SELECT * caused is shown at the star."""
+        if miss.reason != "unknown_star" or miss.end <= miss.start:
+            self.unresolve(to, miss.reason, expression, where, miss)
+        else:
+            self.unresolve(to, miss.reason, _spec(text, miss.start, miss.end), places.at(miss.start), miss)
+
     def uses(self, places: _Places, derived, misses: Tuple[str, ...], table_id: str) -> None:
-        """The statement's misses, joins, filters and other reads, as edges and entries on `table_id`."""
+        """The statement's misses, joins, filters and other reads, as edges and entries on `table_id`.
+        An unknown star the derivation recorded at its own place is not recorded again."""
+        stars = any(missed.miss.reason == "unknown_star" for missed in derived.missed)
         for reason in misses:
-            self.unresolve(table_id, reason, "*", places.at(derived.statement.start))
+            if reason != "unknown_star" or not stars:
+                self.unresolve(table_id, reason, "*", places.at(derived.statement.start))
         for usage in derived.usages:
             leaf, where = usage.leaf, places.at(usage.start)
             edge = {"from": _col_id(leaf.table, leaf.column), "to": table_id, "kind": usage.kind,

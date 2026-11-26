@@ -111,29 +111,31 @@ class Deriver:
         return self.merge([self.body(branch, scope, env) for branch in body.branches], body.start)
 
     def merge(self, branches: List[Body], start: int) -> Body:
-        """Branches line up by place, and only before the first unknown SELECT * of any of them.
+        """Branches line up by place. The first branch names the columns, so its first unknown SELECT *
+        is the result's; a later branch adds nothing at or after its own, only that miss.
         A branch whose width cannot match the first one's is left out and reported once."""
         first, _, first_cut = branches[0]
         stars = [star for _, branch_stars, _ in branches for star in branch_stars]
         kept = [branch for branch in branches[1:] if _fits(first, first_cut, branch[0], branch[2])]
         if len(kept) < len(branches) - 1:
             self.missed.append(Missed(Miss("arity"), "*", start))
-        cuts = [cut for cut in [first_cut] + [branch[2] for branch in kept] if cut is not None]
-        cut = min(cuts, key=lambda found: found.at) if cuts else None
         merged = []
         for index, output in enumerate(first):
-            if cut is not None and index >= cut.at:  # its place in the other branches is unknown
-                merged.append(output._replace(misses=output.misses + (cut.miss,)))
+            if first_cut is not None and index >= first_cut.at:  # its place in the other branches is unknown
+                merged.append(output._replace(misses=output.misses + (first_cut.miss,)))
                 continue
             leaves, misses, constant, dynamic = list(output.leaves), list(output.misses), output.constant, output.dynamic
-            for outputs, _, _ in kept:
+            for outputs, _, other_cut in kept:
+                if other_cut is not None and index >= other_cut.at:  # an unknown star fills this place
+                    misses.append(other_cut.miss)
+                    continue
                 other = outputs[index]
                 leaves.extend(other.leaves)
                 misses.extend(other.misses)
                 constant, dynamic = constant or other.constant, dynamic or other.dynamic
             merged.append(output._replace(leaves=tuple(dedupe(leaves)), misses=tuple(misses), constant=constant,
                                           dynamic=dynamic))
-        return merged, stars, cut
+        return merged, stars, first_cut
 
     def values(self, body: Values, scope: Optional[Scope], env: Optional[_Env]) -> List[Output]:
         width = max(len(row) for row in body.rows)
@@ -320,7 +322,7 @@ class Deriver:
             if len(chosen) > 1:  # which source the star reads is unknown: its columns are too
                 stars.extend(relation for _, relation, _ in chosen)
                 candidates = tuple(sorted(full or relation.label or alias for alias, relation, full in chosen))
-                miss = Miss("ambiguous", candidates)
+                miss = Miss("ambiguous", candidates, start=star.start, end=star.end)
                 self.missed.append(Missed(miss, self.spec(star.start, star.end), star.start))
                 return [], Cut(0, miss, star.start, star.end)
         outputs: List[Output] = []
@@ -332,7 +334,8 @@ class Deriver:
             if is_open:
                 stars.append(relation)
                 resolved = relation.info.table if isinstance(relation, TableRelation) else None
-                miss = Miss("unknown_star", source=resolved or full or relation.label or alias)
+                miss = Miss("unknown_star", source=resolved or full or relation.label or alias, start=star.start,
+                            end=star.end)
                 self.missed.append(Missed(miss, self.spec(star.start, star.end), star.start))
                 if cut is None:
                     cut = Cut(len(outputs), miss, star.start, star.end)

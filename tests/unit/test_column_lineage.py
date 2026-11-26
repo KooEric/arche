@@ -286,6 +286,38 @@ def test_union_after_an_unknown_star_in_the_first_branch_takes_no_later_branch()
     assert [e[0] for e in _edges(columns, to="col:mart.u.z")] == ["col:raw.unk.z"]
 
 
+def test_a_star_in_a_later_union_branch_keeps_the_first_branchs_places():
+    columns = _columns({"q/a.sql": "INSERT INTO mart.t (a, b) SELECT s.x, s.y FROM other.s s "
+                                   "UNION ALL SELECT * FROM raw.unk;\n"})
+
+    assert _edges(columns) == [("col:other.s.x", "col:mart.t.a", "rename", "verified", "qualified"),
+                               ("col:other.s.y", "col:mart.t.b", "rename", "verified", "qualified")]
+    assert _column_misses(columns) == [("col:mart.t.a", "unknown_star"), ("col:mart.t.b", "unknown_star")]
+    assert _states(columns) == [("parsed", None)]
+
+
+def test_a_cte_column_list_over_a_union_with_a_later_star_keeps_the_first_branchs_places():
+    columns = _columns({"q/a.sql": "CREATE TABLE mart.w AS WITH c(a, b) AS (SELECT s.x, s.y FROM other.s s "
+                                   "UNION ALL SELECT * FROM raw.unk) SELECT c.a, c.b FROM c;\n"})
+
+    assert [(e[0], e[1]) for e in _edges(columns)] == [("col:other.s.x", "col:mart.w.a"),
+                                                       ("col:other.s.y", "col:mart.w.b")]
+
+
+def test_one_unknown_star_is_recorded_once_on_the_table_with_its_own_text():
+    columns = _columns({"q/a.sql": "INSERT INTO mart.t (a, b, c) SELECT s.x, s.*, s.y FROM raw.src s;\n"})
+
+    assert [(u["to"], u["spec"]) for u in columns["unresolved"] if u["to"] == "table:mart.t"] == [
+        ("table:mart.t", "s.*")]
+
+
+def test_the_unknown_star_on_a_union_output_names_the_star():
+    columns = _columns({"q/a.sql": "CREATE TABLE mart.u AS SELECT u.*, u.z FROM raw.unk u "
+                                   "UNION ALL SELECT s.k FROM other.s s;\n"})
+
+    assert [u["spec"] for u in columns["unresolved"] if u["to"] == "col:mart.u.z"] == ["u.*"]
+
+
 def test_a_constant_matched_by_position_is_only_inferred():
     columns = _columns({"q/ddl.sql": "CREATE TABLE m.t (id INT, total INT);\n",
                         "q/a.sql": "INSERT INTO m.t SELECT r.id, 0 FROM raw.x r;\n"})

@@ -29,7 +29,8 @@ class Miss(NamedTuple):
     reason: str  # ambiguous | unknown_star | dynamic | unknown_column | unknown_qualifier | table_<reason>
     candidates: Tuple[str, ...] = ()
     source: Optional[str] = None
-    start: int = -1  # where the table that could not be matched is read
+    start: int = -1  # where the table that could not be matched, or the SELECT * that adds unknown columns, is
+    end: int = -1  # read; for a star, also where it ends
 
 
 class TableInfo(NamedTuple):
