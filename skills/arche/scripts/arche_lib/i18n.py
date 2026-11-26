@@ -272,10 +272,10 @@ _KO = {
     "Depth {depth}": "깊이 {depth}",
     "+{count} more entries": "{count}개 더",
     "+{count} or more entries": "{count}개 이상 더",
-    "SQL statements": "SQL 문장",
-    "partial": "일부만 해석",
+    "SQL statements": "SQL 문",
+    "partial": "일부만 분석",
     "unsupported": "지원하지 않음",
-    "parse_error": "해석 오류",
+    "parse_error": "분석 오류",
     "too_large": "너무 큼",
     "Column lineage reads only SELECT statements in SQL files. It does not follow SQL inside views or Python, names changed by ALTER, PIVOT, or macro output.":
         "SQL 파일의 SELECT만 읽습니다. 뷰 안, Python 안 SQL, ALTER로 바뀐 이름, PIVOT, 매크로 결과는 따라가지 않습니다.",
@@ -299,6 +299,10 @@ _KO = {
     # Column impact
     "Column impact": "컬럼 영향",
     "Column impact was not computed.": "컬럼 영향을 계산하지 않았습니다.",
+    "The base snapshot has no column lineage; run imports.py on the base again.":
+        "기준 스냅샷에 컬럼 lineage가 없습니다. 기준에서 imports.py를 다시 실행하세요.",
+    "Reason": "이유",
+    "Stopped at the walk limit.": "탐색 상한에서 멈췄습니다.",
     "Column-level results are exact only when two snapshots are compared.":
         "컬럼 단위로 정확한 결과는 두 스냅샷을 비교할 때만 나옵니다.",
     "Seed": "씨앗",

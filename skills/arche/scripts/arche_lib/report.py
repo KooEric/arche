@@ -307,7 +307,7 @@ def _audit(edges, anchors):
 
 def _changes(changes, anchors):
     if changes is not None and "column_impact" in changes:
-        return _changes({key: value for key, value in changes.items() if key != "column_impact"}, anchors) + report_columns.impact(changes["column_impact"], T)
+        return _changes({key: value for key, value in changes.items() if key != "column_impact"}, anchors) + report_columns.impact(changes["column_impact"], T, lambda path: _file_link("file:" + path, anchors))
     if changes is None:
         return f'<p class="empty">{T("No change comparison available for this snapshot.")}</p>'
     files = changes["files"]
@@ -589,7 +589,7 @@ def _tables(graph, anchors, profile=None, columns=None):
     reads = [edge for edge in graph["edges"] if edge.get("kind") == "READS"]
     if not external and not reads and not has_tables(graph, profile) and not columns:
         return ""
-    lineage = report_columns.ColumnLineage(columns, T) if columns else None
+    lineage = report_columns.ColumnLineage(columns, T, lambda path: _file_link("file:" + path, anchors)) if columns else None
     by_reason = defaultdict(list)
     for edge in reads:
         if not edge["to"]:

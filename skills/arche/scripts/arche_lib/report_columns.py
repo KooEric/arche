@@ -7,6 +7,7 @@ from html import escape
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 Translate = Callable[[str], str]
+PathLink = Callable[[str], str]  # repository path -> HTML for it, a link to its file card when it has one
 MAX_COLUMNS_SHOWN = 200
 MAX_LIST_SHOWN = 50
 MAX_EXPRESSIONS_SHOWN = 3
@@ -62,15 +63,21 @@ def _name(node: Optional[str]) -> str:
     return node.partition(":")[2]
 
 
-def _where(evidence: dict) -> str:
-    return f'{evidence.get("path", "")}:{evidence.get("line", "")}'
+def _where(evidence: dict, link: Optional[PathLink] = None) -> str:
+    """`path:line` as one code span, or the path linked to its file card followed by the line."""
+    path, line = str(evidence.get("path", "")), evidence.get("line", "")
+    return _code(f"{path}:{line}") if link is None else f"{link(path)}:{escape(str(line))}"
+
+
+def _path(path: str, link: Optional[PathLink] = None) -> str:
+    return _code(path) if link is None else link(path)
 
 
 def _more(hidden: int, T: Translate, cut: bool = False) -> str:
-    if hidden <= 0 and not cut:
-        return ""
-    text = T("+{count} or more entries") if cut else T("+{count} more entries")
-    return f'<p class="empty">{text.format(count=max(hidden, 0))}</p>'
+    if hidden > 0:
+        text = T("+{count} or more entries") if cut else T("+{count} more entries")
+        return f'<p class="empty">{text.format(count=hidden)}</p>'
+    return f'<p class="empty">{T("Stopped at the walk limit.")}</p>' if cut else ""
 
 
 def _unique(items: Iterable[str]) -> List[str]:
@@ -86,8 +93,8 @@ def _capped(items: List[str], limit: int, T: Translate) -> str:
 class ColumnLineage:
     """columns.json indexed once: value edges in and out of each column, uses per table, unresolved by reason."""
 
-    def __init__(self, doc: dict, T: Translate = _plain) -> None:
-        self.doc, self.T = doc, T
+    def __init__(self, doc: dict, T: Translate = _plain, link: Optional[PathLink] = None) -> None:
+        self.doc, self.T, self.path_link = doc, T, link
         self.columns: Dict[str, dict] = {column["id"]: column for column in doc["columns"]}
         self.incoming: Dict[str, List[dict]] = {}
         self.outgoing: Dict[str, List[dict]] = {}
@@ -145,9 +152,9 @@ class ColumnLineage:
         status = _status(max(statuses, key=_rank)) if statuses else ""
         kinds = " ".join(_badge(kind) for kind in sorted({edge["kind"] for edge in edges}))
         expressions = _unique(_code(edge["expression"]) for edge in edges if edge.get("expression"))
-        evidence = _unique(_code(_where(edge["evidence"])) for edge in edges)
+        evidence = _unique(_where(edge["evidence"], self.path_link) for edge in edges)
         if not edges and column.get("defined"):
-            evidence = [_code(_where(column["defined"]))]
+            evidence = [_where(column["defined"], self.path_link)]
         anchor = self.anchors.get(column["id"])
         ident = f' id="{anchor}"' if anchor else ""
         name = (f'<details{ident}><summary>{_code(column["display"])}</summary>'
@@ -222,7 +229,7 @@ class ColumnLineage:
         body = "".join(f'<p class="label">{T("Depth {depth}").format(depth=depth)}</p><ul>{"".join(items)}</ul>'
                        for depth, items in groups.items())
         body += _more(len(found) - MAX_LIST_SHOWN, T, cut)
-        body += f'<p>{T("Files")}: {_capped([_code(path) for path in sorted(files)], MAX_LIST_SHOWN, T)}</p>'
+        body += f'<p>{T("Files")}: {_capped([_path(path, self.path_link) for path in sorted(files)], MAX_LIST_SHOWN, T)}</p>'
         return body + f'<p>{T("Tables")}: {_capped([_code(name) for name in sorted(tables)], MAX_LIST_SHOWN, T)}</p>'
 
     def section(self, shown_tables: Iterable[str] = ()) -> str:
@@ -261,8 +268,8 @@ class ColumnLineage:
         if item.get("source"):
             parts.append(f'{self.T("source")} {_code(item["source"])}')
         if item.get("candidates"):
-            parts.append(f'{self.T("candidates")} ' + ", ".join(_code(name) for name in item["candidates"][:MAX_LIST_SHOWN]))
-        return " · ".join(parts + [_code(_where(item.get("evidence", {})))])
+            parts.append(f'{self.T("candidates")} ' + _capped([_code(name) for name in item["candidates"]], MAX_LIST_SHOWN, self.T))
+        return " · ".join(parts + [_where(item.get("evidence", {}), self.path_link)])
 
 
 def _listed(items: List[str], T: Translate) -> str:
@@ -270,25 +277,34 @@ def _listed(items: List[str], T: Translate) -> str:
     return f'<ul class="columns">{rows}</ul>{_more(len(items) - MAX_LIST_SHOWN, T)}' if rows else ""
 
 
-def _impact_rows(column_impact: dict, T: Translate) -> Tuple[List[str], List[str], List[str]]:
-    seeds = [f'{_code(_name(item["column"]))} · {_badge(item["change"])} · {_code(item["path"])}'
+def _impact_rows(column_impact: dict, T: Translate, link: Optional[PathLink]) -> Tuple[List[str], List[str], List[str]]:
+    seeds = [f'{_code(_name(item["column"]))} · {_badge(item["change"])} · {_path(item["path"], link)}'
              for item in column_impact.get("seeds", [])]
     affected = [f'{_code(_name(item["column"]))} · {T("Depth {depth}").format(depth=int(item["depth"]))} · '
                 + " ".join(_badge(kind) for kind in item.get("kinds", []))
-                + f' {_status(item["status"])} · ' + ", ".join(_code(path) for path in item.get("files", [])[:MAX_LIST_SHOWN])
+                + f' {_status(item["status"])} · ' + _capped([_path(path, link) for path in item.get("files", [])], MAX_LIST_SHOWN, T)
                 for item in column_impact.get("affected", [])]
     used = [f'{_code(_name(item["table"]))} · ' + " ".join(_badge(kind) for kind in item.get("kinds", []))
-            + f' {_status(item["status"])} · ' + ", ".join(_code(path) for path in item.get("files", [])[:MAX_LIST_SHOWN])
+            + f' {_status(item["status"])} · ' + _capped([_path(path, link) for path in item.get("files", [])], MAX_LIST_SHOWN, T)
             for item in column_impact.get("used_by", [])]
     return seeds, affected, used
 
 
-def impact(column_impact: dict, T: Translate = _plain) -> str:
+def _unavailable(column_impact: dict, T: Translate) -> str:
+    reason = column_impact.get("reason")
+    if reason == "base_without_columns":
+        why = T("The base snapshot has no column lineage; run imports.py on the base again.")
+    else:
+        why = f'{T("Reason")}: {_code(reason)}' if reason else ""
+    return f'<p class="empty">{T("Column impact was not computed.")}</p>' + (f'<p class="empty">{why}</p>' if why else "")
+
+
+def impact(column_impact: dict, T: Translate = _plain, link: Optional[PathLink] = None) -> str:
     """The column impact of a change, for the Changes section."""
     head = f'<h3>{T("Column impact")}</h3>'
     if not column_impact.get("available"):
-        return head + f'<p class="empty">{T("Column impact was not computed.")}</p>'
-    seeds, affected, used = _impact_rows(column_impact, T)
+        return head + _unavailable(column_impact, T)
+    seeds, affected, used = _impact_rows(column_impact, T, link)
     kinds = sorted({item["seed"] for item in column_impact.get("seeds", [])})
     seed = f'<p>{T("Seed")}: ' + ", ".join(_code(kind) for kind in kinds) + "</p>" if kinds else ""
     body = (f'{head}<p class="lead">{T("Column-level results are exact only when two snapshots are compared.")}</p>{seed}'

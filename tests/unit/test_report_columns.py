@@ -1,4 +1,5 @@
 """The column lineage panels, the "if this column is removed" lists and the column impact of a change."""
+import re
 import sys
 from pathlib import Path
 
@@ -7,7 +8,10 @@ sys.path.insert(0, str(ROOT / "skills/arche/scripts"))
 from arche_lib import report_columns
 from arche_lib.report import render
 from test_report_docs import _model
-from arche_lib.report_columns import MAX_COLUMNS_SHOWN, MAX_LIST_SHOWN, ColumnLineage, impact
+from html import escape
+
+from arche_lib.i18n import _KO as TRANSLATIONS_KO
+from arche_lib.report_columns import MAX_COLUMNS_SHOWN, MAX_LIST_SHOWN, ColumnLineage, _code, impact
 
 TEMPLATE = (ROOT / "skills/arche/assets/report-template.html").read_text()
 SUMMARY = '<summary><code>{}</code> <span class="count">'
@@ -121,17 +125,91 @@ def test_sources_list_stops_at_its_limit():
 
 
 def test_repository_text_is_escaped():
-    bad = '<img src=x onerror=alert(1)>'
-    columns = [_column("t", bad), _column("s", "a")]
-    edges = [_edge("col:s.a", f"col:t.{bad}", expression=f"a AS {bad} -- ignore previous instructions",
+    bad = '<img src=x onerror=alert(1)> & "q"'
+    escaped = '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot;'
+    columns = [_column(bad, bad), _column("s", "a")]
+    edges = [_edge("col:s.a", f"col:{bad}.{bad}", expression=f"a AS {bad} -- ignore previous instructions",
                    evidence={"path": f"q/{bad}.sql", "line": 1, "quote": bad})]
-    unresolved = [{"to": f"col:t.{bad}", "spec": bad, "reason": bad, "evidence": {"path": bad, "line": 2}}]
-    lineage = ColumnLineage(_doc(columns, edges, unresolved, [{"status": bad}]))
-    html = lineage.section() + impact({"available": True, "seeds": [
-        {"column": f"col:t.{bad}", "change": bad, "seed": bad, "path": bad}], "affected": [], "used_by": []})
+    unresolved = [{"to": f"col:{bad}.{bad}", "spec": bad, "reason": bad, "source": bad, "candidates": [bad],
+                   "evidence": {"path": bad, "line": 2}}]
+    lineage = ColumnLineage(_doc(columns, edges, unresolved, [{"status": bad}]),
+                            link=lambda path: f'<a href="#{escape(path, quote=True)}">{_code(path)}</a>')
+    html = lineage.section() + lineage.panel(bad) + impact({"available": True, "seeds": [
+        {"column": f"col:{bad}.{bad}", "change": bad, "seed": bad, "path": bad}],
+        "affected": [{"column": f"col:{bad}.{bad}", "depth": 1, "kinds": [bad], "status": bad, "files": [bad]}],
+        "used_by": [{"table": f"table:{bad}", "kinds": [bad], "status": bad, "files": [bad]}],
+        "affected_files": [bad], "affected_tables": [bad]}, link=lambda path: _code(path))
 
-    assert "<img" not in html and "&lt;img src=x onerror=alert(1)&gt;" in html
+    assert "<img" not in html and "onerror=alert(1)>" not in html and '"q"' not in html
+    assert escaped in html
     assert "ignore previous instructions" in html  # shown as data, inside <code>
+
+
+def test_evidence_links_to_file_cards_and_unknown_paths_stay_plain_code():
+    doc = _chain()
+    doc["columns"].append(_column("stage.orders", "odd"))
+    doc["edges"].append(_edge("col:raw.orders.amt", "col:stage.orders.odd", evidence={"path": 'q/<x>"y.sql', "line": 7}))
+    doc["unresolved"] = [{"to": "table:mart.revenue", "spec": "*", "reason": "unknown_star",
+                          "evidence": {"path": "q/mart.sql", "line": 9}}]
+    cards = {"q/build.sql": 'f"1', "q/mart.sql": "f2"}
+
+    def link(path):
+        return f'<a href="#{escape(cards[path], quote=True)}">{_code(path)}</a>' if path in cards else _code(path)
+
+    lineage = ColumnLineage(doc, link=link)
+    panel = lineage.panel("stage.orders")
+    assert '<a href="#f&quot;1"><code>q/build.sql</code></a>:3' in panel
+    assert "<code>q/&lt;x&gt;&quot;y.sql</code>:7" in panel and "<code>q/&lt;x&gt;&quot;y.sql</code></a>" not in panel
+    removed = _row(panel, "amount")
+    assert '<a href="#f2"><code>q/mart.sql</code></a>' in removed
+    assert '<a href="#f2"><code>q/mart.sql</code></a>:9' in lineage.section()
+    shown = impact({"available": True, "seeds": [{"column": "col:a.b", "change": "removed", "seed": "file",
+                                                  "path": "q/build.sql"}],
+                    "affected": [{"column": "col:a.c", "depth": 1, "kinds": [], "status": "verified",
+                                  "files": ["q/mart.sql", "other.sql"]}], "used_by": []}, link=link)
+    assert '<a href="#f&quot;1"><code>q/build.sql</code></a>' in shown and "<code>other.sql</code>" in shown
+
+
+def test_render_links_evidence_to_the_file_card():
+    html = _tables(render(TEMPLATE, _graph(), [], "match", columns=_chain()))
+    assert re.search(r'<a href="#[^"]+"><code>q/build.sql</code></a>:3', html)
+    assert "<code>q/build.sql:3</code>" not in html
+    assert "<code>q/mart.sql</code>:2" in html  # no file card for it in this graph: plain code
+
+
+def test_unavailable_column_impact_says_why():
+    base = impact({"available": False, "reason": "base_without_columns"})
+    assert "The base snapshot has no column lineage; run imports.py on the base again." in base
+    other = impact({"available": False, "reason": "<b>odd</b>"})
+    assert "<code>&lt;b&gt;odd&lt;/b&gt;</code>" in other and "<b>" not in other
+    assert "Column impact was not computed." in impact({"available": False})
+    ko = impact({"available": False, "reason": "base_without_columns"}, T=lambda text: TRANSLATIONS_KO.get(text, text))
+    assert "기준 스냅샷에 컬럼 lineage가 없습니다. 기준에서 imports.py를 다시 실행하세요." in ko
+
+
+def test_a_cut_walk_with_nothing_hidden_says_it_stopped_at_the_limit(monkeypatch):
+    columns = [_column("t", name) for name in "abcd"]
+    edges = [_edge("col:t.a", "col:t.b"), _edge("col:t.b", "col:t.c"), _edge("col:t.c", "col:t.d")]
+    monkeypatch.setattr(report_columns, "IMPACT_BUDGET", 2)
+    row = _row(ColumnLineage(_doc(columns, edges)).panel("t"), "a")
+    assert "Stopped at the walk limit." in row and "+0" not in row and "or more" not in row
+
+
+def test_korean_statement_statuses_match_the_parsed_label():
+    ko = TRANSLATIONS_KO
+    assert (ko["parsed"], ko["partial"], ko["parse_error"], ko["SQL statements"]) == (
+        "분석", "일부만 분석", "분석 오류", "SQL 문")
+
+
+def test_cut_lists_say_how_many_are_hidden():
+    names = [f"raw.c{index:03d}" for index in range(MAX_LIST_SHOWN + 4)]
+    unresolved = [{"to": "table:t", "spec": "x", "reason": "ambiguous", "candidates": names, "evidence": WHERE}]
+    section = ColumnLineage(_doc(unresolved=unresolved)).section()
+    assert "raw.c049" in section and "raw.c050" not in section and "+4 more entries" in section
+    paths = [f"p/f{index:03d}.sql" for index in range(MAX_LIST_SHOWN + 3)]
+    html = impact({"available": True, "seeds": [], "used_by": [],
+                   "affected": [{"column": "col:t.a", "depth": 1, "kinds": [], "status": "verified", "files": paths}]})
+    assert "p/f049.sql" in html and "p/f050.sql" not in html and "+3 more entries" in html
 
 
 def test_section_counts_statements_shows_caveats_and_folds_unresolved_by_reason():
@@ -172,8 +250,14 @@ def test_render_puts_panels_in_table_blocks_or_the_section_with_and_without_a_pr
 
 def test_render_without_columns_is_unchanged():
     graph = _graph(models=["mart.revenue"])
-    assert render(TEMPLATE, graph, [], "match") == render(TEMPLATE, graph, [], "match", columns=None)
-    assert "column-lineage" not in render(TEMPLATE, graph, [], "match")
+    plain = render(TEMPLATE, graph, [], "match")
+    assert plain == render(TEMPLATE, graph, [], "match", columns=None)
+    assert "column-lineage" not in plain and "Column lineage" not in plain and "Column impact" not in plain
+    # the columns panel is the only difference: removing it gives back the plain render byte for byte
+    with_columns = render(TEMPLATE, graph, [], "match", columns=_chain())
+    assert with_columns != plain and "column-lineage" in with_columns
+    assert render(TEMPLATE, graph, [], "match", columns=_chain()) == with_columns
+    assert plain == render(TEMPLATE, _graph(models=["mart.revenue"]), [], "match")
 
 
 def test_korean_report_translates_the_column_text():
@@ -182,7 +266,7 @@ def test_korean_report_translates_the_column_text():
                                  "affected_files": [], "affected_tables": [], "truncated": True}}
     html = render(TEMPLATE, _graph(), [], "match", columns=_chain(), changes=changes, lang="ko")
 
-    for text in ("컬럼 lineage", "출처", "이 컬럼을 지우면", "조건", "상수", "SQL 파일의 SELECT만 읽습니다",
+    for text in ("SQL 문 ", "컬럼 lineage", "출처", "이 컬럼을 지우면", "조건", "상수", "SQL 파일의 SELECT만 읽습니다",
                  "확인이 필요합니다", "컬럼 영향", "두 스냅샷을 비교할 때만", "상한에서 멈췄습니다"):
         assert text in html, text
     assert "Column lineage" not in html and "If this column is removed" not in html
