@@ -13,15 +13,28 @@ from typing import Dict, List, Optional, Tuple
 KEYS = ("alias", "schema")
 MAX_CALL_CHARS = 10_000
 _CALL = re.compile(r"\{\{-?\s*config\s*\(")
-_JINJA_COMMENT = re.compile(r"\{#.*?#\}", re.S)
 _BLOCK_TAG = re.compile(r"\{%-?\s*(if|for|endif|endfor)\b")
 _ARGUMENT = re.compile(r"\s*([A-Za-z_]\w*)\s*=(.*)", re.S)
 _LITERAL = re.compile(r"\s*(?:'([^'\\\n]*)'|\"([^\"\\\n]*)\")\s*")
 
 
 def _blank_comments(text: str) -> str:
-    """`{# ... #}` becomes spaces, keeping newlines, so positions and line numbers stay."""
-    return _JINJA_COMMENT.sub(lambda match: re.sub(r"[^\n]", " ", match.group()), text)
+    """`{# ... #}` becomes spaces, keeping newlines, so positions and line numbers stay.
+
+    One pass: an opener with no closer ends the scan, since no later opener can close either."""
+    pieces, position = [], 0
+    while True:
+        start = text.find("{#", position)
+        if start < 0:
+            break
+        end = text.find("#}", start + 2)
+        if end < 0:
+            break
+        pieces.append(text[position:start])
+        pieces.append(re.sub(r"[^\n]", " ", text[start:end + 2]))
+        position = end + 2
+    pieces.append(text[position:])
+    return "".join(pieces)
 
 
 def _arguments(text: str, start: int) -> Optional[Tuple[str, int]]:
@@ -99,7 +112,7 @@ def config(text: str) -> Optional[dict]:
         counted = call.start()
         line = breaks + 1
         while seen < len(tags) and tags[seen][0] < call.start():
-            depth += 1 if tags[seen][1] in ("if", "for") else -1
+            depth = max(0, depth + (1 if tags[seen][1] in ("if", "for") else -1))
             seen += 1
         branched = branched or depth > 0
         for part in _top_level(body):

@@ -1,4 +1,6 @@
 """`{{ config(alias=..., schema=...) }}` in dbt model SQL."""
+import time
+
 from arche_lib.langs import sql
 from arche_lib.langs.dbt_config import config
 
@@ -53,5 +55,24 @@ def test_many_unclosed_calls_take_bounded_work():
 def test_many_calls_and_branches_keep_line_numbers_and_finish_quickly():
     text = "{% if a %}{% endif %}\n{{ config(alias='x') }}\n" * 20_000
 
+    started = time.perf_counter()
     found = config(text)
+    elapsed = time.perf_counter() - started
+
     assert (found["line"], found["branched"]) == (40_000, False)
+    assert elapsed < 1.0
+
+
+def test_a_stray_endif_before_an_if_does_not_hide_the_branch():
+    found = config("{% endif %}{% if a %}{{ config(alias='x') }}")
+
+    assert (found["alias"], found["branched"]) == ("x", True)
+
+
+def test_unclosed_comment_openers_take_linear_work():
+    started = time.perf_counter()
+    found = config("config{#" * 50_000)
+    elapsed = time.perf_counter() - started
+
+    assert found is None
+    assert elapsed < 1.0
