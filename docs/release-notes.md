@@ -2,12 +2,12 @@
 
 ## 1.3.2 (준비 중)
 
-- 컬럼 lineage 끄기: `arche.py REPO --no-columns`(또는 `imports.py --no-columns`)는 컬럼 lineage를 건너뜁니다. 테이블 lineage와 `graph.json`은 그대로이고, `columns.json`에는 빈 목록과 `disabled: true`만 남습니다. 리포트의 **테이블** 구역은 컬럼 lineage를 껐다고 표시하고, `changes.py`는 `column_impact`를 `available: false`, `reason: columns_disabled`로 둡니다. 합성 3,000 파일 레포에서 전체 실행이 18.7초·704MB에서 1.7초·45MB로 줄어듭니다. 컬럼 lineage가 없던 버전과 같은 단계만 실행합니다.
+- 컬럼 lineage 끄기: `arche.py REPO --no-columns`(또는 `imports.py --no-columns`)는 컬럼 lineage를 건너뜁니다. 테이블 lineage와 `graph.json`은 그대로이고, `columns.json`에는 빈 목록과 `disabled: true`만 남습니다. 리포트의 **테이블** 구역은 컬럼 lineage를 껐다고 표시하고, `changes.py`는 `column_impact`를 `available: false`, `reason: columns_disabled`로 둡니다. 합성 3,000 파일 레포에서 전체 실행이 1.8초·45MB로 끝납니다(켜면 약 19~23초·560~595MB). 컬럼 lineage가 없던 버전과 같은 단계만 실행합니다.
 - 컬럼 edge 상한 조정: `--max-column-edges N`으로 기본 50만 개 상한을 바꿉니다. 기본값이 아니면 `columns.json`에 `max_edges`가 남고, `imports.py`·`arche.py` 요약의 `columns.truncated`로 잘렸는지 바로 볼 수 있습니다. 메모리는 edge 수에 비례해 늘어납니다. 잘린 리포트는 이 옵션과 하위 폴더 실행을 안내합니다.
-- 더 작은 `columns.json`: 들여쓰기 없이 목록 항목 하나를 한 줄에 씁니다. 내용과 `columns_version`은 같고 바이트는 여전히 결정적입니다. 항목마다 C 인코더를 써서 쓰기도 빨라졌습니다. 합성 3,000 파일 레포에서 106MB가 68MB로 줄었습니다(같은 비율이면 1.1GB는 약 0.7GB). `graph.json`과 그 밖의 JSON은 바뀌지 않습니다.
+- 더 작은 `columns.json`: 들여쓰기 없이 목록 항목 하나를 한 줄에 쓰고, 아래 형식 2로 줄 원문을 한 번만 씁니다. 바이트는 여전히 결정적이고, 항목마다 C 인코더를 써서 쓰기도 빨라졌습니다. 합성 3,000 파일 레포에서 106MB가 65MB로 줄었습니다(같은 비율이면 1.1GB는 약 0.7GB, 줄이 긴 SQL일수록 더 줄어듭니다). `graph.json`과 그 밖의 JSON은 바뀌지 않습니다.
 - `columns.json` 형식 2(`columns_version: 2`): 근거(`evidence`, `defined`)는 `path`와 `line`만 갖고, 인용한 줄의 원문은 최상위 `lines`에 줄마다 한 번(`path`, `line`, `quote`) 씁니다. 1.3.1까지는 edge마다 같은 줄 원문을 되풀이했습니다. `render.py`와 `changes.py`는 형식 1과 2를 모두 읽으므로 `--base-out`에 1.3.1 실행을 그대로 줄 수 있습니다. `columns.json`을 직접 읽는 도구는 `evidence.quote` 대신 `lines`를 찾아야 합니다.
-- 메모리: `imports.py`는 파일마다 edge를 만든 뒤 그 파일의 구문 트리와 원문을 바로 놓습니다. `render.py`는 테이블 구역을 그리는 동안만 `columns.json`을 들고 있고, 큰 HTML을 이어 붙이기 전에 놓습니다.
-- 리포트 렌더 속도: 컬럼 패널이 보여 줄 근거·식·파일만 HTML로 만들고, "이 컬럼을 지우면" 탐색이 edge를 미리 정리한 표를 씁니다. 합성 레포에서 `render.py`가 8.8초에서 6.9초로 줄었고 `report.html`은 바이트까지 같습니다. 전체 `arche.py` 실행은 21.3~22.4초에서 18.7초로 줄었습니다.
+- 메모리: `imports.py`는 파일마다 edge를 만든 뒤 그 파일의 구문 트리와 원문을 바로 놓습니다. `render.py`는 테이블 구역을 그리는 동안만 `columns.json`을 들고 있고, 큰 HTML을 이어 붙이기 전에 놓습니다. 합성 레포에서 최대 메모리가 `imports.py` 476MB → 355MB, `render.py` 667~705MB → 592MB, 전체 `arche.py` 701~734MB → 560~595MB로 줄었습니다.
+- 리포트 렌더 속도: 컬럼 패널이 보여 줄 근거·식·파일만 HTML로 만들고, "이 컬럼을 지우면" 탐색이 edge를 미리 정리한 표를 씁니다. 합성 레포에서 `render.py`가 9.6~11.4초에서 6.9~8.3초로 줄었고 `report.html`은 바이트까지 같습니다. 전체 `arche.py` 실행은 25.3~27.6초에서 19.4~22.6초로 줄었습니다(같은 기기에서 1.3.1과 번갈아 두 번씩 잰 값).
 
 ## 1.3.1
 
