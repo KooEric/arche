@@ -71,7 +71,9 @@ def main(argv):
             base_predates_columns = base_columns is None and has_sql_files(base_graph)
             base_columns = base_columns or {"columns": [], "edges": []}
     changes = build_changes(root, graph, args.base, args.head, base_graph, columns, base_columns)
-    if base_predates_columns:
+    if columns is not None and (columns.get("disabled") or (base_columns or {}).get("disabled")):
+        changes["column_impact"] = {**column_impact.empty(available=False), "reason": "columns_disabled"}
+    elif base_predates_columns:
         changes["column_impact"] = {**column_impact.empty(available=False), "reason": "base_without_columns"}
     write_json(out / "changes.json", changes)
     return {"step": "changes", "out": str(out), "files": len(changes["files"]),

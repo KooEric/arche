@@ -38,6 +38,31 @@ def write_json(path: Path, data: Any) -> None:
     _write_atomic(path, write)
 
 
+def write_json_rows(path: Path, data: dict) -> None:
+    """Write a top-level object compactly, one list item per line, with the C encoder for each item.
+
+    Sorted keys and fixed separators keep equal data at identical bytes. The document is never one
+    string in memory, and each row is encoded at C speed rather than by the streaming Python encoder."""
+    encode = json.JSONEncoder(sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode
+
+    def write(handle: TextIO) -> None:
+        handle.write("{")
+        for place, key in enumerate(sorted(data)):
+            value = data[key]
+            handle.write(("," if place else "") + "\n" + encode(key) + ":")
+            if not isinstance(value, list) or not value:
+                handle.write(encode(value))
+                continue
+            handle.write("[")
+            for start in range(0, len(value), _CHUNKS_PER_WRITE):
+                rows = value[start:start + _CHUNKS_PER_WRITE]
+                handle.write(("," if start else "") + "\n" + ",\n".join(encode(row) for row in rows))
+            handle.write("\n]")
+        handle.write("\n}\n")
+
+    _write_atomic(path, write)
+
+
 def write_text(path: Path, content: str) -> None:
     _write_atomic(path, lambda handle: handle.write(content))
 

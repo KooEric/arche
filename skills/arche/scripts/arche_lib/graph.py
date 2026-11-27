@@ -541,9 +541,11 @@ def build_graph(inventory: dict, read_path: ReadPath, options: Optional[Dict[str
     return build_graph_and_columns(inventory, read_path, options)[0]
 
 
-def build_graph_and_columns(inventory: dict, read_path: ReadPath, options: Optional[Dict[str, list]] = None
+def build_graph_and_columns(inventory: dict, read_path: ReadPath, options: Optional[Dict[str, list]] = None,
+                            columns: bool = True, max_column_edges: Optional[int] = None
                             ) -> Tuple[dict, Optional[dict]]:
-    """(graph.json, columns.json or None when no SQL file was analyzed)."""
+    """(graph.json, columns.json or None when no SQL file was analyzed). `columns=False` skips column
+    lineage and gives a disabled columns.json; neither column option changes graph.json."""
     options = {name: list(value) for name, value in (options or {}).items() if value}
     analyzed = sorted(
         (entry for entry in inventory["files"] if entry["status"] == "analyzed"),
@@ -564,8 +566,9 @@ def build_graph_and_columns(inventory: dict, read_path: ReadPath, options: Optio
     config_edges, config_externals = _config_references(inventory, extracted)
     dbt_models, dbt_docs_unlinked = _dbt_docs(projects, extracted, models)
     digest = inventory_digest(inventory)
-    columns = column_lineage.build_columns([entry["path"] for entry in analyzed], read_path, extracted, projects,
-                                           models, dbt_sources, dbt_models, digest)
+    column_document = column_lineage.build_columns([entry["path"] for entry in analyzed], read_path, extracted,
+                                                   projects, models, dbt_sources, dbt_models, digest,
+                                                   enabled=columns, max_edges=max_column_edges)
     return {
         "schema_version": SCHEMA_VERSION,
         "inventory_sha256": digest,
@@ -583,4 +586,4 @@ def build_graph_and_columns(inventory: dict, read_path: ReadPath, options: Optio
         "http_routes": routes,
         "skipped": _skipped(inventory, failures),
         **({"options": options} if options else {}),
-    }, columns
+    }, column_document

@@ -1,5 +1,12 @@
 # Arche 릴리스 노트
 
+## 1.3.2 (준비 중)
+
+- 컬럼 lineage 끄기: `arche.py REPO --no-columns`(또는 `imports.py --no-columns`)는 컬럼 lineage를 건너뜁니다. 테이블 lineage와 `graph.json`은 그대로이고, `columns.json`에는 빈 목록과 `disabled: true`만 남습니다. 리포트의 **테이블** 구역은 컬럼 lineage를 껐다고 표시하고, `changes.py`는 `column_impact`를 `available: false`, `reason: columns_disabled`로 둡니다. 합성 3,000 파일 레포에서 전체 실행이 18.7초·704MB에서 1.7초·45MB로 줄어듭니다. 컬럼 lineage가 없던 버전과 같은 단계만 실행합니다.
+- 컬럼 edge 상한 조정: `--max-column-edges N`으로 기본 50만 개 상한을 바꿉니다. 기본값이 아니면 `columns.json`에 `max_edges`가 남고, `imports.py`·`arche.py` 요약의 `columns.truncated`로 잘렸는지 바로 볼 수 있습니다. 메모리는 edge 수에 비례해 늘어납니다. 잘린 리포트는 이 옵션과 하위 폴더 실행을 안내합니다.
+- 더 작은 `columns.json`: 들여쓰기 없이 목록 항목 하나를 한 줄에 씁니다. 내용과 `columns_version`은 같고 바이트는 여전히 결정적입니다. 항목마다 C 인코더를 써서 쓰기도 빨라졌습니다. 합성 3,000 파일 레포에서 106MB가 68MB로 줄었습니다(같은 비율이면 1.1GB는 약 0.7GB). `graph.json`과 그 밖의 JSON은 바뀌지 않습니다.
+- 리포트 렌더 속도: 컬럼 패널이 보여 줄 근거·식·파일만 HTML로 만들고, "이 컬럼을 지우면" 탐색이 edge를 미리 정리한 표를 씁니다. 합성 레포에서 `render.py`가 8.8초에서 6.9초로 줄었고 `report.html`은 바이트까지 같습니다. 전체 `arche.py` 실행은 21.3~22.4초에서 18.7초로 줄었습니다.
+
 ## 1.3.1
 
 - 컬럼 lineage 성능: `columns.json`을 문자열 하나로 만들지 않고 파일에 흘려 씁니다. 두 번째 회차부터는 열 목록이 바뀐 테이블을 조회한 파일만 다시 유도합니다. 합성 3,000 파일 레포에서 `imports.py`의 최대 메모리가 1.1GB에서 455MB로, 시간이 11.2초에서 10.0초로 줄었습니다. 그 레포와 jaffle-shop, dbt-project-evaluator에서 `columns.json`과 `graph.json`은 바이트까지 같습니다.

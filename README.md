@@ -73,6 +73,8 @@ Airflow·HQL·dbt처럼 SQL 파일이 많은 레포에서는 리포트의 **테�
 - **dbt**: `{{ ref() }}`·`{{ source() }}`를 모델과 원천 테이블로 잇고, 모델이 만드는 테이블(스키마는 변수)과 `schema.yml`의 설명·컬럼·테스트를 읽습니다.
 - **로컬 데이터 프로파일**: 레포 밖 폴더의 CSV·TSV·JSON·JSONL·Parquet을 `arche.py REPO --data DIR`로 읽어 테이블과 맞춥니다. 테이블마다 컬럼 타입, null 비율, 키 후보, 문서와 데이터의 컬럼 차이를 보여 주고, 문자열 값은 기본으로 보여 주지 않습니다.
 
+SQL이 아주 많은 레포에서 컬럼 lineage가 필요 없으면 `--no-columns`로 끄세요. 테이블 lineage는 그대로 나오고 실행 시간과 메모리가 컬럼 lineage 이전 수준으로 돌아갑니다. 컬럼 edge가 50만 개 상한에서 잘리면(`columns.json`의 `truncated: true`) `--max-column-edges N`으로 상한을 올리거나 하위 폴더만 분석하세요. 메모리는 edge 수에 비례해 늘어납니다.
+
 에이전트에게는 "`mart.revenue.net_amount`는 어디서 와?", "`stage.orders.cust_id`를 지우면 뭐가 깨져?", "이 PR이 바꾼 컬럼의 영향 범위를 보여줘"처럼 물으면 됩니다. Python 문자열 안의 SQL, 기본 스키마, 레포 밖에서 정의된 뷰, `ALTER`로 바뀐 이름, 매크로가 만드는 컬럼은 따라가지 않습니다.
 
 ## 검증과 범위

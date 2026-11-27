@@ -65,7 +65,9 @@ def main(argv):
     parser.add_argument("--data-map", metavar="FILE", help="data-map.json naming the dataset of a table")
     parser.add_argument("--max-rows", type=int, help="rows read per dataset when profiling")
     parser.add_argument("--show-values", action="store_true", help="show common values of columns that do not look sensitive")
+    imports.add_column_options(parser)
     args = parser.parse_args(argv)
+    imports.check_column_options(args)
     if not args.data:
         for flag, given in (("--data-map", args.data_map), ("--max-rows", args.max_rows is not None),
                             ("--show-values", args.show_values)):
@@ -77,7 +79,11 @@ def main(argv):
         out = tempfile.mkdtemp(prefix="arche-")
     scanned = scan.main([args.repo, *(["--out", out] if out else [])])
     out = scanned["out"]
-    resolved = imports.main(["--out", out, *[arg for directory in args.jpath for arg in ("--jpath", directory)]])
+    column_options = ["--no-columns"] if args.no_columns else []
+    if args.max_column_edges is not None:
+        column_options += ["--max-column-edges", str(args.max_column_edges)]
+    resolved = imports.main(["--out", out, *[arg for directory in args.jpath for arg in ("--jpath", directory)],
+                             *column_options])
     profiled = data_profile.main(_profile_args(out, args)) if args.data else None
     if not args.data:
         # a profile left by an earlier --data run describes data this run was not given
@@ -102,6 +108,7 @@ def main(argv):
         "analyzed": scanned["analyzed"],
         "skipped": scanned["skipped"],
         "edges": resolved["edges"],
+        **({"columns": resolved["columns"]} if "columns" in resolved else {}),
         "map_source": mapped["source"],
         **({"carried": {key: value for key, value in carried.items() if key != "step"}} if carried else {}),
         "map_warnings": mapped["warnings"],

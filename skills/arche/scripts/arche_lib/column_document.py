@@ -41,8 +41,9 @@ class _Places:
 
 
 class _Builder:
-    def __init__(self, catalog) -> None:
+    def __init__(self, catalog, max_edges: int = MAX_EDGES) -> None:
         self.catalog = catalog
+        self.max_edges = max_edges
         self.columns: Dict[str, dict] = {}
         self.edges: Dict[tuple, dict] = {}
         self.unresolved: Dict[tuple, dict] = {}
@@ -58,7 +59,7 @@ class _Builder:
             return True
         path = edge["evidence"]["path"]
         left = self.budgets.get(path, MAX_FILE_EDGES)
-        if left <= 0 or len(self.edges) >= MAX_EDGES:
+        if left <= 0 or len(self.edges) >= self.max_edges:
             self.truncated = True
             return False
         self.budgets[path] = left - 1
@@ -213,12 +214,14 @@ class _Builder:
 
 
 def document(paths: List[str], texts: Dict[str, str], newlines: Dict[str, List[int]], results, catalog,
-             disagree: List[dict], digest: str, unsettled: bool) -> dict:
-    builder = _Builder(catalog)
+             disagree: List[dict], digest: str, unsettled: bool, max_edges: Optional[int] = None) -> dict:
+    builder = _Builder(catalog, MAX_EDGES if max_edges is None else max_edges)
+    _IDS.clear()
     for path in paths:
         builder.file(path, texts[path], newlines[path], results[path])
     builder.passthrough()
     builder.documented()
+    _IDS.clear()
     return {
         "columns_version": COLUMNS_VERSION,
         "inventory_sha256": digest,
@@ -230,7 +233,15 @@ def document(paths: List[str], texts: Dict[str, str], newlines: Dict[str, List[i
         "statements": builder.statements,
         "column_sources_disagree": disagree,
         "truncated": builder.truncated or unsettled,
+        **({"max_edges": max_edges} if max_edges is not None and max_edges != MAX_EDGES else {}),
     }
+
+
+def disabled(digest: str) -> dict:
+    """columns.json of a run that turned column lineage off: empty sections and `disabled: true`."""
+    return {"columns_version": COLUMNS_VERSION, "inventory_sha256": digest, "columns": [], "edges": [],
+            "unresolved": [], "statements": [], "column_sources_disagree": [], "truncated": False,
+            "disabled": True}
 
 
 def _edge(leaf: Leaf, to: str, name: str, expression: str, where: dict, rule: Optional[str]) -> dict:
@@ -248,8 +259,16 @@ def _edge(leaf: Leaf, to: str, name: str, expression: str, where: dict, rule: Op
     return edge
 
 
+_IDS: Dict[Tuple[str, str], str] = {}
+
+
 def _col_id(table: str, column: str) -> str:
-    return f"col:{table}.{column}"
+    """One shared string per column id: hundreds of thousands of edges name the same few columns."""
+    key = (table, column)
+    found = _IDS.get(key)
+    if found is None:
+        found = _IDS[key] = f"col:{table}.{column}"
+    return found
 
 
 def _spec(text: str, start: int, end: int) -> str:
