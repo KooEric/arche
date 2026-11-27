@@ -19,6 +19,7 @@ from arche_lib.audit_scripts import build_script_audit
 from arche_lib.mapview import EDITORS, render_map
 from arche_lib.i18n import LANGUAGES
 from arche_lib.errors import IntegrityError, UsageError
+from arche_lib.sqlcol import SUPPORTED_COLUMNS_VERSIONS
 from arche_lib.jsonio import check_graph, inventory_digest, read_snapshot, read_json, write_json, write_text
 from arche_lib.paths import is_within
 from arche_lib.report import render
@@ -74,7 +75,7 @@ def read_columns(out, graph):
     columns = read_json(path)
     if not isinstance(columns, dict):
         raise IntegrityError("columns.json is not a JSON object; run imports.py again")
-    if columns.get("columns_version") != 1:
+    if columns.get("columns_version") not in SUPPORTED_COLUMNS_VERSIONS:
         raise IntegrityError("columns.json has an unsupported columns_version; run imports.py again")
     if columns.get("inventory_sha256") != graph["inventory_sha256"]:
         raise IntegrityError("columns.json describes a different snapshot; run imports.py again")
@@ -150,7 +151,7 @@ def main(argv):
             base_findings = base_audit["findings"]
             finding_delta = delta(base_findings, findings)
         profile = read_profile(out, graph)
-        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang, profile=profile, columns=read_columns(out, graph),
+        report = render(TEMPLATE.read_text(encoding="utf-8"), graph, commits, check, modules=modules, tour=tour, changes=changes, findings=findings, finding_delta=finding_delta, lang=args.lang, profile=profile, columns=lambda: read_columns(out, graph),
                         **({"lazy_file_limit": float("inf")} if args.full_details else {}))
         atlas_path = out / "atlas.json"
         atlas = read_json(atlas_path) if atlas_path.exists() else None

@@ -95,6 +95,9 @@ def build_columns(paths: List[str], read_path: Callable[[str], Optional[str]], e
         if settled:
             break
         pending = _changed_readers(sql_paths, reads, changed)
+    # The rows hold every statement the document needs; `document` drops each file's rows, text and
+    # syntax trees once its edges are built, so they and the edges are not all held at once.
+    del parsed, reads, tables
     return document(sql_paths, texts, newlines, results, catalog, disagree, inventory_sha256, not settled,
                     max_edges)
 

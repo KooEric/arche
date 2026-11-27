@@ -311,7 +311,7 @@ def test_a_columns_json_of_another_version_is_rejected(make_repo, git_cmd, run_s
     out = tmp_path / "run"
     _snapshot(repo, out, run_script)
     columns = json.loads((out / "columns.json").read_text())
-    (out / "columns.json").write_text(json.dumps({**columns, "columns_version": 2}))
+    (out / "columns.json").write_text(json.dumps({**columns, "columns_version": 3}))
 
     result = run_script("changes.py", "--out", out, "--base", base, "--head", head)
 

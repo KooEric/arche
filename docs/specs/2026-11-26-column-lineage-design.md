@@ -212,7 +212,7 @@ Q4 권장안대로 열 가지를 쓴다. 참조마다 맥락으로 정하고, CT
 
 ```json
 {
-  "columns_version": 1,
+  "columns_version": 1,  // 1.3.2부터 2: evidence는 {path, line}, 줄 원문은 최상위 "lines"에 한 번
   "inventory_sha256": "<graph.json과 같은 값>",
   "columns": [
     {"id": "col:stage.orders.amount", "table": "stage.orders", "column": "amount", "display": "amount",

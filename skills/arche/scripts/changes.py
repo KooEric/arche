@@ -13,7 +13,7 @@ from arche_lib import cli, column_impact
 from arche_lib.changes import build_changes
 from arche_lib.errors import IntegrityError, UsageError
 from arche_lib.paths import is_within
-from arche_lib.sqlcol import COLUMNS_VERSION
+from arche_lib.sqlcol import SUPPORTED_COLUMNS_VERSIONS
 from arche_lib.jsonio import check_graph, read_json, read_snapshot, write_json
 
 
@@ -29,7 +29,7 @@ def read_columns(out: Path, graph: dict):
     if not isinstance(columns, dict) or not isinstance(columns.get("columns"), list) \
             or not isinstance(columns.get("edges"), list):
         raise IntegrityError(f"{path} is malformed; run imports.py again")
-    if columns.get("columns_version") != COLUMNS_VERSION:
+    if columns.get("columns_version") not in SUPPORTED_COLUMNS_VERSIONS:
         raise IntegrityError("columns.json has an unsupported columns_version; run imports.py again")
     if columns.get("inventory_sha256") != graph.get("inventory_sha256"):
         raise IntegrityError("columns.json describes a different snapshot; run imports.py again")

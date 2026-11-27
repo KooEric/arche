@@ -584,7 +584,11 @@ def _readers(links):
 
 
 def _tables(graph, anchors, profile=None, columns=None):
-    """Column lineage, profiled table data, tables read here and written nowhere scanned, and names not followed."""
+    """Column lineage, profiled table data, tables read here and written nowhere scanned, and names not followed.
+    `columns` may be a function that loads columns.json: the document is then held only while this section
+    is drawn, not while the rest of a large report is put together."""
+    if callable(columns):
+        columns = columns()
     external = graph.get("external_tables", [])
     reads = [edge for edge in graph["edges"] if edge.get("kind") == "READS"]
     if not external and not reads and not has_tables(graph, profile) and not columns:
@@ -596,15 +600,20 @@ def _tables(graph, anchors, profile=None, columns=None):
             by_reason[edge["reason"]].append(f'{_code(edge["spec"])} · {_evidence(edge)}')
     count = len({item["table"] for item in external})
     data = table_data(graph, profile, lambda node: _file_link(node, anchors), T, lineage and lineage.panel) if has_tables(graph, profile) else ""
-    data = (lineage.section(shown_tables(graph, profile) if has_tables(graph, profile) else ()) if lineage else "") + data
-    body = data + (f'<h3>{T("External tables")} <span class="count">{count}</span></h3>'
-            + (_external_tables(external, anchors) or f'<p class="empty">{T("Every table read here is written by a scanned SQL file.")}</p>'))
+    head = lineage.section(shown_tables(graph, profile) if has_tables(graph, profile) else ()) if lineage else ""
+    # The column panels are drawn; release the document before the section's text is put together.
+    del lineage, columns
+    parts = [head, data, f'<h3>{T("External tables")} <span class="count">{count}</span></h3>',
+             _external_tables(external, anchors) or f'<p class="empty">{T("Every table read here is written by a scanned SQL file.")}</p>']
+    del head, data
     for reason, title in _UNRESOLVED_READS:
         if by_reason[reason]:
-            body += (f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
-                     + _items(by_reason[reason], "", "columns") + '</details>')
-    return _section("tables", T("Tables"), body,
-                    T("A table is external when no scanned SQL file writes it. Only table names written in SQL files are read. SQL inside Python, default schemas and tables inside views are not, so a table listed here may still be made in this repository. Open a SQL file under File dependencies to see which files read what it writes."))
+            parts.append(f'<details class="group"><summary>{T(title)} <code>{reason}</code> <span class="count">{len(by_reason[reason])}</span></summary>'
+                         + _items(by_reason[reason], "", "columns") + '</details>')
+    lead = T("A table is external when no scanned SQL file writes it. Only table names written in SQL files are read. SQL inside Python, default schemas and tables inside views are not, so a table listed here may still be made in this repository. Open a SQL file under File dependencies to see which files read what it writes.")
+    parts.insert(0, f'<section id="tables"><h2>{T("Tables")}</h2><p class="lead">{lead}</p>')
+    parts.append("</section>")
+    return "".join(parts)
 
 
 def _graph_data(graph, files, anchors):

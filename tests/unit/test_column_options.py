@@ -116,3 +116,42 @@ def test_a_truncated_report_names_the_option_that_keeps_more():
     doc = {"columns": [], "edges": [], "unresolved": [], "statements": [], "truncated": True}
 
     assert "--max-column-edges" in ColumnLineage(doc).section()
+
+
+def test_each_cited_line_is_quoted_once_in_lines(make_repo, run_script, tmp_path):
+    out = tmp_path / "out"
+    _run(run_script, make_repo(_SQL), out)
+
+    columns = json.loads((out / "columns.json").read_text(encoding="utf-8"))
+
+    assert columns["columns_version"] == 2
+    cited = {(item["evidence"]["path"], item["evidence"]["line"]) for item in columns["edges"] + columns["unresolved"]}
+    cited |= {(c["defined"]["path"], c["defined"]["line"]) for c in columns["columns"] if "defined" in c}
+    assert [(line["path"], line["line"]) for line in columns["lines"]] == sorted(cited)
+    assert all("quote" not in item["evidence"] for item in columns["edges"])
+    assert {"path": "q/load.sql", "line": 1, "quote": _SQL["q/load.sql"].strip()} in columns["lines"]
+
+
+def test_changes_reads_a_version_1_base(make_repo, git_cmd, run_script, tmp_path):
+    repo = make_repo(_SQL)
+    base = git_cmd(repo, "rev-parse", "HEAD").strip()
+    base_out = tmp_path / "base"
+    _run(run_script, repo, base_out)
+    old = json.loads((base_out / "columns.json").read_text(encoding="utf-8"))
+    quotes = {(line["path"], line["line"]): line["quote"] for line in old.pop("lines")}
+    for edge in old["edges"]:
+        edge["evidence"] = {**edge["evidence"], "quote": quotes[(edge["evidence"]["path"], edge["evidence"]["line"])]}
+    (base_out / "columns.json").write_text(json.dumps({**old, "columns_version": 1}, indent=2), encoding="utf-8")
+    (repo / "q" / "mart.sql").write_text("INSERT INTO m.v SELECT t.b AS total FROM s.t AS t;\n")
+    git_cmd(repo, "add", "-A")
+    git_cmd(repo, "commit", "-qm", "edit")
+    head = git_cmd(repo, "rev-parse", "HEAD").strip()
+    out = tmp_path / "run"
+    _run(run_script, repo, out)
+
+    done = run_script("changes.py", "--out", out, "--base", base, "--head", head, "--base-out", base_out)
+
+    assert done.returncode == 0, done.stderr
+    column_impact = json.loads((out / "changes.json").read_text())["column_impact"]
+    assert column_impact["available"] is True
+    assert ("col:m.v.c", "removed") in {(s["column"], s["change"]) for s in column_impact["seeds"]}
