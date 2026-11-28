@@ -22,11 +22,12 @@ def newline_positions(text: str) -> List[int]:
 
 
 class _Places:
-    """Evidence for one file: one shared dict per line."""
+    """Evidence for one file: one shared {path, line} dict per line, its text noted once in `quotes`."""
 
-    def __init__(self, path: str, text: str, newlines: List[int]) -> None:
+    def __init__(self, path: str, text: str, newlines: List[int], quotes: Dict[Tuple[str, int], str]) -> None:
         self.path, self.lines = path, text.split("\n")
         self.newlines = newlines
+        self.quotes = quotes
         self.cache: Dict[int, dict] = {}
 
     def line(self, position: int) -> int:
@@ -36,13 +37,15 @@ class _Places:
         line = self.line(position)
         if line not in self.cache:
             quote = self.lines[line - 1].strip()[:MAX_EXPRESSION_CHARS] if line <= len(self.lines) else ""
-            self.cache[line] = {"path": self.path, "line": line, "quote": quote}
+            self.cache[line] = {"path": self.path, "line": line}
+            self.quotes[(self.path, line)] = quote
         return self.cache[line]
 
 
 class _Builder:
-    def __init__(self, catalog) -> None:
+    def __init__(self, catalog, max_edges: int = MAX_EDGES) -> None:
         self.catalog = catalog
+        self.max_edges = max_edges
         self.columns: Dict[str, dict] = {}
         self.edges: Dict[tuple, dict] = {}
         self.unresolved: Dict[tuple, dict] = {}
@@ -50,6 +53,7 @@ class _Builder:
         self.stars: Dict[str, List[Tuple[str, dict]]] = {}
         self.budgets: Dict[str, int] = {}  # path -> edges that file may still add
         self.read: set = set()  # column ids some edge comes from
+        self.quotes: Dict[Tuple[str, int], str] = {}  # (path, line) -> the line's text, for `lines`
         self.truncated = False
 
     def add(self, key: tuple, edge: dict) -> bool:
@@ -58,7 +62,7 @@ class _Builder:
             return True
         path = edge["evidence"]["path"]
         left = self.budgets.get(path, MAX_FILE_EDGES)
-        if left <= 0 or len(self.edges) >= MAX_EDGES:
+        if left <= 0 or len(self.edges) >= self.max_edges:
             self.truncated = True
             return False
         self.budgets[path] = left - 1
@@ -66,7 +70,7 @@ class _Builder:
         return True
 
     def file(self, path: str, text: str, newlines: List[int], rows) -> None:
-        places = _Places(path, text, newlines)
+        places = _Places(path, text, newlines, self.quotes)
         for item, derived, written in rows:
             target = written.table if written is not None else (
                 item.statement.target.name if item.statement is not None and item.statement.target else None)
@@ -213,24 +217,45 @@ class _Builder:
 
 
 def document(paths: List[str], texts: Dict[str, str], newlines: Dict[str, List[int]], results, catalog,
-             disagree: List[dict], digest: str, unsettled: bool) -> dict:
-    builder = _Builder(catalog)
-    for path in paths:
-        builder.file(path, texts[path], newlines[path], results[path])
+             disagree: List[dict], digest: str, unsettled: bool, max_edges: Optional[int] = None) -> dict:
+    builder = _Builder(catalog, MAX_EDGES if max_edges is None else max_edges)
+    _IDS.clear()
+    for path in paths:  # each file's input is released once read: the caller holds no other reference
+        builder.file(path, texts.pop(path), newlines.pop(path), results.pop(path))
     builder.passthrough()
     builder.documented()
+    _IDS.clear()
+    edges = sorted(builder.edges.values(), key=lambda e: (e["to"], e["from"] or "", e["kind"],
+                                                          e["evidence"]["path"], e["evidence"]["line"]))
+    unresolved = sorted(builder.unresolved.values(), key=lambda u: (u["evidence"]["path"], u["evidence"]["line"],
+                                                                    u["spec"], u["reason"]))
+    columns = [builder.columns[key] for key in sorted(builder.columns)]
     return {
         "columns_version": COLUMNS_VERSION,
         "inventory_sha256": digest,
-        "columns": [builder.columns[key] for key in sorted(builder.columns)],
-        "edges": sorted(builder.edges.values(), key=lambda e: (e["to"], e["from"] or "", e["kind"],
-                                                               e["evidence"]["path"], e["evidence"]["line"])),
-        "unresolved": sorted(builder.unresolved.values(), key=lambda u: (u["evidence"]["path"], u["evidence"]["line"],
-                                                                         u["spec"], u["reason"])),
+        "columns": columns,
+        "edges": edges,
+        "unresolved": unresolved,
+        "lines": _lines(builder.quotes, edges, unresolved, columns),
         "statements": builder.statements,
         "column_sources_disagree": disagree,
         "truncated": builder.truncated or unsettled,
+        **({"max_edges": max_edges} if max_edges is not None and max_edges != MAX_EDGES else {}),
     }
+
+
+def _lines(quotes: Dict[Tuple[str, int], str], *sections: List[dict]) -> List[dict]:
+    """The text of each line some evidence or column definition cites, sorted by path and line."""
+    cited = {(where["path"], where["line"]) for section in sections for item in section
+             for where in (item.get("evidence"), item.get("defined")) if where is not None}
+    return [{"path": path, "line": line, "quote": quotes.get((path, line), "")} for path, line in sorted(cited)]
+
+
+def disabled(digest: str) -> dict:
+    """columns.json of a run that turned column lineage off: empty sections and `disabled: true`."""
+    return {"columns_version": COLUMNS_VERSION, "inventory_sha256": digest, "columns": [], "edges": [],
+            "unresolved": [], "lines": [], "statements": [], "column_sources_disagree": [], "truncated": False,
+            "disabled": True}
 
 
 def _edge(leaf: Leaf, to: str, name: str, expression: str, where: dict, rule: Optional[str]) -> dict:
@@ -248,8 +273,16 @@ def _edge(leaf: Leaf, to: str, name: str, expression: str, where: dict, rule: Op
     return edge
 
 
+_IDS: Dict[Tuple[str, str], str] = {}
+
+
 def _col_id(table: str, column: str) -> str:
-    return f"col:{table}.{column}"
+    """One shared string per column id: hundreds of thousands of edges name the same few columns."""
+    key = (table, column)
+    found = _IDS.get(key)
+    if found is None:
+        found = _IDS[key] = f"col:{table}.{column}"
+    return found
 
 
 def _spec(text: str, start: int, end: int) -> str:

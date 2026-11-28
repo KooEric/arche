@@ -23,6 +23,8 @@ CAVEATS = ("Column lineage reads only SELECT statements in SQL files. It does no
            "An inferred link needs checking before you rely on it.")
 TRUNCATED = ("Column lineage stopped at an edge limit, or its column lists did not settle within the round limit; "
              "some columns may have more sources and uses than shown.")
+TRUNCATED_HINT = "To keep more, run imports.py again with a larger --max-column-edges, or on a subfolder."
+DISABLED = "Column lineage was turned off for this run (--no-columns); table lineage is still shown."
 REASONS = {
     "ambiguous": "Columns matching several sources",
     "unknown_star": "SELECT * from tables with unknown columns",
@@ -53,8 +55,11 @@ def _badge(kind: str) -> str:
     return f'<span class="badge" data-kind="{escape(kind, quote=True)}">{escape(kind)}</span>'
 
 
+_RANKS = {status: place for place, status in enumerate(STATUS_ORDER)}
+
+
 def _rank(status: str) -> int:
-    return STATUS_ORDER.index(status) if status in STATUS_ORDER else len(STATUS_ORDER) - 1
+    return _RANKS.get(status, len(STATUS_ORDER) - 1)
 
 
 def _name(node: Optional[str]) -> str:
@@ -91,6 +96,14 @@ def _capped(items: List[str], limit: int, T: Translate) -> str:
     return f'{shown}, {T("+{count} more entries").format(count=hidden)}' if hidden > 0 else shown
 
 
+def _capped_keys(keys: Iterable, show: Callable[..., str], limit: int, T: Translate) -> str:
+    """`_capped` of the distinct keys, formatting only the ones shown; `show` is one-to-one on keys."""
+    distinct = list(dict.fromkeys(keys))
+    shown = ", ".join(show(key) for key in distinct[:limit])
+    hidden = len(distinct) - limit
+    return f'{shown}, {T("+{count} more entries").format(count=hidden)}' if hidden > 0 else shown
+
+
 class ColumnLineage:
     """columns.json indexed once: value edges in and out of each column, uses per table, unresolved by reason."""
 
@@ -120,6 +133,11 @@ class ColumnLineage:
         self.anchors = {column["id"]: f"column-{index}" for index, column in enumerate(
             column for table in sorted(self.by_table) for column in self.by_table[table][:MAX_COLUMNS_SHOWN])}
         self.spent = 0
+        # per column, its outgoing edges as (to, is a use, kind, status rank, evidence path) for the walks
+        self.steps: Dict[str, List[tuple]] = {
+            node: [(edge["to"], edge["to"].startswith("table:"), edge["kind"], _rank(edge["status"]),
+                    edge["evidence"].get("path", "")) for edge in edges]
+            for node, edges in self.outgoing.items()}
 
     def tables(self) -> List[str]:
         """Tables the SQL writes, which get a column lineage panel."""
@@ -152,25 +170,27 @@ class ColumnLineage:
         statuses = [edge["status"] for edge in edges] + ["unresolved"] * bool(missed)
         status = _status(max(statuses, key=_rank)) if statuses else ""
         kinds = " ".join(_badge(kind) for kind in sorted({edge["kind"] for edge in edges}))
-        expressions = _unique(_code(edge["expression"]) for edge in edges if edge.get("expression"))
-        evidence = _unique(_where(edge["evidence"], self.path_link) for edge in edges)
+        expressions = (edge["expression"] for edge in edges if edge.get("expression"))
+        places = [(edge["evidence"].get("path", ""), edge["evidence"].get("line", "")) for edge in edges]
         if not edges and column.get("defined"):
-            evidence = [_where(column["defined"], self.path_link)]
+            places = [(column["defined"].get("path", ""), column["defined"].get("line", ""))]
+        link = self.path_link
         anchor = self.anchors.get(column["id"])
         ident = f' id="{anchor}"' if anchor else ""
         name = (f'<details{ident}><summary>{_code(column["display"])}</summary>'
                 f'<p class="label">{self.T("If this column is removed")}</p>{self._impact_of(column["id"])}</details>')
         return (f'<tr><td>{name}</td><td>{self._sources(edges, missed)}</td><td>{kinds}</td>'
-                f'<td>{_capped(expressions, MAX_EXPRESSIONS_SHOWN, self.T)}</td><td>{status}</td>'
-                f'<td>{_capped(evidence, MAX_EVIDENCE_SHOWN, self.T)}</td></tr>')
+                f'<td>{_capped_keys(expressions, _code, MAX_EXPRESSIONS_SHOWN, self.T)}</td><td>{status}</td>'
+                f'<td>{_capped_keys(places, lambda at: _where({"path": at[0], "line": at[1]}, link), MAX_EVIDENCE_SHOWN, self.T)}'
+                f'</td></tr>')
 
     def _sources(self, edges: List[dict], missed: List[dict]) -> str:
         T = self.T
-        values = _unique(self._link(e["from"]) for e in edges if e.get("from") and e.get("role") != "condition")
-        conditions = _unique(self._link(e["from"]) for e in edges if e.get("from") and e.get("role") == "condition")
-        parts = [_capped(values, MAX_LIST_SHOWN, T)] if values else []
+        values = [e["from"] for e in edges if e.get("from") and e.get("role") != "condition"]
+        conditions = [e["from"] for e in edges if e.get("from") and e.get("role") == "condition"]
+        parts = [_capped_keys(values, self._link, MAX_LIST_SHOWN, T)] if values else []
         if conditions:
-            parts.append(f'{T("condition")}: {_capped(conditions, MAX_LIST_SHOWN, T)}')
+            parts.append(f'{T("condition")}: {_capped_keys(conditions, self._link, MAX_LIST_SHOWN, T)}')
         if any(edge["kind"] == "constant" for edge in edges):
             parts.append(T("constant"))
         if missed:
@@ -178,10 +198,11 @@ class ColumnLineage:
         return "<br>".join(parts)
 
     def _table_uses(self, table: str) -> str:
-        uses = _unique(f'{_badge(edge["kind"])} {self._link(edge["from"])}' for edge in self.uses.get(table, []))
+        uses = [(edge["kind"], edge["from"]) for edge in self.uses.get(table, [])]
         if not uses:
             return ""
-        return f'<p class="label">{self.T("Columns used to build this table")}</p>{_capped(uses, MAX_LIST_SHOWN, self.T)}'
+        shown = _capped_keys(uses, lambda use: f'{_badge(use[0])} {self._link(use[1])}', MAX_LIST_SHOWN, self.T)
+        return f'<p class="label">{self.T("Columns used to build this table")}</p>{shown}'
 
     def _walk(self, start: str) -> Optional[Tuple[List[tuple], Set[str], Set[str], bool]]:
         """Breadth-first downstream of one column: value edges continue, uses stop. None past the report budget."""
@@ -192,27 +213,29 @@ class ColumnLineage:
         tables: Set[str] = set()
         seen, used = {start}, set()
         queue = deque([(start, 0, 0)])
-        budget, cut = min(IMPACT_BUDGET, REPORT_IMPACT_BUDGET - self.spent), False
+        allowed = min(IMPACT_BUDGET, REPORT_IMPACT_BUDGET - self.spent)
+        budget, cut = allowed, False
+        steps, columns = self.steps, self.columns
         while queue and not cut:
             node, depth, rank = queue.popleft()
-            for edge in self.outgoing.get(node, ()):
+            for target, use, kind, edge_rank, path in steps.get(node, ()):
                 if budget <= 0:
                     cut = True
                     break
                 budget -= 1
-                self.spent += 1
-                target, step = edge["to"], max(rank, _rank(edge["status"]))
-                files.add(edge["evidence"].get("path", ""))
-                if target.startswith("table:"):
-                    if (target, edge["kind"]) not in used:
-                        used.add((target, edge["kind"]))
+                step = edge_rank if edge_rank > rank else rank
+                files.add(path)
+                if use:
+                    if (target, kind) not in used:
+                        used.add((target, kind))
                         tables.add(_name(target))
-                        found.append((depth + 1, target, edge["kind"], step))
+                        found.append((depth + 1, target, kind, step))
                 elif target not in seen:
                     seen.add(target)
-                    tables.add(self.columns[target]["table"] if target in self.columns else _name(target))
-                    found.append((depth + 1, target, edge["kind"], step))
+                    tables.add(columns[target]["table"] if target in columns else _name(target))
+                    found.append((depth + 1, target, kind, step))
                     queue.append((target, depth + 1, step))
+        self.spent += allowed - budget
         return found, files, tables, cut
 
     def _impact_of(self, start: str) -> str:
@@ -230,19 +253,22 @@ class ColumnLineage:
         body = "".join(f'<p class="label">{T("Depth {depth}").format(depth=depth)}</p><ul>{"".join(items)}</ul>'
                        for depth, items in groups.items())
         body += _more(len(found) - MAX_LIST_SHOWN, T, cut)
-        body += f'<p>{T("Files")}: {_capped([_path(path, self.path_link) for path in sorted(files)], MAX_LIST_SHOWN, T)}</p>'
-        return body + f'<p>{T("Tables")}: {_capped([_code(name) for name in sorted(tables)], MAX_LIST_SHOWN, T)}</p>'
+        body += f'<p>{T("Files")}: {_capped_keys(sorted(files), lambda path: _path(path, self.path_link), MAX_LIST_SHOWN, T)}</p>'
+        return body + f'<p>{T("Tables")}: {_capped_keys(sorted(tables), _code, MAX_LIST_SHOWN, T)}</p>'
 
     def section(self, shown_tables: Iterable[str] = ()) -> str:
         """Head of the Tables section: statement counts, caveats, blocks for tables not drawn elsewhere, and
         the columns not followed."""
         T, shown = self.T, set(shown_tables)
+        if self.doc.get("disabled"):
+            return f'<h3>{T("Column lineage")}</h3><p class="empty">{T(DISABLED)}</p>'
         counts = Counter(item["status"] for item in self.doc["statements"])
         order = [status for status in STATEMENT_ORDER if status in counts] + sorted(set(counts) - set(STATEMENT_ORDER))
         stats = " · ".join(f'{T(status)} {counts[status]}' for status in order)
         lead = f'<p>{T("SQL statements")} {len(self.doc["statements"])}' + (f" · {stats}" if stats else "") + "</p>"
         caveats = "".join(f"<p>{T(text)}</p>" for text in CAVEATS)
-        cut = f'<p class="callout" data-tone="warn">{T(TRUNCATED)}</p>' if self.doc.get("truncated") else ""
+        cut = (f'<p class="callout" data-tone="warn">{T(TRUNCATED)} {T(TRUNCATED_HINT)}</p>'
+               if self.doc.get("truncated") else "")
         rest = [table for table in self.tables() if table not in shown]
         blocks = "".join(self._block(table, f'{_code(table)} <span class="count">{len(self.by_table[table])}</span>')
                          for table in rest)
@@ -295,6 +321,8 @@ def _unavailable(column_impact: dict, T: Translate) -> str:
     reason = column_impact.get("reason")
     if reason == "base_without_columns":
         why = T("The base snapshot has no column lineage; run imports.py on the base again.")
+    elif reason == "columns_disabled":
+        why = T("Column lineage was turned off (--no-columns) in a compared run; run imports.py without it.")
     elif reason == "graph_mismatch":
         why = T("The graph snapshot is dirty or matches neither compared commit; scan a clean checkout of one again.")
     else:

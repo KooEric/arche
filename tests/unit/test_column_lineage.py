@@ -73,7 +73,7 @@ def test_the_document_has_its_version_and_the_graphs_inventory_digest():
 
     graph, columns = _both(sources)
 
-    assert columns["columns_version"] == 1
+    assert columns["columns_version"] == 2
     assert columns["inventory_sha256"] == graph["inventory_sha256"]
     assert columns["truncated"] is False
 
@@ -97,7 +97,8 @@ def test_a_column_records_where_it_is_defined():
 
     (defined,) = [c for c in columns["columns"] if c["id"] == "col:s.a.id"]
     assert defined["known_from"] == ["sql_output"]
-    assert defined["defined"] == {"path": "q/a.sql", "line": 2, "quote": "SELECT r.id"}
+    assert defined["defined"] == {"path": "q/a.sql", "line": 2}
+    assert {"path": "q/a.sql", "line": 2, "quote": "SELECT r.id"} in columns["lines"]
 
 
 def test_an_external_column_is_marked_external_with_no_known_from():

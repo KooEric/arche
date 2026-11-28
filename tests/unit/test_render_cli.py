@@ -155,7 +155,7 @@ def test_render_refuses_columns_json_of_another_snapshot(make_repo, run_script, 
 
     assert done.returncode == 3
     assert "columns.json describes a different snapshot; run imports.py again" in done.stderr
-    for broken in ([], {**columns, "columns_version": 2}, {**columns, "edges": {}}):
+    for broken in ([], {**columns, "columns_version": 3}, {**columns, "edges": {}}):
         (out / "columns.json").write_text(json.dumps(broken), encoding="utf-8")
         done = run_script("render.py", "--out", out)
         assert done.returncode == 3 and "columns.json" in done.stderr

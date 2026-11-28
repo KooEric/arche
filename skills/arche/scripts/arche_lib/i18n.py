@@ -284,6 +284,10 @@ _KO = {
     "some columns may have more sources and uses than shown.":
         "컬럼 edge 상한에서 멈췄거나, 반복 상한 안에 컬럼 목록이 정해지지 않았습니다. "
         "일부 컬럼은 보이는 것보다 출처와 사용처가 더 있을 수 있습니다.",
+    "To keep more, run imports.py again with a larger --max-column-edges, or on a subfolder.":
+        "더 남기려면 --max-column-edges를 키워 imports.py를 다시 실행하거나 하위 폴더만 분석하세요.",
+    "Column lineage was turned off for this run (--no-columns); table lineage is still shown.":
+        "이 실행은 컬럼 lineage를 껐습니다(--no-columns). 테이블 lineage는 그대로 보여 줍니다.",
     "Columns not followed": "따라가지 못한 컬럼",
     "Columns matching several sources": "여러 소스와 일치하는 컬럼",
     "SELECT * from tables with unknown columns": "컬럼을 모르는 테이블의 SELECT *",
@@ -303,6 +307,8 @@ _KO = {
     "Column impact was not computed.": "컬럼 영향을 계산하지 않았습니다.",
     "The base snapshot has no column lineage; run imports.py on the base again.":
         "기준 스냅샷에 컬럼 lineage가 없습니다. 기준에서 imports.py를 다시 실행하세요.",
+    "Column lineage was turned off (--no-columns) in a compared run; run imports.py without it.":
+        "비교한 실행 중 하나가 컬럼 lineage를 껐습니다(--no-columns). 옵션 없이 imports.py를 다시 실행하세요.",
     "The graph snapshot is dirty or matches neither compared commit; scan a clean checkout of one again.":
         "그래프 스냅샷이 dirty이거나 비교한 두 커밋 어느 쪽과도 맞지 않습니다. 둘 중 하나의 깨끗한 체크아웃을 다시 스캔하세요.",
     "Reason": "이유",

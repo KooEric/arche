@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, NamedTuple, Optional, Set, Tuple
 
 from . import dbt
 from .column_catalog import Listing, Tables, build_catalog
-from .column_document import TempWrite, document, newline_positions
+from .column_document import TempWrite, disabled, document, newline_positions
 from .sqlcol.ast import Statement, TableName
 from .sqlcol.derive import Derived, Lookup, derive
 from .sqlcol.parser import ParseError
@@ -66,11 +66,15 @@ def parse_file(text: str) -> List[Parsed]:
 
 def build_columns(paths: List[str], read_path: Callable[[str], Optional[str]], extracted: Dict[str, dict],
                   projects: Dict[str, dbt.Project], models: List[dict], sources: List[dict],
-                  dbt_models: List[dict], inventory_sha256: str) -> Optional[dict]:
-    """The columns.json document, or None when no SQL file was analyzed."""
+                  dbt_models: List[dict], inventory_sha256: str, enabled: bool = True,
+                  max_edges: Optional[int] = None) -> Optional[dict]:
+    """The columns.json document, or None when no SQL file was analyzed. Turned off, the document
+    has empty sections and `disabled: true`, so later steps can tell it from a run before 1.3.0."""
     sql_paths = sorted(p for p in paths if "tables" in extracted.get(p, {}))
     if not sql_paths:
         return None
+    if not enabled:
+        return disabled(inventory_sha256)
     texts = {path: read_path(path) or "" for path in sql_paths}
     newlines = {path: newline_positions(texts[path]) for path in sql_paths}
     parsed = {path: parse_file(texts[path]) for path in sql_paths}
@@ -91,7 +95,11 @@ def build_columns(paths: List[str], read_path: Callable[[str], Optional[str]], e
         if settled:
             break
         pending = _changed_readers(sql_paths, reads, changed)
-    return document(sql_paths, texts, newlines, results, catalog, disagree, inventory_sha256, not settled)
+    # The rows hold every statement the document needs; `document` drops each file's rows, text and
+    # syntax trees once its edges are built, so they and the edges are not all held at once.
+    del parsed, reads, tables
+    return document(sql_paths, texts, newlines, results, catalog, disagree, inventory_sha256, not settled,
+                    max_edges)
 
 
 def _changed_readers(paths: List[str], reads: Dict[str, Set[str]], changed: Set[str]) -> List[str]:
