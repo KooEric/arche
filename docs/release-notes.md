@@ -1,6 +1,6 @@
 # Arche 릴리스 노트
 
-## 1.3.2 (준비 중)
+## 1.3.2
 
 - 컬럼 lineage 끄기: `arche.py REPO --no-columns`(또는 `imports.py --no-columns`)는 컬럼 lineage를 건너뜁니다. 테이블 lineage와 `graph.json`은 그대로이고, `columns.json`에는 빈 목록과 `disabled: true`만 남습니다. 리포트의 **테이블** 구역은 컬럼 lineage를 껐다고 표시하고, `changes.py`는 `column_impact`를 `available: false`, `reason: columns_disabled`로 둡니다. 합성 3,000 파일 레포에서 전체 실행이 1.8초·45MB로 끝납니다(켜면 약 19~23초·560~595MB). 컬럼 lineage가 없던 버전과 같은 단계만 실행합니다.
 - 컬럼 edge 상한 조정: `--max-column-edges N`으로 기본 50만 개 상한을 바꿉니다. 기본값이 아니면 `columns.json`에 `max_edges`가 남고, `imports.py`·`arche.py` 요약의 `columns.truncated`로 잘렸는지 바로 볼 수 있습니다. 메모리는 edge 수에 비례해 늘어납니다. 잘린 리포트는 이 옵션과 하위 폴더 실행을 안내합니다.
